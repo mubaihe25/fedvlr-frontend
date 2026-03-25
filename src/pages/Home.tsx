@@ -1,160 +1,168 @@
 import React from 'react';
-import { motion } from 'motion/react';
-import { 
-  MonitorSmartphone, 
-  ArrowRight, 
-  Cloud, 
-  Swords, 
-  Shield, 
-  Network, 
-  Microscope, 
-  ShieldCheck, 
+import {motion} from 'motion/react';
+import {
+  ArrowRight,
+  Cloud,
+  Microscope,
+  MonitorSmartphone,
+  Network,
+  Plus,
+  Shield,
+  ShieldCheck,
+  Swords,
   TrendingUp,
-  Plus
 } from 'lucide-react';
-import { cn } from '../lib/utils';
-import { PageType } from '../types/common';
+import {mockHomeData} from '../mock/home';
+import type {PageType} from '../types/common';
 
 interface HomeProps {
   onPageChange?: (page: PageType) => void;
 }
 
-export const Home: React.FC<HomeProps> = ({ onPageChange }) => {
+const highlightToneClasses = {
+  primary: {
+    badge: 'bg-primary/10 text-primary',
+    border: 'hover:border-primary/30',
+  },
+  error: {
+    badge: 'bg-error/10 text-error',
+    border: 'hover:border-error/30',
+  },
+  tertiary: {
+    badge: 'bg-tertiary/10 text-tertiary',
+    border: 'hover:border-tertiary/30',
+  },
+} as const;
+
+export const Home: React.FC<HomeProps> = ({onPageChange}) => {
+  const {hero, flow, highlights, snapshotMetrics, snapshotChart, capabilities} = mockHomeData;
+
   return (
-    <div className="space-y-24 pb-12 relative">
-      {/* Hero Section */}
-      <section className="relative min-h-[600px] flex flex-col items-center justify-center text-center px-6 py-20 overflow-hidden rounded-3xl">
+    <div className="relative space-y-24 pb-12">
+      <section className="relative min-h-[600px] overflow-hidden rounded-3xl px-6 py-20 text-center">
         <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
-          <img 
-            className="w-full h-full object-cover" 
-            alt="abstract digital connection network" 
-            src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2000&auto=format&fit=crop" 
+          <img
+            className="h-full w-full object-cover"
+            alt="federated recommendation security background"
+            src={hero.backgroundImage}
             referrerPolicy="no-referrer"
           />
         </div>
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-surface z-0" />
-        
-        <div className="relative z-10 max-w-4xl mx-auto mt-12">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold tracking-widest uppercase mb-6 kinetic-glow"
+        <div className="absolute inset-0 z-0 bg-gradient-to-b from-transparent to-surface" />
+
+        <div className="relative z-10 mx-auto mt-12 flex max-w-4xl flex-col items-center">
+          <motion.div
+            initial={{opacity: 0, y: 20}}
+            animate={{opacity: 1, y: 0}}
+            className="kinetic-glow mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-primary"
           >
-            <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-            Next-Gen Decentralized Security
+            <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+            {hero.badge}
           </motion.div>
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-5xl md:text-7xl font-bold font-headline mb-6 bg-gradient-to-br from-white via-primary to-secondary bg-clip-text text-transparent leading-[1.1] tracking-tight"
+          <motion.h1
+            initial={{opacity: 0, y: 20}}
+            animate={{opacity: 1, y: 0}}
+            transition={{delay: 0.1}}
+            className="mb-6 bg-gradient-to-br from-white via-primary to-secondary bg-clip-text text-5xl font-bold leading-[1.1] tracking-tight text-transparent md:text-7xl"
           >
-            联邦智能守护：<br/>多模态推荐安全实验平台
+            {hero.title}
           </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="text-xl text-on-surface-variant max-w-2xl mx-auto mb-10 leading-relaxed"
+          <motion.p
+            initial={{opacity: 0, y: 20}}
+            animate={{opacity: 1, y: 0}}
+            transition={{delay: 0.2}}
+            className="mx-auto mb-10 max-w-2xl text-xl leading-relaxed text-on-surface-variant"
           >
-            面向对抗性攻防的去中心化学习范式。提供高维数据的联邦计算、自动化红蓝攻防模拟以及实时的鲁棒性评估。
+            {hero.subtitle}
           </motion.p>
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4"
+          <motion.div
+            initial={{opacity: 0, y: 20}}
+            animate={{opacity: 1, y: 0}}
+            transition={{delay: 0.3}}
+            className="flex flex-col items-center justify-center gap-4 sm:flex-row"
           >
-            <button 
+            <button
               onClick={() => onPageChange?.('console')}
-              className="px-8 py-4 bg-gradient-to-r from-primary to-secondary text-surface font-bold rounded-lg shadow-[0_8px_32px_rgba(129,236,255,0.25)] hover:shadow-[0_12px_48px_rgba(129,236,255,0.4)] transition-all hover:-translate-y-1 active:scale-95"
+              className="rounded-lg bg-gradient-to-r from-primary to-secondary px-8 py-4 font-bold text-surface shadow-[0_8px_32px_rgba(129,236,255,0.25)] transition-all hover:-translate-y-1 hover:shadow-[0_12px_48px_rgba(129,236,255,0.4)] active:scale-95"
             >
-              启动训练控制台
+              {hero.primaryAction}
             </button>
-            <button className="px-8 py-4 bg-surface-container-highest/50 backdrop-blur-md border border-outline-variant/30 text-on-surface font-bold rounded-lg hover:bg-surface-container-highest transition-all active:scale-95">
-              查看技术架构
+            <button className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-8 py-4 font-bold text-on-surface transition-all hover:bg-surface-container-highest active:scale-95">
+              {hero.secondaryAction}
             </button>
           </motion.div>
         </div>
       </section>
 
-      {/* Flow Visualization */}
       <section className="w-full">
-        <div className="flex flex-col items-start mb-16">
-          <h2 className="text-3xl font-bold font-headline mb-4">系统流程可视化</h2>
-          <div className="w-16 h-1 bg-primary"></div>
+        <div className="mb-16 flex flex-col items-start">
+          <h2 className="mb-4 text-3xl font-bold">系统流程可视化</h2>
+          <div className="h-1 w-16 bg-primary" />
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-center relative">
-          {/* Client Nodes */}
-          <div className="col-span-1 space-y-4">
-            <div className="p-6 rounded-xl bg-surface-container-low border border-outline-variant/10 text-center">
-              <MonitorSmartphone className="text-primary w-10 h-10 mx-auto mb-2" />
-              <div className="text-sm font-bold">联邦客户端 A</div>
-            </div>
-            <div className="p-6 rounded-xl bg-surface-container-low border border-outline-variant/10 text-center">
-              <MonitorSmartphone className="text-primary w-10 h-10 mx-auto mb-2" />
-              <div className="text-sm font-bold">联邦客户端 B</div>
-            </div>
-            <div className="p-6 rounded-xl bg-surface-container-low border border-outline-variant/10 text-center opacity-50">
-              <MonitorSmartphone className="text-primary w-10 h-10 mx-auto mb-2" />
-              <div className="text-sm font-bold">... (客户端 N)</div>
-            </div>
-          </div>
-          
-          {/* Connectors 1 */}
-          <div className="hidden lg:flex justify-center">
-            <ArrowRight className="text-outline-variant/40 w-12 h-12" />
-          </div>
-          
-          {/* Aggregator/Red/Green Center */}
-          <div className="col-span-1 lg:col-span-1 flex flex-col gap-6">
-            <div className="relative p-8 rounded-2xl bg-surface-container-highest border-2 border-primary/20 shadow-2xl overflow-hidden group">
-              <div className="absolute top-0 right-0 p-2 opacity-20">
-                <Cloud className="w-16 h-16" />
+        <div className="relative grid grid-cols-1 items-center gap-4 lg:grid-cols-5">
+          <div className="space-y-4">
+            {flow.clients.map((client, index) => (
+              <div
+                key={client.title}
+                className={`rounded-xl border border-outline-variant/10 bg-surface-container-low p-6 text-center ${
+                  index === flow.clients.length - 1 ? 'opacity-60' : ''
+                }`}
+              >
+                <MonitorSmartphone className="mx-auto mb-2 h-10 w-10 text-primary" />
+                <div className="text-sm font-bold">{client.title}</div>
+                <div className="mt-1 text-xs text-on-surface-variant">{client.subtitle}</div>
               </div>
-              <h3 className="text-lg font-bold mb-2 text-primary">聚合服务器</h3>
-              <p className="text-xs text-on-surface-variant">模型参数全局聚合</p>
+            ))}
+          </div>
+
+          <div className="hidden justify-center lg:flex">
+            <ArrowRight className="h-12 w-12 text-outline-variant/40" />
+          </div>
+
+          <div className="flex flex-col gap-6">
+            <div className="group relative overflow-hidden rounded-2xl border-2 border-primary/20 bg-surface-container-highest p-8 shadow-2xl">
+              <div className="absolute right-0 top-0 p-2 opacity-20">
+                <Cloud className="h-16 w-16" />
+              </div>
+              <h3 className="mb-2 text-lg font-bold text-primary">{flow.aggregator.title}</h3>
+              <p className="text-xs text-on-surface-variant">{flow.aggregator.subtitle}</p>
             </div>
-            
-            {/* Red Team Tag */}
-            <div className="p-4 rounded-xl bg-error/10 border border-error/30 flex items-center gap-3">
-              <Swords className="text-error w-6 h-6" />
+
+            <div className="flex items-center gap-3 rounded-xl border border-error/30 bg-error/10 p-4">
+              <Swords className="h-6 w-6 text-error" />
               <div>
-                <div className="text-xs font-bold text-error">红军攻击模拟</div>
-                <div className="text-[10px] opacity-60 text-on-surface">数据投毒 / 模型投毒</div>
+                <div className="text-xs font-bold text-error">{flow.attack.title}</div>
+                <div className="text-[10px] text-on-surface opacity-60">{flow.attack.subtitle}</div>
               </div>
             </div>
-            
-            {/* Green Team Tag */}
-            <div className="p-4 rounded-xl bg-tertiary/10 border border-tertiary/30 flex items-center gap-3">
-              <Shield className="text-tertiary w-6 h-6" />
+
+            <div className="flex items-center gap-3 rounded-xl border border-tertiary/30 bg-tertiary/10 p-4">
+              <Shield className="h-6 w-6 text-tertiary" />
               <div>
-                <div className="text-xs font-bold text-tertiary">绿军防御加固</div>
-                <div className="text-[10px] opacity-60 text-on-surface">异常检测 / 安全聚合</div>
+                <div className="text-xs font-bold text-tertiary">{flow.defense.title}</div>
+                <div className="text-[10px] text-on-surface opacity-60">{flow.defense.subtitle}</div>
               </div>
             </div>
           </div>
-          
-          {/* Connectors 2 */}
-          <div className="hidden lg:flex justify-center">
-            <ArrowRight className="text-outline-variant/40 w-12 h-12" />
+
+          <div className="hidden justify-center lg:flex">
+            <ArrowRight className="h-12 w-12 text-outline-variant/40" />
           </div>
-          
-          {/* Result Panel */}
-          <div className="col-span-1 lg:col-span-1 h-full">
-            <div className="p-8 rounded-2xl bg-surface-container-high border border-primary/10 h-full flex flex-col justify-center">
-              <h3 className="text-lg font-bold mb-4">实时评估输出</h3>
+
+          <div className="h-full">
+            <div className="flex h-full flex-col justify-center rounded-2xl border border-primary/10 bg-surface-container-high p-8">
+              <h3 className="mb-4 text-lg font-bold">{flow.output.title}</h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs opacity-60">效能评分</span>
-                  <span className="text-primary font-bold">98.4%</span>
+                  <span className="text-xs opacity-60">{flow.output.scoreLabel}</span>
+                  <span className="font-bold text-primary">{flow.output.scoreValue}</span>
                 </div>
-                <div className="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-primary h-full w-[98%]"></div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-container">
+                  <div className="h-full w-[98%] bg-primary" />
                 </div>
-                <div className="flex items-center justify-between mt-4">
-                  <span className="text-xs opacity-60">防御延迟</span>
-                  <span className="text-tertiary font-bold">12ms</span>
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-xs opacity-60">{flow.output.latencyLabel}</span>
+                  <span className="font-bold text-tertiary">{flow.output.latencyValue}</span>
                 </div>
               </div>
             </div>
@@ -162,134 +170,119 @@ export const Home: React.FC<HomeProps> = ({ onPageChange }) => {
         </div>
       </section>
 
-      {/* Key Highlights */}
       <section className="w-full">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Card 1 */}
-          <div className="p-10 rounded-3xl bg-surface-container-low border border-outline-variant/10 hover:border-primary/30 transition-all duration-500 group">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
-              <Network className="text-primary w-8 h-8" />
-            </div>
-            <h3 className="text-2xl font-bold mb-4 font-headline text-on-surface">联邦学习框架</h3>
-            <p className="text-on-surface-variant leading-relaxed">
-              基于FedAvg与个性化联邦算法，支持千万级异构数据的高效协同训练，确保原始数据不出本地。
-            </p>
-          </div>
-          
-          {/* Card 2 */}
-          <div className="p-10 rounded-3xl bg-surface-container-low border border-outline-variant/10 hover:border-error/30 transition-all duration-500 group">
-            <div className="w-14 h-14 rounded-2xl bg-error/10 flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
-              <Microscope className="text-error w-8 h-8" />
-            </div>
-            <h3 className="text-2xl font-bold mb-4 font-headline text-on-surface">攻击模拟</h3>
-            <p className="text-on-surface-variant leading-relaxed">
-              集成Sybil攻击、洗钱式投毒等前沿攻防脚本，一键构建极端对抗实验环境。
-            </p>
-          </div>
-          
-          {/* Card 3 */}
-          <div className="p-10 rounded-3xl bg-surface-container-low border border-outline-variant/10 hover:border-tertiary/30 transition-all duration-500 group">
-            <div className="w-14 h-14 rounded-2xl bg-tertiary/10 flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
-              <ShieldCheck className="text-tertiary w-8 h-8" />
-            </div>
-            <h3 className="text-2xl font-bold mb-4 font-headline text-on-surface">防御评估</h3>
-            <p className="text-on-surface-variant leading-relaxed">
-              多维度防御策略池，通过鲁棒性增益、效能损耗等5大关键指标进行量化评估。
-            </p>
-          </div>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
+          {highlights.map((highlight) => {
+            const tone = highlightToneClasses[highlight.tone];
+            const icon =
+              highlight.tone === 'primary' ? (
+                <Network className="h-8 w-8" />
+              ) : highlight.tone === 'error' ? (
+                <Microscope className="h-8 w-8" />
+              ) : (
+                <ShieldCheck className="h-8 w-8" />
+              );
+
+            return (
+              <div
+                key={highlight.title}
+                className={`group rounded-3xl border border-outline-variant/10 bg-surface-container-low p-10 transition-all duration-500 ${tone.border}`}
+              >
+                <div className={`mb-8 flex h-14 w-14 items-center justify-center rounded-2xl ${tone.badge} transition-transform group-hover:scale-110`}>
+                  {icon}
+                </div>
+                <h3 className="mb-4 text-2xl font-bold text-on-surface">{highlight.title}</h3>
+                <p className="leading-relaxed text-on-surface-variant">{highlight.description}</p>
+              </div>
+            );
+          })}
         </div>
       </section>
 
-      {/* Representative Results */}
       <section className="w-full">
-        <div className="flex flex-col md:flex-row items-end justify-between mb-16 gap-6">
+        <div className="mb-16 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-3xl font-bold font-headline mb-4">实验效能快照</h2>
-            <p className="text-on-surface-variant">当前正在运行的联邦推荐模型对比分析结果</p>
+            <h2 className="mb-4 text-3xl font-bold">实验效能快照</h2>
+            <p className="text-on-surface-variant">固定展示代表性联邦推荐安全实验结果，便于比赛现场快速讲解。</p>
           </div>
-          <div className="flex gap-4">
-            <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-lg text-xs">
-              <span className="w-3 h-3 rounded-full bg-outline-variant"></span> 基准模型
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-lg text-xs">
-              <span className="w-3 h-3 rounded-full bg-error"></span> 受攻击模型
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-lg text-xs">
-              <span className="w-3 h-3 rounded-full bg-tertiary"></span> 防御后模型
-            </div>
+          <div className="flex flex-wrap gap-4 text-xs">
+            {capabilities.map((capability) => (
+              <div key={capability.label} className="rounded-lg bg-surface-container-high px-4 py-2">
+                <span className="text-on-surface-variant">{capability.label}：</span>
+                <span className="text-on-surface">{capability.value}</span>
+              </div>
+            ))}
           </div>
         </div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Metric 1 */}
-          <div className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/10 flex flex-col justify-between">
-            <div className="text-sm font-medium text-on-surface-variant uppercase tracking-widest mb-4">Recall @ 20</div>
-            <div className="text-4xl font-bold font-headline text-primary">0.2481</div>
-            <div className="mt-4 flex items-center gap-2 text-tertiary text-xs">
-              <TrendingUp className="w-4 h-4" />
-              <span>+12.4% vs Baseline</span>
-            </div>
-          </div>
-          
-          {/* Metric 2 */}
-          <div className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/10 flex flex-col justify-between">
-            <div className="text-sm font-medium text-on-surface-variant uppercase tracking-widest mb-4">NDCG @ 20</div>
-            <div className="text-4xl font-bold font-headline text-primary">0.1856</div>
-            <div className="mt-4 flex items-center gap-2 text-tertiary text-xs">
-              <TrendingUp className="w-4 h-4" />
-              <span>+8.7% vs Baseline</span>
-            </div>
-          </div>
-          
-          {/* Comparison Chart (CSS Based) */}
-          <div className="lg:col-span-2 p-8 rounded-2xl bg-surface-container-low border border-outline-variant/10 relative overflow-hidden flex flex-col">
-            <div className="flex items-end justify-around h-48 gap-4 mb-4 flex-1">
-              {/* Baseline */}
-              <div className="flex flex-col items-center flex-1 h-full justify-end">
-                <div className="w-full max-w-[80px] bg-outline-variant/20 rounded-t-lg transition-all" style={{ height: '70%' }}></div>
-                <div className="mt-2 text-[10px] text-on-surface-variant">Baseline</div>
-              </div>
-              {/* Attack */}
-              <div className="flex flex-col items-center flex-1 h-full justify-end">
-                <div className="w-full max-w-[80px] bg-error/40 rounded-t-lg transition-all" style={{ height: '35%' }}></div>
-                <div className="mt-2 text-[10px] text-error">Attacked</div>
-              </div>
-              {/* Defense */}
-              <div className="flex flex-col items-center flex-1 h-full justify-end">
-                <div className="w-full max-w-[80px] bg-tertiary/60 rounded-t-lg transition-all" style={{ height: '65%' }}></div>
-                <div className="mt-2 text-[10px] text-tertiary">Defended</div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
+          {snapshotMetrics.map((metric) => (
+            <div
+              key={metric.key}
+              className="flex flex-col justify-between rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8"
+            >
+              <div className="mb-4 text-sm font-medium uppercase tracking-widest text-on-surface-variant">{metric.title}</div>
+              <div className="text-4xl font-bold text-primary">{metric.value}</div>
+              <div className="mt-4 flex items-center gap-2 text-xs text-tertiary">
+                <TrendingUp className="h-4 w-4" />
+                <span>{metric.trend}</span>
               </div>
             </div>
-            <div className="text-xs text-center text-on-surface-variant italic">
-              对抗环境下各阶段模型推荐效能对比 (NDCG 指标)
+          ))}
+
+          <div className="relative flex flex-col overflow-hidden rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8 lg:col-span-2">
+            <div className="mb-4 flex flex-1 items-end justify-around gap-4">
+              {snapshotChart.map((point, index) => {
+                const toneClass =
+                  index === 0 ? 'bg-outline-variant/20' : index === 1 ? 'bg-error/40' : 'bg-tertiary/60';
+                const labelClass =
+                  index === 0 ? 'text-on-surface-variant' : index === 1 ? 'text-error' : 'text-tertiary';
+
+                return (
+                  <div key={point.label} className="flex h-full flex-1 flex-col items-center justify-end">
+                    <div
+                      className={`w-full max-w-[80px] rounded-t-lg transition-all ${toneClass}`}
+                      style={{height: `${point.value}%`}}
+                    />
+                    <div className={`mt-2 text-[10px] ${labelClass}`}>{point.label}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-center text-xs italic text-on-surface-variant">
+              对抗环境下各阶段模型推荐效能对比（NDCG 指标）
             </div>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="mt-auto py-12 border-t border-outline-variant/20 bg-surface-container-low/50 -mx-8 px-8">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-8">
+      <footer className="-mx-8 mt-auto border-t border-outline-variant/20 bg-surface-container-low/50 px-8 py-12">
+        <div className="flex flex-col items-center justify-between gap-8 md:flex-row">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded bg-primary/20 flex items-center justify-center">
-              <Shield className="text-primary w-5 h-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded bg-primary/20">
+              <Shield className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <span className="font-headline font-bold text-lg">联邦推荐平台</span>
-              <p className="text-xs text-on-surface-variant">© 2024 Federated Security Lab. All rights reserved.</p>
+              <span className="text-lg font-bold">联邦推荐安全平台</span>
+              <p className="text-xs text-on-surface-variant">© 2026 Federated Security Lab. All rights reserved.</p>
             </div>
           </div>
           <div className="flex gap-8 text-sm text-on-surface-variant">
-            <a href="#" className="hover:text-primary transition-colors">技术文档</a>
-            <a href="#" className="hover:text-primary transition-colors">隐私政策</a>
-            <a href="#" className="hover:text-primary transition-colors">开源协议</a>
+            <a href="#" className="transition-colors hover:text-primary">
+              技术文档
+            </a>
+            <a href="#" className="transition-colors hover:text-primary">
+              隐私政策
+            </a>
+            <a href="#" className="transition-colors hover:text-primary">
+              开源协议
+            </a>
           </div>
         </div>
       </footer>
 
-      {/* FAB */}
-      <button className="fixed bottom-8 right-8 w-14 h-14 bg-primary text-surface rounded-full shadow-[0_0_20px_rgba(129,236,255,0.4)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50">
-        <Plus className="w-6 h-6" />
+      <button className="fixed bottom-8 right-8 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-surface shadow-[0_0_20px_rgba(129,236,255,0.4)] transition-all hover:scale-110 active:scale-95">
+        <Plus className="h-6 w-6" />
       </button>
     </div>
   );

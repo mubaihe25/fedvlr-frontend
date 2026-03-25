@@ -1,81 +1,188 @@
-import React from 'react';
-import { motion } from 'motion/react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
-import { Layers, ArrowLeftRight, ArrowRight, CheckCircle2, XCircle, MinusCircle, Info, Table, ShieldCheck } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import React, {useEffect, useState} from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {ArrowRight, Layers, ShieldCheck, Table, XCircle} from 'lucide-react';
+import {getComparisonResult} from '../../services/result';
+import {cn} from '../../lib/utils';
+import type {AsyncState} from '../../types/common';
+import type {ComparisonResult} from '../../types/result';
 
-const comparisonData = [
-  { name: 'Baseline', recall: 0.92, ndcg: 0.85, loss: 0.12 },
-  { name: 'Attack', recall: 0.65, ndcg: 0.52, loss: 0.45 },
-  { name: 'Defense', recall: 0.94, ndcg: 0.88, loss: 0.14 },
-];
+interface ComparisonProps {
+  comparisonSelectionIds: string[];
+}
 
-export const Comparison: React.FC = () => {
+const accentClasses = {
+  neutral: {
+    line: 'bg-on-surface-variant',
+    icon: 'text-on-surface-variant',
+    badge: 'bg-on-surface-variant/10 text-on-surface-variant',
+  },
+  danger: {
+    line: 'bg-error',
+    icon: 'text-error',
+    badge: 'bg-error/10 text-error',
+  },
+  tertiary: {
+    line: 'bg-tertiary',
+    icon: 'text-tertiary',
+    badge: 'bg-tertiary/10 text-tertiary',
+  },
+  primary: {
+    line: 'bg-primary',
+    icon: 'text-primary',
+    badge: 'bg-primary/10 text-primary',
+  },
+  secondary: {
+    line: 'bg-secondary',
+    icon: 'text-secondary',
+    badge: 'bg-secondary/10 text-secondary',
+  },
+  info: {
+    line: 'bg-primary',
+    icon: 'text-primary',
+    badge: 'bg-primary/10 text-primary',
+  },
+  success: {
+    line: 'bg-tertiary',
+    icon: 'text-tertiary',
+    badge: 'bg-tertiary/10 text-tertiary',
+  },
+  warning: {
+    line: 'bg-error',
+    icon: 'text-error',
+    badge: 'bg-error/10 text-error',
+  },
+} as const;
+
+export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) => {
+  const [loadState, setLoadState] = useState<AsyncState>('loading');
+  const [comparison, setComparison] = useState<ComparisonResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadComparison = async () => {
+      try {
+        setLoadState('loading');
+        setErrorMessage('');
+        const nextComparison = await getComparisonResult(comparisonSelectionIds);
+        if (!cancelled) {
+          setComparison(nextComparison);
+          setLoadState('success');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setComparison(null);
+          setLoadState('error');
+          setErrorMessage(error instanceof Error ? error.message : '对比结果加载失败。');
+        }
+      }
+    };
+
+    loadComparison();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [comparisonSelectionIds]);
+
+  if (loadState === 'loading') {
+    return (
+      <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-10 text-center text-on-surface-variant">
+        正在加载对比结果...
+      </div>
+    );
+  }
+
+  if (loadState === 'error' || !comparison) {
+    return (
+      <div className="rounded-2xl border border-error/20 bg-error/10 p-10 text-center">
+        <h2 className="text-2xl font-bold text-error">对比分析加载失败</h2>
+        <p className="mt-3 text-sm text-on-surface-variant">{errorMessage || '请稍后重试。'}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 pb-12">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+      <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
         <div>
-          <span className="text-xs font-bold tracking-[0.2em] text-primary uppercase mb-2 block">Multi-Experiment Benchmarking</span>
-          <h3 className="text-4xl font-headline font-bold text-on-background tracking-tight">对比分析 (优化版)</h3>
+          <span className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-primary">Multi-Experiment Benchmarking</span>
+          <h3 className="text-4xl font-bold tracking-tight text-on-background">对比分析</h3>
+          <p className="mt-3 text-sm text-on-surface-variant">
+            {comparisonSelectionIds.length < 2
+              ? '当前展示默认三组样例数据；从历史实验加入对比后，这里会切换为动态组合结果。'
+              : `当前已加载 ${comparisonSelectionIds.length} 条历史实验记录生成的对比结果。`}
+          </p>
         </div>
         <div className="flex gap-3">
-          <button className="px-6 py-2.5 rounded-lg bg-surface-container-high text-on-surface text-sm font-semibold hover:bg-surface-container-highest transition-all flex items-center gap-2">
-            <Layers className="w-4 h-4" />
-            选择实验组
+          <button className="flex items-center gap-2 rounded-lg bg-surface-container-high px-6 py-2.5 text-sm font-semibold text-on-surface transition-all hover:bg-surface-container-highest">
+            <Layers className="h-4 w-4" />
+            已选实验 {comparisonSelectionIds.length || 3} 项
           </button>
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[
-          { label: '基线组 (Baseline)', status: 'Optimal', color: 'on-surface-variant', value: '92.1%', icon: CheckCircle2 },
-          { label: '攻击组 (Label Flip)', status: 'Degraded', color: 'error', value: '65.4%', icon: XCircle },
-          { label: '防御组 (Cyber-Shield)', status: 'Restored', color: 'tertiary', value: '94.2%', icon: ShieldCheck },
-        ].map((group, i) => (
-          <div key={group.label} className="glass-panel p-6 rounded-2xl relative overflow-hidden group">
-            <div className={cn("absolute top-0 left-0 w-1 h-full", i === 0 ? "bg-on-surface-variant" : i === 1 ? "bg-error" : "bg-tertiary")} />
-            <div className="flex justify-between items-start mb-4">
-              <group.icon className={cn("w-6 h-6", i === 0 ? "text-on-surface-variant" : i === 1 ? "text-error" : "text-tertiary")} />
-              <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider", i === 0 ? "bg-on-surface-variant/10 text-on-surface-variant" : i === 1 ? "bg-error/10 text-error" : "bg-tertiary/10 text-tertiary")}>
-                {group.status}
-              </span>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        {comparison.groups.slice(0, 3).map((group, index) => {
+          const accent = accentClasses[group.accent] ?? accentClasses.neutral;
+
+          return (
+            <div key={group.id} className="glass-panel group relative overflow-hidden rounded-2xl p-6">
+              <div className={cn('absolute left-0 top-0 h-full w-1', accent.line)} />
+              <div className="mb-4 flex items-start justify-between">
+                {index === 1 ? (
+                  <XCircle className={cn('h-6 w-6', accent.icon)} />
+                ) : (
+                  <ShieldCheck className={cn('h-6 w-6', accent.icon)} />
+                )}
+                <span className={cn('rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', accent.badge)}>
+                  {group.status}
+                </span>
+              </div>
+              <h4 className="mb-1 text-sm font-bold text-on-surface-variant">{group.name}</h4>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold text-on-surface">{(group.metrics.recall10 * 100).toFixed(1)}%</span>
+                <span className="text-[10px] font-bold uppercase text-on-surface-variant">Recall@10</span>
+              </div>
+              <p className="mt-3 text-xs text-on-surface-variant">
+                攻击：{group.attackLabel} | 防御：{group.defenseLabel}
+              </p>
             </div>
-            <h4 className="text-sm font-bold text-on-surface-variant mb-1">{group.label}</h4>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-headline font-bold text-on-surface">{group.value}</span>
-              <span className="text-[10px] text-on-surface-variant font-bold uppercase">Recall@10</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Metric Comparison Chart */}
-        <div className="lg:col-span-8 glass-panel p-8 rounded-2xl">
-          <div className="flex justify-between items-center mb-12">
-            <h3 className="text-lg font-headline font-bold">核心指标多维对比 (Multi-Metric Comparison)</h3>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="glass-panel rounded-2xl p-8 lg:col-span-8">
+          <div className="mb-12 flex items-center justify-between">
+            <h3 className="text-lg font-bold">核心指标多维对比</h3>
             <div className="flex gap-4">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded bg-primary" />
-                <span className="text-[10px] text-on-surface-variant font-bold">RECALL@10</span>
+                <div className="h-3 w-3 rounded bg-primary" />
+                <span className="text-[10px] font-bold text-on-surface-variant">RECALL@10</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded bg-secondary" />
-                <span className="text-[10px] text-on-surface-variant font-bold">NDCG@10</span>
+                <div className="h-3 w-3 rounded bg-secondary" />
+                <span className="text-[10px] font-bold text-on-surface-variant">NDCG@10</span>
               </div>
             </div>
           </div>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={comparisonData} barGap={12}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1d2730" vertical={false} />
+              <BarChart data={comparison.metricComparison} barGap={12}>
+                <CartesianGrid stroke="#1d2730" strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" stroke="#a5acb4" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis stroke="#a5acb4" fontSize={10} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  cursor={{ fill: '#1d2730' }}
-                  contentStyle={{ backgroundColor: '#121a22', border: '1px solid #1d2730', borderRadius: '8px' }}
-                />
+                <Tooltip contentStyle={{backgroundColor: '#121a22', border: '1px solid #1d2730', borderRadius: '8px'}} cursor={{fill: '#1d2730'}} />
                 <Bar dataKey="recall" fill="#81ecff" radius={[4, 4, 0, 0]} barSize={32} />
                 <Bar dataKey="ndcg" fill="#00affe" radius={[4, 4, 0, 0]} barSize={32} />
               </BarChart>
@@ -83,72 +190,70 @@ export const Comparison: React.FC = () => {
           </div>
         </div>
 
-        {/* Evolution Stage Tracking */}
-        <div className="lg:col-span-4 glass-panel p-8 rounded-2xl flex flex-col">
-          <h3 className="text-sm font-bold text-on-surface-variant uppercase tracking-widest mb-8">演进阶段追踪 (Evolution Stages)</h3>
-          <div className="flex-1 space-y-8 relative">
-            <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-surface-container-highest" />
-            {[
-              { stage: 'Stage 1: Initial Convergence', status: 'Stable', color: 'tertiary' },
-              { stage: 'Stage 2: Attack Injection', status: 'Detected', color: 'error' },
-              { stage: 'Stage 3: Defense Activation', status: 'Active', color: 'primary' },
-              { stage: 'Stage 4: Final Equilibrium', status: 'Reached', color: 'tertiary' },
-            ].map((item, i) => (
-              <div key={item.stage} className="flex gap-6 relative z-10">
-                <div className={cn("w-6 h-6 rounded-full border-4 border-surface flex items-center justify-center", `bg-${item.color}`)}>
-                  <div className="w-1.5 h-1.5 rounded-full bg-surface" />
+        <div className="glass-panel flex flex-col rounded-2xl p-8 lg:col-span-4">
+          <h3 className="mb-8 text-sm font-bold uppercase tracking-widest text-on-surface-variant">演进阶段追踪</h3>
+          <div className="relative flex-1 space-y-8">
+            <div className="absolute bottom-2 left-[11px] top-2 w-0.5 bg-surface-container-highest" />
+            {comparison.stages.map((stage) => {
+              const accent = accentClasses[stage.tone] ?? accentClasses.neutral;
+
+              return (
+                <div key={stage.stage} className="relative z-10 flex gap-6">
+                  <div className={cn('flex h-6 w-6 items-center justify-center rounded-full border-4 border-surface', accent.line)}>
+                    <div className="h-1.5 w-1.5 rounded-full bg-surface" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-on-surface">{stage.stage}</p>
+                    <p className={cn('mt-1 text-[10px] font-bold uppercase tracking-widest', accent.icon)}>{stage.status}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-bold text-on-surface">{item.stage}</p>
-                  <p className={cn("text-[10px] font-bold uppercase tracking-widest mt-1", `text-${item.color}`)}>{item.status}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* Config Matrix */}
-        <div className="lg:col-span-12 glass-panel rounded-2xl overflow-hidden">
-          <div className="px-8 py-6 border-b border-outline-variant/10 flex items-center justify-between bg-surface-container-highest/30">
+        <div className="glass-panel overflow-hidden rounded-2xl lg:col-span-12">
+          <div className="flex items-center justify-between border-b border-outline-variant/10 bg-surface-container-highest/30 px-8 py-6">
             <div className="flex items-center gap-3">
-              <Table className="w-5 h-5 text-primary" />
-              <h3 className="font-headline font-bold">实验配置矩阵 (Configuration Matrix)</h3>
+              <Table className="h-5 w-5 text-primary" />
+              <h3 className="font-bold">实验配置矩阵</h3>
             </div>
-            <button className="text-xs text-primary font-bold flex items-center gap-1 hover:underline">
-              查看完整参数 <ArrowRight className="w-3 h-3" />
+            <button className="flex items-center gap-1 text-xs font-bold text-primary hover:underline">
+              查看完整参数 <ArrowRight className="h-3 w-3" />
             </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="bg-surface-container-highest/50 text-on-surface-variant text-[10px] font-bold uppercase tracking-widest">
-                  <th className="px-8 py-4">实验组</th>
-                  <th className="px-8 py-4">算法模型</th>
-                  <th className="px-8 py-4">攻击策略</th>
-                  <th className="px-8 py-4">防御机制</th>
-                  <th className="px-8 py-4">隐私强度 (ε)</th>
-                  <th className="px-8 py-4">状态</th>
+                <tr className="bg-surface-container-highest/50 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+                  <th className="px-8 py-4">字段</th>
+                  <th className="px-8 py-4">基线</th>
+                  <th className="px-8 py-4">攻击</th>
+                  <th className="px-8 py-4">防御</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/10">
-                {[
-                  { name: 'Baseline_01', model: 'FedAvg', attack: 'None', defense: 'None', privacy: '∞', status: 'Completed' },
-                  { name: 'Attack_LF_20', model: 'FedAvg', attack: 'Label Flip (20%)', defense: 'None', privacy: '∞', status: 'Completed' },
-                  { name: 'Defense_CS_v2', model: 'FedAvg', attack: 'Label Flip (20%)', defense: 'Cyber-Shield v2', privacy: '2.5', status: 'Completed' },
-                ].map((row) => (
-                  <tr key={row.name} className="hover:bg-surface-container-highest/30 transition-colors">
-                    <td className="px-8 py-4 font-mono text-xs text-primary">{row.name}</td>
-                    <td className="px-8 py-4 text-on-surface">{row.model}</td>
+                {comparison.configDiff.map((row) => (
+                  <tr key={row.label} className="transition-colors hover:bg-surface-container-highest/30">
+                    <td className="px-8 py-4 text-primary">{row.label}</td>
+                    <td className="px-8 py-4 text-on-surface">{row.baseline}</td>
                     <td className="px-8 py-4 text-on-surface-variant">{row.attack}</td>
-                    <td className="px-8 py-4 text-on-surface-variant">{row.defense}</td>
-                    <td className="px-8 py-4 font-mono text-tertiary">{row.privacy}</td>
-                    <td className="px-8 py-4">
-                      <span className="px-2 py-0.5 rounded bg-tertiary/10 text-tertiary text-[10px] font-bold uppercase">SUCCESS</span>
-                    </td>
+                    <td className="px-8 py-4 text-tertiary">{row.defense}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div className="glass-panel rounded-2xl p-6 lg:col-span-12">
+          <p className="text-sm leading-relaxed text-on-surface-variant">{comparison.summary}</p>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            {comparison.findings.map((finding) => (
+              <div key={finding} className="rounded-xl bg-surface-container-low p-4 text-sm text-on-surface">
+                {finding}
+              </div>
+            ))}
           </div>
         </div>
       </div>
