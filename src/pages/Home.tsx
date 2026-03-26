@@ -205,8 +205,8 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
       <section className="w-full">
         <div className="mb-16 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="mb-4 text-3xl font-bold">实验效能快照</h2>
-            <p className="text-on-surface-variant">固定展示代表性联邦推荐安全实验结果，便于比赛现场快速讲解。</p>
+            <h2 className="mb-4 text-3xl font-bold">代表性实验结果</h2>
+            <p className="text-on-surface-variant">固定展示代表性联邦推荐安全实验结果，用于说明平台支持的典型输出形式与对比方式。</p>
           </div>
           <div className="flex flex-wrap gap-4 text-xs">
             {capabilities.map((capability) => (
@@ -253,7 +253,7 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
               })}
             </div>
             <div className="text-center text-xs italic text-on-surface-variant">
-              对抗环境下各阶段模型推荐效能对比（NDCG 指标）
+              基线、攻击与防御场景下的推荐性能对比（NDCG）
             </div>
           </div>
         </div>

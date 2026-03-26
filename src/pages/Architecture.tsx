@@ -24,7 +24,7 @@ const architectureLayers = [
   {
     title: '前端展示层',
     description:
-      '负责项目总览、实验配置、运行监控、结果分析、对比分析与历史实验展示，为评审提供可视化交互入口。',
+      '负责项目总览、实验配置、运行监控、结果分析、对比分析与历史实验展示，为评审与演示提供可视化交互入口。',
     icon: Activity,
     accent: 'from-primary/15 to-primary/5',
     iconTone: 'text-primary',
@@ -51,7 +51,7 @@ const flowSteps = [
   {
     title: '步骤 1：配置实验参数',
     description:
-      '在训练控制台中选择数据集、模型、实验模式及攻防参数，形成当前实验配置。',
+      '在训练控制台中选择数据集、模型、实验模式以及攻防参数，形成当前实验配置。',
     icon: Code,
     className: 'col-span-12 lg:col-span-7 bg-surface-container-low',
     iconTone: 'text-primary',
@@ -233,7 +233,7 @@ export const Architecture: React.FC = () => {
             </div>
             <div>
               <h2 className="font-headline text-3xl font-bold text-on-surface">攻防模块插入点</h2>
-              <p className="mt-1 text-sm text-on-surface-variant">围绕关键训练环节预留攻击模拟与防御恢复的位置。</p>
+              <p className="mt-1 text-sm text-on-surface-variant">围绕关键训练环节预留攻击模拟与防御处理的位置。</p>
             </div>
           </div>
 
@@ -255,7 +255,7 @@ export const Architecture: React.FC = () => {
           </div>
 
           <p className="max-w-5xl text-sm leading-7 text-on-surface-variant">
-            平台在联邦训练关键环节中预留攻击与防御模块位置。攻击模块用于模拟恶意客户端引发的异常更新行为，防御模块用于在聚合或更新处理阶段降低异常更新的影响，从而构建“正常训练—攻击退化—防御恢复”的可对比实验链路。
+            平台在联邦训练关键环节中预留攻击与防御模块位置。攻击模块用于模拟恶意客户端发送的异常更新行为，防御模块用于在聚合或更新处理阶段降低异常更新的影响，从而构建“正常训练—攻击退化—防御恢复”的可对比实验链路。
           </p>
         </div>
       </section>
