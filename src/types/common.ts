@@ -39,21 +39,6 @@ export interface CardItem {
   tone?: StatusBadgeType;
 }
 
-export interface TeamMember {
-  name: string;
-  role: string;
-  description: string;
-  image: string;
-  color: string;
-}
-
-export interface TechStackItem {
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-}
-
 export interface ConsoleSessionState {
   activeTaskId: Nullable<string>;
   draftTrainConfig: TrainConfig;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Terminal, Users, Shield, Settings, Bell, UserCircle } from 'lucide-react';
+import { Cpu, Home, Shield, Terminal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { PageType } from '../../types/common';
 
@@ -12,7 +12,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) =
   const navItems = [
     { id: 'home', label: '首页', icon: Home },
     { id: 'console', label: '训练控制台', icon: Terminal },
-    { id: 'team', label: '关于团队', icon: Users },
+    { id: 'team', label: '系统架构', icon: Cpu },
   ];
 
   return (

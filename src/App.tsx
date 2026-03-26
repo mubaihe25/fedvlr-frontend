@@ -100,7 +100,7 @@ const App: React.FC = () => {
       case 'home':
         return 'Cyber Sentinel - 首页';
       case 'team':
-        return '关于团队';
+        return '系统架构';
       case 'console':
         return '训练控制台';
       case 'monitoring':
