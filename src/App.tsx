@@ -1,8 +1,8 @@
 import React, {useState} from 'react';
 import {MainLayout} from './layouts/MainLayout';
 import {mockConfigurationData} from './mock/configuration';
+import {Architecture} from './pages/Architecture';
 import {Home} from './pages/Home';
-import {Team} from './pages/Team';
 import {Console} from './pages/console/Console';
 import {startTrain, type StartTrainResponse} from './services/train';
 import type {ConsoleSessionState, PageType} from './types/common';
@@ -71,8 +71,8 @@ const App: React.FC = () => {
     switch (currentPage) {
       case 'home':
         return <Home onPageChange={setCurrentPage} />;
-      case 'team':
-        return <Team />;
+      case 'architecture':
+        return <Architecture />;
       case 'console':
       case 'monitoring':
       case 'analysis':
@@ -98,8 +98,8 @@ const App: React.FC = () => {
   const getPageTitle = () => {
     switch (currentPage) {
       case 'home':
-        return 'Cyber Sentinel - 首页';
-      case 'team':
+        return '联邦推荐安全实验平台 - 首页';
+      case 'architecture':
         return '系统架构';
       case 'console':
         return '训练控制台';
@@ -112,7 +112,7 @@ const App: React.FC = () => {
       case 'history':
         return '历史实验';
       default:
-        return 'Cyber Sentinel';
+        return '联邦推荐安全实验平台';
     }
   };
 

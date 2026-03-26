@@ -36,7 +36,7 @@ export const mockHomeData = {
     subtitle:
       '面向对抗性攻防的去中心化学习范式，支持联邦训练、攻击模拟、防御评估与对比分析的一体化展示。',
     primaryAction: '启动训练控制台',
-    secondaryAction: '查看技术架构',
+    secondaryAction: '查看系统架构',
     backgroundImage:
       'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2000&auto=format&fit=crop',
   } satisfies HomeHeroData,

@@ -87,7 +87,10 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
             >
               {hero.primaryAction}
             </button>
-            <button className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-8 py-4 font-bold text-on-surface transition-all hover:bg-surface-container-highest active:scale-95">
+            <button
+              onClick={() => onPageChange?.('architecture')}
+              className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-8 py-4 font-bold text-on-surface transition-all hover:bg-surface-container-highest active:scale-95"
+            >
               {hero.secondaryAction}
             </button>
           </motion.div>
@@ -263,20 +266,13 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
               <Shield className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <span className="text-lg font-bold">联邦推荐安全平台</span>
-              <p className="text-xs text-on-surface-variant">© 2026 Federated Security Lab. All rights reserved.</p>
+              <span className="text-lg font-bold">联邦推荐安全实验平台</span>
+              <p className="text-xs text-on-surface-variant">平台演示页面</p>
             </div>
           </div>
           <div className="flex gap-8 text-sm text-on-surface-variant">
-            <a href="#" className="transition-colors hover:text-primary">
-              技术文档
-            </a>
-            <a href="#" className="transition-colors hover:text-primary">
-              隐私政策
-            </a>
-            <a href="#" className="transition-colors hover:text-primary">
-              开源协议
-            </a>
+            <span>联邦训练流程展示</span>
+            <span>结果分析与对比</span>
           </div>
         </div>
       </footer>

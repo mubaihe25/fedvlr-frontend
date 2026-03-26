@@ -107,10 +107,9 @@ const capabilityCards = [
   },
 ];
 
-export const Team: React.FC = () => {
+export const Architecture: React.FC = () => {
   return (
     <div className="space-y-24 pb-24">
-      {/* Historical filename retained to avoid wider routing changes. */}
       <section className="relative pt-12">
         <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-primary/5 blur-[120px]" />
         <div className="max-w-4xl">

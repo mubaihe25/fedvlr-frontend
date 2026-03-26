@@ -1,6 +1,6 @@
 import type {TrainConfig} from './train';
 
-export type PageType = 'home' | 'console' | 'monitoring' | 'analysis' | 'comparison' | 'history' | 'team';
+export type PageType = 'home' | 'console' | 'monitoring' | 'analysis' | 'comparison' | 'history' | 'architecture';
 
 export type Nullable<T> = T | null;
 
