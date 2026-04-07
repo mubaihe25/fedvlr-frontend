@@ -175,6 +175,10 @@ const loadHistoryFromApi = async (): Promise<HistoryListResponse> => {
   const response = await apiGet<ExperimentSummaryListResponse>('/experiments/summaries');
   const records = response.items.map(mapApiSummaryToHistoryRecord);
 
+  if (!records.length) {
+    throw new Error('API returned no experiment summaries');
+  }
+
   apiHistoryCache.clear();
   for (const record of records) {
     apiHistoryCache.set(record.id, record);
