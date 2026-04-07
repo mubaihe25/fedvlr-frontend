@@ -45,6 +45,31 @@ export interface HistoryListResponse {
   total: number;
 }
 
+export interface ExperimentSummaryListItem {
+  experiment_key: string;
+  file_name: string;
+  relative_path: string;
+  experiment_id?: string | null;
+  model?: string | null;
+  dataset?: string | null;
+  experiment_mode?: string | null;
+  scenario_tags?: string[];
+  active_attacks?: string[];
+  active_defenses?: string[];
+  active_privacy_metrics?: string[];
+  final_eval?: {
+    recall20?: number | null;
+    ndcg20?: number | null;
+    loss?: number | null;
+    extra?: Record<string, unknown>;
+  };
+}
+
+export interface ExperimentSummaryListResponse {
+  count: number;
+  items: ExperimentSummaryListItem[];
+}
+
 export interface HistoryFilters {
   period: string;
   model: string;
@@ -61,7 +86,7 @@ export interface HistoryFilterOptions {
 export interface ReuseHistoryResponse {
   success: boolean;
   id: string;
-  taskId: string;
+  taskId: string | null;
   config: TrainConfig;
   message: string;
 }

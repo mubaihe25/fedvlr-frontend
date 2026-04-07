@@ -1,6 +1,13 @@
 export type ExperimentMode = 'baseline' | 'attack' | 'defense' | 'comparison';
 
-export type AttackType = 'none' | 'label-flipping' | 'backdoor' | 'gradient-noise' | 'sybil';
+export type AttackType =
+  | 'none'
+  | 'label-flipping'
+  | 'backdoor'
+  | 'gradient-noise'
+  | 'sybil'
+  | 'client_update_scale'
+  | 'client_preference_leakage_probe';
 
 export type DefenseType =
   | 'none'
@@ -9,7 +16,9 @@ export type DefenseType =
   | 'krum'
   | 'secure-aggregation'
   | 'differential-privacy'
-  | 'cyber-shield';
+  | 'cyber-shield'
+  | 'norm_clip'
+  | 'client_update_anomaly';
 
 export interface TrainAdvancedConfig {
   batchSize: number;

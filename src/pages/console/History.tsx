@@ -53,7 +53,7 @@ export const History: React.FC<HistoryProps> = ({
   const [loadState, setLoadState] = useState<AsyncState>('loading');
   const [records, setRecords] = useState<HistoryRecord[]>([]);
   const [filters, setFilters] = useState<HistoryFilters>(initialFilters);
-  const [selectedId, setSelectedId] = useState<string | null>(mockHistoryData.defaultDetailId);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -114,13 +114,33 @@ export const History: React.FC<HistoryProps> = ({
   const completedCount = records.filter((record) => record.status === 'completed').length;
   const successRate = records.length ? `${Math.round((completedCount / records.length) * 100)}%` : '0%';
 
+  const modelFilterOptions = useMemo(() => {
+    const existing = new Set(mockHistoryData.filterOptions.models.map((option) => option.value));
+    const dynamicOptions = records
+      .map((record) => record.model)
+      .filter((model): model is string => Boolean(model) && !existing.has(model))
+      .map((model) => ({value: model, label: model}));
+
+    return [...mockHistoryData.filterOptions.models, ...dynamicOptions];
+  }, [records]);
+
+  const modeFilterOptions = useMemo(() => {
+    const existing = new Set(mockHistoryData.filterOptions.modes.map((option) => option.value));
+    const dynamicOptions = records
+      .map((record) => record.mode)
+      .filter((mode): mode is HistoryRecord['mode'] => Boolean(mode) && !existing.has(mode))
+      .map((mode) => ({value: mode, label: mode}));
+
+    return [...mockHistoryData.filterOptions.modes, ...dynamicOptions];
+  }, [records]);
+
   const handleResetFilters = () => {
     setFilters(initialFilters);
   };
 
   const handleViewDetail = (record: HistoryRecord) => {
     setSelectedId(record.id);
-    if (record.status === 'completed') {
+    if (record.status === 'completed' && !record.taskId.startsWith('api::')) {
       onOpenAnalysis(record.taskId);
     }
   };
@@ -187,7 +207,7 @@ export const History: React.FC<HistoryProps> = ({
       <div className="mb-10 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
         <div>
           <h1 className="mb-2 text-3xl font-bold tracking-tight text-on-background">历史实验记录</h1>
-          <p className="text-sm text-on-surface-variant">追溯、管理并对比所有已执行的联邦学习安全实验任务。</p>
+          <p className="text-sm text-on-surface-variant">追踪、管理并对比所有已执行的联邦学习安全实验任务。</p>
         </div>
         <div className="flex gap-4">
           <div className="rounded-xl border-l-4 border-primary bg-surface-container px-6 py-3">
@@ -229,7 +249,7 @@ export const History: React.FC<HistoryProps> = ({
                 onChange={(event) => setFilters((current) => ({...current, model: event.target.value}))}
                 className="cursor-pointer bg-transparent text-xs text-on-surface outline-none"
               >
-                {mockHistoryData.filterOptions.models.map((option) => (
+                {modelFilterOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -243,7 +263,7 @@ export const History: React.FC<HistoryProps> = ({
                 onChange={(event) => setFilters((current) => ({...current, mode: event.target.value}))}
                 className="cursor-pointer bg-transparent text-xs text-on-surface outline-none"
               >
-                {mockHistoryData.filterOptions.modes.map((option) => (
+                {modeFilterOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -269,6 +289,31 @@ export const History: React.FC<HistoryProps> = ({
             {filteredRecords.map((record) => {
               const isSelected = record.id === selectedRecord?.id;
               const isCompleted = record.status === 'completed';
+              const isApiRecord = record.id.startsWith('api::');
+              const primaryMetricLabel =
+                record.metrics.recall20 !== undefined
+                  ? 'Recall@20'
+                  : record.metrics.f1Score !== undefined
+                    ? 'F1 Score'
+                    : 'Accuracy';
+              const primaryMetricValue =
+                record.metrics.recall20 !== undefined
+                  ? record.metrics.recall20.toFixed(3)
+                  : record.metrics.f1Score !== undefined
+                    ? record.metrics.f1Score.toFixed(3)
+                    : `${((record.metrics.accuracy ?? 0) * 100).toFixed(1)}%`;
+              const secondaryMetricLabel =
+                record.metrics.ndcg20 !== undefined
+                  ? 'NDCG@20'
+                  : record.metrics.privacyBudget !== undefined
+                    ? '隐私预算'
+                    : 'Loss';
+              const secondaryMetricValue =
+                record.metrics.ndcg20 !== undefined
+                  ? record.metrics.ndcg20.toFixed(3)
+                  : record.metrics.privacyBudget !== undefined
+                    ? `ε=${record.metrics.privacyBudget}`
+                    : (record.metrics.loss ?? 0).toFixed(3);
 
               return (
                 <div
@@ -331,24 +376,12 @@ export const History: React.FC<HistoryProps> = ({
                       ) : (
                         <div className="flex gap-3 sm:justify-end">
                           <div className="flex flex-col sm:items-end">
-                            <span className="text-xs text-on-surface-variant">
-                              {record.metrics.f1Score !== undefined ? 'F1 Score' : 'Accuracy'}
-                            </span>
-                            <span className="text-lg font-bold text-primary">
-                              {record.metrics.f1Score !== undefined
-                                ? record.metrics.f1Score.toFixed(3)
-                                : `${((record.metrics.accuracy ?? 0) * 100).toFixed(1)}%`}
-                            </span>
+                            <span className="text-xs text-on-surface-variant">{primaryMetricLabel}</span>
+                            <span className="text-lg font-bold text-primary">{primaryMetricValue}</span>
                           </div>
                           <div className="flex flex-col sm:items-end">
-                            <span className="text-xs text-on-surface-variant">
-                              {record.metrics.privacyBudget !== undefined ? '隐私预算' : 'Loss'}
-                            </span>
-                            <span className="text-lg font-bold text-secondary">
-                              {record.metrics.privacyBudget !== undefined
-                                ? `ε=${record.metrics.privacyBudget}`
-                                : (record.metrics.loss ?? 0).toFixed(3)}
-                            </span>
+                            <span className="text-xs text-on-surface-variant">{secondaryMetricLabel}</span>
+                            <span className="text-lg font-bold text-secondary">{secondaryMetricValue}</span>
                           </div>
                         </div>
                       )}
@@ -359,11 +392,12 @@ export const History: React.FC<HistoryProps> = ({
                       onClick={() => handleViewDetail(record)}
                       className="flex-1 rounded bg-surface-container-highest py-2 text-[11px] font-bold transition-all hover:bg-primary hover:text-surface"
                     >
-                      {isCompleted ? '查看详情' : '查看记录'}
+                      {isApiRecord ? '查看摘要' : isCompleted ? '查看详情' : '查看记录'}
                     </button>
                     <button
                       onClick={() => onAddComparisonSelection(record.taskId)}
-                      className="flex-1 rounded bg-surface-container-highest py-2 text-[11px] font-bold transition-all hover:bg-secondary hover:text-surface"
+                      disabled={isApiRecord}
+                      className="flex-1 rounded bg-surface-container-highest py-2 text-[11px] font-bold transition-all hover:bg-secondary hover:text-surface disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       加入对比
                     </button>
@@ -440,8 +474,8 @@ export const History: React.FC<HistoryProps> = ({
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface-container-low via-transparent to-transparent" />
                   </div>
                   <div className="mt-2 flex justify-between px-1">
-                    <span className="text-[9px] text-on-surface-variant">Epoch 0</span>
-                    <span className="text-[9px] text-on-surface-variant">Epoch 100</span>
+                    <span className="text-[9px] text-on-surface-variant">Round 1</span>
+                    <span className="text-[9px] text-on-surface-variant">Latest</span>
                   </div>
                 </div>
 
@@ -452,10 +486,11 @@ export const History: React.FC<HistoryProps> = ({
                 <div className="space-y-3 border-t border-outline-variant/10 pt-4">
                   <button
                     onClick={() => handleViewDetail(selectedRecord)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary py-3 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95"
+                    disabled={selectedRecord.id.startsWith('api::')}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary py-3 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
                   >
                     <BarChart2 className="h-5 w-5" />
-                    生成完整分析报告
+                    {selectedRecord.id.startsWith('api::') ? '摘要列表已接入' : '生成完整分析报告'}
                   </button>
                   <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-highest py-3 text-sm font-bold text-on-background transition-all hover:border-primary/50">
                     <Download className="h-5 w-5" />
