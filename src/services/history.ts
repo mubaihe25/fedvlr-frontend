@@ -3,8 +3,11 @@ import {simulateRequest} from './mockAdapter';
 import {mockStore} from './mockStore';
 import {apiGet} from './api';
 import type {
+  ExperimentRoundSummary,
+  ExperimentSummaryDetail,
   ExperimentSummaryListItem,
   ExperimentSummaryListResponse,
+  ExperimentSummaryResponse,
   HistoryListResponse,
   HistoryRecord,
   ReuseHistoryResponse,
@@ -12,6 +15,22 @@ import type {
 import type {AttackType, DefenseType, ExperimentMode, TrainConfig} from '../types/train';
 
 const apiHistoryCache = new Map<string, HistoryRecord>();
+const apiHistorySummaryCache = new Map<string, HistoryRecord>();
+
+interface ApiSummaryShape extends Partial<ExperimentSummaryDetail> {
+  experiment_key: string;
+  file_name: string;
+  relative_path: string;
+  experiment_id?: string | null;
+  model?: string | null;
+  dataset?: string | null;
+  experiment_mode?: string | null;
+  scenario_tags?: string[];
+  active_attacks?: string[];
+  active_defenses?: string[];
+  active_privacy_metrics?: string[];
+  final_eval?: ExperimentSummaryDetail['final_eval'];
+}
 
 const parseExperimentTimestamp = (experimentId?: string | null) => {
   if (!experimentId) {
@@ -25,6 +44,14 @@ const parseExperimentTimestamp = (experimentId?: string | null) => {
 
   const [, year, month, day, hour, minute, second] = match;
   return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+};
+
+const extractExperimentKeyFromRecordId = (recordId: string) => {
+  if (!recordId.startsWith('api::')) {
+    return null;
+  }
+
+  return recordId.slice(5);
 };
 
 const mapExperimentMode = (experimentMode?: string | null): ExperimentMode => {
@@ -68,11 +95,25 @@ const mapDefenseType = (activeDefenses?: string[]): DefenseType => {
   return 'anomaly-detection';
 };
 
-const buildPreviewBars = (summary: ExperimentSummaryListItem) => {
-  const roundSummaries = (summary as {round_summaries?: Array<{test_score?: number | null; valid_score?: number | null}>})
-    .round_summaries;
+const getRoundSummaries = (summary: ApiSummaryShape): ExperimentRoundSummary[] =>
+  Array.isArray(summary.round_summaries) ? summary.round_summaries : [];
 
-  if (Array.isArray(roundSummaries) && roundSummaries.length) {
+const getParticipantCount = (summary: ApiSummaryShape) => {
+  const counts = getRoundSummaries(summary)
+    .map((round) => Number(round.num_participants ?? 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (!counts.length) {
+    return defaultTrainConfig.clientCount;
+  }
+
+  return Math.max(...counts);
+};
+
+const buildPreviewBars = (summary: ApiSummaryShape) => {
+  const roundSummaries = getRoundSummaries(summary);
+
+  if (roundSummaries.length) {
     return roundSummaries.slice(0, 8).map((round) => {
       const value = round.test_score ?? round.valid_score ?? 0;
       return Math.max(12, Math.min(100, Math.round(value * 100)));
@@ -84,20 +125,26 @@ const buildPreviewBars = (summary: ExperimentSummaryListItem) => {
   return [Math.max(12, base - 18), Math.max(16, base - 10), Math.max(20, base - 4), base];
 };
 
-const buildApiHistoryConfig = (summary: ExperimentSummaryListItem): TrainConfig => {
+const buildSummaryText = (summary: ApiSummaryShape) => {
+  const mode = summary.experiment_mode || 'baseline';
+  const scenarioTags = summary.scenario_tags?.length ? summary.scenario_tags.join(' / ') : '未标注';
+  const attackCount = summary.active_attacks?.length ?? 0;
+  const defenseCount = summary.active_defenses?.length ?? 0;
+  const privacyCount = summary.active_privacy_metrics?.length ?? 0;
+  const maliciousCount = summary.malicious_client_summary?.unique_malicious_client_count ?? 0;
+  const recall20 = summary.final_eval?.recall20;
+  const ndcg20 = summary.final_eval?.ndcg20;
+  const roundCount = getRoundSummaries(summary).length;
+
+  return `实验场景：${mode}；场景标签：${scenarioTags}；攻击模块 ${attackCount} 个，防御模块 ${defenseCount} 个，隐私观测 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
+};
+
+const buildApiHistoryConfig = (summary: ApiSummaryShape): TrainConfig => {
   const mode = mapExperimentMode(summary.experiment_mode);
   const attackType = mapAttackType(summary.active_attacks);
   const defenseType = mapDefenseType(summary.active_defenses);
-  const participantCount = Math.max(
-    1,
-    Number(
-      (
-        summary as {
-          round_summaries?: Array<{num_participants?: number | null}>;
-        }
-      ).round_summaries?.[0]?.num_participants ?? defaultTrainConfig.clientCount,
-    ),
-  );
+  const participantCount = getParticipantCount(summary);
+  const roundSummaries = getRoundSummaries(summary);
 
   return {
     ...defaultTrainConfig,
@@ -110,22 +157,19 @@ const buildApiHistoryConfig = (summary: ExperimentSummaryListItem): TrainConfig 
     defenseType,
     clientCount: participantCount,
     clientSamplingRate: 1,
-    totalRounds:
-      (
-        summary as {
-          round_summaries?: unknown[];
-        }
-      ).round_summaries?.length || defaultTrainConfig.totalRounds,
-    poisoningRatio: Number(summary.final_eval?.loss ? 0.2 : defaultTrainConfig.poisoningRatio),
+    totalRounds: roundSummaries.length || defaultTrainConfig.totalRounds,
+    poisoningRatio: summary.malicious_client_summary?.ratio ?? defaultTrainConfig.poisoningRatio,
   };
 };
 
-const mapApiSummaryToHistoryRecord = (summary: ExperimentSummaryListItem): HistoryRecord => {
+const mapApiSummaryToHistoryRecord = (summary: ApiSummaryShape): HistoryRecord => {
   const config = buildApiHistoryConfig(summary);
+  const roundSummaries = getRoundSummaries(summary);
   const attackType = config.attackType;
   const defenseType = config.defenseType;
   const recall20 = summary.final_eval?.recall20 ?? undefined;
   const ndcg20 = summary.final_eval?.ndcg20 ?? undefined;
+  const lastRound = roundSummaries[roundSummaries.length - 1];
 
   return {
     id: `api::${summary.experiment_key}`,
@@ -141,7 +185,7 @@ const mapApiSummaryToHistoryRecord = (summary: ExperimentSummaryListItem): Histo
       learningRate: config.learningRate,
       clientSamplingRate: config.clientSamplingRate,
       localEpochs: config.advanced.localEpochs,
-      totalRounds: config.totalRounds,
+      totalRounds: roundSummaries.length || config.totalRounds,
       clientCount: config.clientCount,
       optimizer: config.advanced.optimizer,
       poisoningRatio: config.poisoningRatio,
@@ -152,7 +196,7 @@ const mapApiSummaryToHistoryRecord = (summary: ExperimentSummaryListItem): Histo
       recall20,
       ndcg10: ndcg20,
       ndcg20,
-      loss: summary.final_eval?.loss ?? undefined,
+      loss: summary.final_eval?.loss ?? lastRound?.avg_train_loss ?? undefined,
     },
     status: 'completed',
     config,
@@ -166,14 +210,17 @@ const mapApiSummaryToHistoryRecord = (summary: ExperimentSummaryListItem): Histo
       learningRate: config.learningRate,
       localEpochs: config.advanced.localEpochs,
     },
-    summary: `实验场景：${summary.experiment_mode || 'baseline'}；攻击模块 ${summary.active_attacks?.length || 0} 个，防御模块 ${summary.active_defenses?.length || 0} 个。`,
+    summary: buildSummaryText(summary),
     previewBars: buildPreviewBars(summary),
   };
 };
 
 const loadHistoryFromApi = async (): Promise<HistoryListResponse> => {
   const response = await apiGet<ExperimentSummaryListResponse>('/experiments/summaries');
-  const records = response.items.map(mapApiSummaryToHistoryRecord);
+  const records = response.items.map((summary) => {
+    const recordId = `api::${summary.experiment_key}`;
+    return apiHistorySummaryCache.get(recordId) ?? mapApiSummaryToHistoryRecord(summary);
+  });
 
   if (!records.length) {
     throw new Error('API returned no experiment summaries');
@@ -190,6 +237,26 @@ const loadHistoryFromApi = async (): Promise<HistoryListResponse> => {
   };
 };
 
+const loadHistorySummaryFromApi = async (recordId: string): Promise<HistoryRecord> => {
+  const experimentKey = extractExperimentKeyFromRecordId(recordId);
+  if (!experimentKey) {
+    throw new Error(`Record ${recordId} is not an API-backed history item`);
+  }
+
+  const response = await apiGet<ExperimentSummaryResponse>(`/experiments/${encodeURIComponent(experimentKey)}/summary`);
+  const record = mapApiSummaryToHistoryRecord({
+    experiment_key: response.experiment_key,
+    file_name: response.file_name,
+    relative_path: response.relative_path,
+    ...response.summary,
+  });
+
+  apiHistorySummaryCache.set(record.id, record);
+  apiHistoryCache.set(record.id, record);
+
+  return record;
+};
+
 export const getHistoryList = async (): Promise<HistoryListResponse> => {
   try {
     return await loadHistoryFromApi();
@@ -204,9 +271,31 @@ export const getHistoryList = async (): Promise<HistoryListResponse> => {
   }
 };
 
+export const getHistorySummaryPreview = async (id: string): Promise<HistoryRecord> => {
+  const cachedApiRecord = apiHistorySummaryCache.get(id);
+  if (cachedApiRecord) {
+    return structuredClone(cachedApiRecord);
+  }
+
+  if (id.startsWith('api::')) {
+    const record = await loadHistorySummaryFromApi(id);
+    return structuredClone(record);
+  }
+
+  return simulateRequest(() => {
+    const record = mockStore.getHistoryRecord(id);
+    if (!record) {
+      throw new Error(`未找到历史实验 ${id}`);
+    }
+
+    return record;
+  });
+};
+
 export const deleteHistory = async (id: string): Promise<{success: boolean; id: string}> => {
   return simulateRequest(() => {
     apiHistoryCache.delete(id);
+    apiHistorySummaryCache.delete(id);
     mockStore.deleteHistoryRecord(id);
     return {success: true, id};
   });
@@ -214,7 +303,7 @@ export const deleteHistory = async (id: string): Promise<{success: boolean; id: 
 
 export const reuseHistoryConfig = async (id: string): Promise<ReuseHistoryResponse> => {
   return simulateRequest(() => {
-    const apiRecord = apiHistoryCache.get(id);
+    const apiRecord = apiHistorySummaryCache.get(id) ?? apiHistoryCache.get(id);
     if (apiRecord) {
       return {
         success: true,

@@ -70,6 +70,64 @@ export interface ExperimentSummaryListResponse {
   items: ExperimentSummaryListItem[];
 }
 
+export interface ExperimentRoundPipelineInfo {
+  active_attacks?: string[];
+  active_defenses?: string[];
+  active_privacy_metrics?: string[];
+  experiment_mode?: string | null;
+  scenario_tags?: string[];
+  malicious_client_count?: number | null;
+}
+
+export interface ExperimentRoundSummary {
+  round_id: number;
+  num_participants?: number | null;
+  avg_train_loss?: number | null;
+  valid_score?: number | null;
+  test_score?: number | null;
+  malicious_client_count?: number | null;
+  attacked_client_count?: number | null;
+  clipped_client_count?: number | null;
+  pipeline_info?: ExperimentRoundPipelineInfo;
+}
+
+export interface ExperimentMaliciousClientSummary {
+  enabled?: boolean;
+  mode?: string | null;
+  ratio?: number | null;
+  configured_client_ids?: string[];
+  unique_malicious_clients?: string[];
+  unique_malicious_client_count?: number | null;
+  rounds_with_malicious_clients?: number | null;
+  max_round_malicious_client_count?: number | null;
+}
+
+export interface ExperimentSummaryDetail {
+  experiment_id?: string | null;
+  model?: string | null;
+  dataset?: string | null;
+  experiment_mode?: string | null;
+  scenario_tags?: string[];
+  active_attacks?: string[];
+  active_defenses?: string[];
+  active_privacy_metrics?: string[];
+  malicious_client_summary?: ExperimentMaliciousClientSummary;
+  final_eval?: {
+    recall20?: number | null;
+    ndcg20?: number | null;
+    loss?: number | null;
+    extra?: Record<string, unknown>;
+  };
+  round_summaries?: ExperimentRoundSummary[];
+}
+
+export interface ExperimentSummaryResponse {
+  experiment_key: string;
+  file_name: string;
+  relative_path: string;
+  summary: ExperimentSummaryDetail;
+}
+
 export interface HistoryFilters {
   period: string;
   model: string;

@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import {cn} from '../../lib/utils';
-import {deleteHistory, getHistoryList, reuseHistoryConfig} from '../../services/history';
+import {deleteHistory, getHistoryList, getHistorySummaryPreview, reuseHistoryConfig} from '../../services/history';
 import {mockHistoryData} from '../../mock/history';
 import type {AsyncState} from '../../types/common';
 import type {HistoryFilters, HistoryRecord} from '../../types/history';
@@ -56,6 +56,9 @@ export const History: React.FC<HistoryProps> = ({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [previewState, setPreviewState] = useState<AsyncState>('idle');
+  const [previewRecord, setPreviewRecord] = useState<HistoryRecord | null>(null);
+  const [previewErrorMessage, setPreviewErrorMessage] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -111,8 +114,50 @@ export const History: React.FC<HistoryProps> = ({
   }, [filteredRecords, selectedId]);
 
   const selectedRecord = filteredRecords.find((record) => record.id === selectedId) ?? filteredRecords[0] ?? null;
+  const previewTarget = previewRecord?.id === selectedRecord?.id ? previewRecord : selectedRecord;
   const completedCount = records.filter((record) => record.status === 'completed').length;
   const successRate = records.length ? `${Math.round((completedCount / records.length) * 100)}%` : '0%';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!selectedRecord) {
+      setPreviewRecord(null);
+      setPreviewState('idle');
+      setPreviewErrorMessage('');
+      return;
+    }
+
+    setPreviewRecord(selectedRecord);
+    setPreviewErrorMessage('');
+
+    if (!selectedRecord.id.startsWith('api::')) {
+      setPreviewState('success');
+      return;
+    }
+
+    const loadPreview = async () => {
+      try {
+        setPreviewState('loading');
+        const record = await getHistorySummaryPreview(selectedRecord.id);
+        if (!cancelled) {
+          setPreviewRecord(record);
+          setPreviewState('success');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPreviewState('error');
+          setPreviewErrorMessage(error instanceof Error ? error.message : '摘要加载失败，已回退到列表摘要。');
+        }
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRecord?.id]);
 
   const modelFilterOptions = useMemo(() => {
     const existing = new Set(mockHistoryData.filterOptions.models.map((option) => option.value));
@@ -435,28 +480,39 @@ export const History: React.FC<HistoryProps> = ({
               </button>
             </div>
 
-            {selectedRecord ? (
+            {previewTarget ? (
               <div className="space-y-6">
+                {selectedRecord?.id.startsWith('api::') && previewState === 'loading' ? (
+                  <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-primary">
+                    正在同步该实验的真实摘要详情...
+                  </div>
+                ) : null}
+                {selectedRecord?.id.startsWith('api::') && previewState === 'error' ? (
+                  <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-xs text-warning">
+                    {previewErrorMessage || '真实摘要加载失败，当前展示列表级摘要。'}
+                  </div>
+                ) : null}
+
                 <div>
                   <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">配置参数摘要</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-lg border border-outline-variant/5 bg-surface-container-low p-3">
                       <p className="mb-1 text-[10px] text-on-surface-variant">学习率</p>
-                      <p className="text-xs font-bold">{selectedRecord.keyParams.learningRate}</p>
+                      <p className="text-xs font-bold">{previewTarget.keyParams.learningRate}</p>
                     </div>
                     <div className="rounded-lg border border-outline-variant/5 bg-surface-container-low p-3">
                       <p className="mb-1 text-[10px] text-on-surface-variant">本地轮数</p>
-                      <p className="text-xs font-bold">{selectedRecord.keyParams.localEpochs}</p>
+                      <p className="text-xs font-bold">{previewTarget.keyParams.localEpochs}</p>
                     </div>
                     <div className="rounded-lg border border-outline-variant/5 bg-surface-container-low p-3">
                       <p className="mb-1 text-[10px] text-on-surface-variant">差分隐私</p>
                       <p className="text-xs font-bold text-tertiary">
-                        {selectedRecord.keyParams.privacyBudget ? `ε=${selectedRecord.keyParams.privacyBudget}` : '未启用'}
+                        {previewTarget.keyParams.privacyBudget ? `ε=${previewTarget.keyParams.privacyBudget}` : '未启用'}
                       </p>
                     </div>
                     <div className="rounded-lg border border-outline-variant/5 bg-surface-container-low p-3">
                       <p className="mb-1 text-[10px] text-on-surface-variant">优化器</p>
-                      <p className="text-xs font-bold">{selectedRecord.keyParams.optimizer ?? 'AdamW'}</p>
+                      <p className="text-xs font-bold">{previewTarget.keyParams.optimizer ?? 'AdamW'}</p>
                     </div>
                   </div>
                 </div>
@@ -464,9 +520,9 @@ export const History: React.FC<HistoryProps> = ({
                 <div>
                   <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">收敛曲线预览</p>
                   <div className="relative flex h-32 items-end gap-1 overflow-hidden rounded-xl border border-outline-variant/5 bg-surface-container-low px-2 pb-2">
-                    {selectedRecord.previewBars.map((height, index) => (
+                    {previewTarget.previewBars.map((height, index) => (
                       <div
-                        key={`${selectedRecord.id}-${index}`}
+                        key={`${previewTarget.id}-${index}`}
                         className="flex-1 rounded-t-sm bg-primary/60"
                         style={{height: `${height}%`}}
                       />
@@ -480,17 +536,17 @@ export const History: React.FC<HistoryProps> = ({
                 </div>
 
                 <div className="rounded-xl bg-surface-container-low p-4 text-sm text-on-surface-variant">
-                  {selectedRecord.summary}
+                  {previewTarget.summary}
                 </div>
 
                 <div className="space-y-3 border-t border-outline-variant/10 pt-4">
                   <button
-                    onClick={() => handleViewDetail(selectedRecord)}
-                    disabled={selectedRecord.id.startsWith('api::')}
+                    onClick={() => handleViewDetail(previewTarget)}
+                    disabled={previewTarget.id.startsWith('api::')}
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary py-3 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
                   >
                     <BarChart2 className="h-5 w-5" />
-                    {selectedRecord.id.startsWith('api::') ? '摘要列表已接入' : '生成完整分析报告'}
+                    {previewTarget.id.startsWith('api::') ? '摘要列表已接入' : '生成完整分析报告'}
                   </button>
                   <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-highest py-3 text-sm font-bold text-on-background transition-all hover:border-primary/50">
                     <Download className="h-5 w-5" />
