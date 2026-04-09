@@ -38,6 +38,7 @@ export interface HistoryRecord {
   configSummary: ResultConfigSummary;
   summary?: string;
   previewBars: number[];
+  detailLevel?: 'list' | 'summary' | 'result';
 }
 
 export interface HistoryListResponse {
@@ -126,6 +127,76 @@ export interface ExperimentSummaryResponse {
   file_name: string;
   relative_path: string;
   summary: ExperimentSummaryDetail;
+}
+
+export interface ExperimentRoundAttackMetrics {
+  attacked_client_count?: number | null;
+  [key: string]: unknown;
+}
+
+export interface ExperimentRoundDefenseMetrics {
+  clipped_client_count?: number | null;
+  [key: string]: unknown;
+}
+
+export interface ExperimentResultRoundMetric {
+  round_id?: number | null;
+  num_participants?: number | null;
+  avg_train_loss?: number | null;
+  valid_score?: number | null;
+  test_score?: number | null;
+  malicious_clients?: string[];
+  malicious_client_count?: number | null;
+  extra?: {
+    attack_metrics?: Record<string, ExperimentRoundAttackMetrics>;
+    defense_metrics?: Record<string, ExperimentRoundDefenseMetrics>;
+    privacy_metric_outputs?: Record<string, unknown>;
+    pipeline_info?: ExperimentRoundPipelineInfo & {
+      malicious_clients?: string[];
+    };
+    [key: string]: unknown;
+  };
+}
+
+export interface ExperimentResultMetadata {
+  active_attacks?: string[];
+  active_defenses?: string[];
+  active_privacy_metrics?: string[];
+  scenario_tags?: string[];
+  malicious_client_summary?: ExperimentMaliciousClientSummary;
+  attack_summaries?: Record<string, unknown>;
+  defense_summaries?: Record<string, unknown>;
+  privacy_metric_summaries?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface ExperimentResultDetail {
+  experiment_id?: string | null;
+  model?: string | null;
+  dataset?: string | null;
+  active_attacks?: string[];
+  active_defenses?: string[];
+  active_privacy_metrics?: string[];
+  experiment_mode?: string | null;
+  scenario_tags?: string[];
+  attack_type?: string | null;
+  defense_type?: string | null;
+  malicious_clients?: string[];
+  round_metrics?: ExperimentResultRoundMetric[];
+  final_eval?: {
+    recall20?: number | null;
+    ndcg20?: number | null;
+    loss?: number | null;
+    extra?: Record<string, unknown>;
+  };
+  metadata?: ExperimentResultMetadata;
+}
+
+export interface ExperimentResultResponse {
+  experiment_key: string;
+  file_name: string;
+  relative_path: string;
+  result: ExperimentResultDetail;
 }
 
 export interface HistoryFilters {

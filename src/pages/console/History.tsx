@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import {cn} from '../../lib/utils';
-import {deleteHistory, getHistoryList, getHistorySummaryPreview, reuseHistoryConfig} from '../../services/history';
+import {deleteHistory, getHistoryList, getHistoryResultPreview, getHistorySummaryPreview, reuseHistoryConfig} from '../../services/history';
 import {mockHistoryData} from '../../mock/history';
 import type {AsyncState} from '../../types/common';
 import type {HistoryFilters, HistoryRecord} from '../../types/history';
@@ -59,6 +59,7 @@ export const History: React.FC<HistoryProps> = ({
   const [previewState, setPreviewState] = useState<AsyncState>('idle');
   const [previewRecord, setPreviewRecord] = useState<HistoryRecord | null>(null);
   const [previewErrorMessage, setPreviewErrorMessage] = useState('');
+  const [previewSource, setPreviewSource] = useState<'list' | 'summary' | 'result'>('list');
 
   useEffect(() => {
     let cancelled = false;
@@ -125,11 +126,13 @@ export const History: React.FC<HistoryProps> = ({
       setPreviewRecord(null);
       setPreviewState('idle');
       setPreviewErrorMessage('');
+      setPreviewSource('list');
       return;
     }
 
     setPreviewRecord(selectedRecord);
     setPreviewErrorMessage('');
+    setPreviewSource(selectedRecord.detailLevel ?? 'list');
 
     if (!selectedRecord.id.startsWith('api::')) {
       setPreviewState('success');
@@ -143,6 +146,7 @@ export const History: React.FC<HistoryProps> = ({
         if (!cancelled) {
           setPreviewRecord(record);
           setPreviewState('success');
+          setPreviewSource(record.detailLevel ?? 'summary');
         }
       } catch (error) {
         if (!cancelled) {
@@ -183,9 +187,26 @@ export const History: React.FC<HistoryProps> = ({
     setFilters(initialFilters);
   };
 
-  const handleViewDetail = (record: HistoryRecord) => {
+  const handleViewDetail = async (record: HistoryRecord) => {
     setSelectedId(record.id);
-    if (record.status === 'completed' && !record.taskId.startsWith('api::')) {
+
+    if (record.id.startsWith('api::')) {
+      try {
+        setPreviewState('loading');
+        setPreviewErrorMessage('');
+        setPreviewSource('result');
+        const resultRecord = await getHistoryResultPreview(record.id);
+        setPreviewRecord(resultRecord);
+        setPreviewState('success');
+        setPreviewSource('result');
+      } catch (error) {
+        setPreviewState('error');
+        setPreviewErrorMessage(error instanceof Error ? error.message : '真实结果详情加载失败，当前展示摘要级信息。');
+      }
+      return;
+    }
+
+    if (record.status === 'completed') {
       onOpenAnalysis(record.taskId);
     }
   };
@@ -437,7 +458,7 @@ export const History: React.FC<HistoryProps> = ({
                       onClick={() => handleViewDetail(record)}
                       className="flex-1 rounded bg-surface-container-highest py-2 text-[11px] font-bold transition-all hover:bg-primary hover:text-surface"
                     >
-                      {isApiRecord ? '查看摘要' : isCompleted ? '查看详情' : '查看记录'}
+                      {isApiRecord ? '查看详情' : isCompleted ? '查看详情' : '查看记录'}
                     </button>
                     <button
                       onClick={() => onAddComparisonSelection(record.taskId)}
@@ -484,12 +505,17 @@ export const History: React.FC<HistoryProps> = ({
               <div className="space-y-6">
                 {selectedRecord?.id.startsWith('api::') && previewState === 'loading' ? (
                   <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-primary">
-                    正在同步该实验的真实摘要详情...
+                    {previewSource === 'result' ? '正在同步该实验的真实结果详情...' : '正在同步该实验的真实摘要详情...'}
                   </div>
                 ) : null}
                 {selectedRecord?.id.startsWith('api::') && previewState === 'error' ? (
                   <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-xs text-warning">
-                    {previewErrorMessage || '真实摘要加载失败，当前展示列表级摘要。'}
+                    {previewErrorMessage || '真实详情加载失败，当前展示已拿到的摘要级信息。'}
+                  </div>
+                ) : null}
+                {selectedRecord?.id.startsWith('api::') && previewState === 'success' && previewSource === 'result' ? (
+                  <div className="rounded-xl border border-tertiary/20 bg-tertiary/10 px-4 py-3 text-xs text-tertiary">
+                    已同步该实验的真实 result 详情，当前预览优先显示结果级信息。
                   </div>
                 ) : null}
 
@@ -542,11 +568,14 @@ export const History: React.FC<HistoryProps> = ({
                 <div className="space-y-3 border-t border-outline-variant/10 pt-4">
                   <button
                     onClick={() => handleViewDetail(previewTarget)}
-                    disabled={previewTarget.id.startsWith('api::')}
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary py-3 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
                   >
                     <BarChart2 className="h-5 w-5" />
-                    {previewTarget.id.startsWith('api::') ? '摘要列表已接入' : '生成完整分析报告'}
+                    {previewTarget.id.startsWith('api::')
+                      ? previewSource === 'result'
+                        ? '刷新真实结果详情'
+                        : '同步真实结果详情'
+                      : '生成完整分析报告'}
                   </button>
                   <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-highest py-3 text-sm font-bold text-on-background transition-all hover:border-primary/50">
                     <Download className="h-5 w-5" />
