@@ -39,11 +39,14 @@ export interface HistoryRecord {
   summary?: string;
   previewBars: number[];
   detailLevel?: 'list' | 'summary' | 'result';
+  dataSource?: 'api' | 'mock';
 }
 
 export interface HistoryListResponse {
   records: HistoryRecord[];
   total: number;
+  source: 'api' | 'mock';
+  fallbackReason?: string;
 }
 
 export interface ExperimentSummaryListItem {

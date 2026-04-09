@@ -311,6 +311,7 @@ const mapApiSummaryToHistoryRecord = (
     summary: buildSummaryText(summary),
     previewBars: buildSummaryPreviewBars(summary),
     detailLevel,
+    dataSource: 'api',
   };
 };
 
@@ -354,6 +355,7 @@ const mapApiResultToHistoryRecord = (result: ApiResultShape): HistoryRecord => {
     summary: buildResultText(result),
     previewBars: buildResultPreviewBars(result),
     detailLevel: 'result',
+    dataSource: 'api',
   };
 };
 
@@ -380,6 +382,7 @@ const loadHistoryFromApi = async (): Promise<HistoryListResponse> => {
   return {
     records,
     total: response.count,
+    source: 'api',
   };
 };
 
@@ -434,12 +437,14 @@ const loadHistoryResultFromApi = async (recordId: string): Promise<HistoryRecord
 export const getHistoryList = async (): Promise<HistoryListResponse> => {
   try {
     return await loadHistoryFromApi();
-  } catch {
+  } catch (error) {
     return simulateRequest(() => {
-      const records = mockStore.getHistoryRecords();
+      const records = mockStore.getHistoryRecords().map((record) => ({...record, dataSource: 'mock' as const}));
       return {
         records,
         total: records.length,
+        source: 'mock' as const,
+        fallbackReason: error instanceof Error ? error.message : 'API unavailable',
       };
     });
   }
@@ -476,7 +481,7 @@ export const getHistorySummaryPreview = async (id: string): Promise<HistoryRecor
       throw new Error(`未找到历史实验 ${id}`);
     }
 
-    return record;
+    return {...record, dataSource: 'mock' as const};
   });
 };
 
@@ -497,7 +502,7 @@ export const getHistoryResultPreview = async (id: string): Promise<HistoryRecord
       throw new Error(`未找到历史实验 ${id}`);
     }
 
-    return record;
+    return {...record, dataSource: 'mock' as const};
   });
 };
 

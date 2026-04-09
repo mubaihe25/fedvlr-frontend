@@ -44,6 +44,24 @@ const statusClasses = {
   stopped: 'border border-error/20 bg-error/10 text-error',
 } as const;
 
+const sourceBadgeClasses = {
+  api: 'border border-primary/20 bg-primary/10 text-primary',
+  mock: 'border border-warning/20 bg-warning/10 text-warning',
+} as const;
+
+const detailLevelLabels = {
+  list: '列表摘要',
+  summary: '真实摘要',
+  result: '真实结果',
+} as const;
+
+const modeLabels = {
+  baseline: '基线实验',
+  attack: '攻击实验',
+  defense: '防御实验',
+  comparison: '攻防对照',
+} as const;
+
 export const History: React.FC<HistoryProps> = ({
   comparisonSelectionIds,
   onOpenAnalysis,
@@ -60,6 +78,9 @@ export const History: React.FC<HistoryProps> = ({
   const [previewRecord, setPreviewRecord] = useState<HistoryRecord | null>(null);
   const [previewErrorMessage, setPreviewErrorMessage] = useState('');
   const [previewSource, setPreviewSource] = useState<'list' | 'summary' | 'result'>('list');
+  const [requestedDetailLevel, setRequestedDetailLevel] = useState<'summary' | 'result'>('summary');
+  const [listSource, setListSource] = useState<'api' | 'mock'>('mock');
+  const [listFallbackReason, setListFallbackReason] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -68,10 +89,14 @@ export const History: React.FC<HistoryProps> = ({
       try {
         setLoadState('loading');
         setErrorMessage('');
+        setListFallbackReason('');
         const response = await getHistoryList();
         if (!cancelled) {
           setRecords(response.records);
           setSelectedId((current) => current ?? response.records[0]?.id ?? null);
+          setRequestedDetailLevel('summary');
+          setListSource(response.source);
+          setListFallbackReason(response.fallbackReason ?? '');
           setLoadState(response.records.length ? 'success' : 'empty');
         }
       } catch (error) {
@@ -110,6 +135,7 @@ export const History: React.FC<HistoryProps> = ({
 
     const selectedStillExists = filteredRecords.some((record) => record.id === selectedId);
     if (!selectedStillExists) {
+      setRequestedDetailLevel('summary');
       setSelectedId(filteredRecords[0].id);
     }
   }, [filteredRecords, selectedId]);
@@ -118,6 +144,45 @@ export const History: React.FC<HistoryProps> = ({
   const previewTarget = previewRecord?.id === selectedRecord?.id ? previewRecord : selectedRecord;
   const completedCount = records.filter((record) => record.status === 'completed').length;
   const successRate = records.length ? `${Math.round((completedCount / records.length) * 100)}%` : '0%';
+  const previewRecordSource = previewTarget?.dataSource ?? (previewTarget?.id.startsWith('api::') ? 'api' : 'mock');
+
+  const getPreviewStatusMessage = () => {
+    if (!selectedRecord?.id.startsWith('api::')) {
+      return null;
+    }
+
+    if (previewState === 'loading') {
+      return {
+        tone: 'primary' as const,
+        text: previewSource === 'result' ? '正在同步该实验的真实结果详情...' : '正在同步该实验的真实摘要详情...',
+      };
+    }
+
+    if (previewState === 'error') {
+      return {
+        tone: 'warning' as const,
+        text: previewErrorMessage || '真实详情加载失败，当前展示已拿到的摘要级信息。',
+      };
+    }
+
+    if (previewState === 'success' && previewSource === 'result') {
+      return {
+        tone: 'tertiary' as const,
+        text: '已同步该实验的真实 result 详情，当前预览优先显示结果级信息。',
+      };
+    }
+
+    if (previewState === 'success' && previewSource === 'summary') {
+      return {
+        tone: 'primary' as const,
+        text: '当前预览基于真实 summary 摘要，可继续同步 result 级详情。',
+      };
+    }
+
+    return null;
+  };
+
+  const previewStatusMessage = getPreviewStatusMessage();
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +201,10 @@ export const History: React.FC<HistoryProps> = ({
 
     if (!selectedRecord.id.startsWith('api::')) {
       setPreviewState('success');
+      return;
+    }
+
+    if (requestedDetailLevel === 'result') {
       return;
     }
 
@@ -161,7 +230,7 @@ export const History: React.FC<HistoryProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [selectedRecord?.id]);
+  }, [selectedRecord?.id, requestedDetailLevel]);
 
   const modelFilterOptions = useMemo(() => {
     const existing = new Set(mockHistoryData.filterOptions.models.map((option) => option.value));
@@ -188,6 +257,7 @@ export const History: React.FC<HistoryProps> = ({
   };
 
   const handleViewDetail = async (record: HistoryRecord) => {
+    setRequestedDetailLevel(record.id.startsWith('api::') ? 'result' : 'summary');
     setSelectedId(record.id);
 
     if (record.id.startsWith('api::')) {
@@ -290,6 +360,19 @@ export const History: React.FC<HistoryProps> = ({
       {errorMessage ? (
         <div className="mb-6 rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">{errorMessage}</div>
       ) : null}
+
+      <div
+        className={cn(
+          'mb-6 rounded-xl px-4 py-3 text-sm',
+          listSource === 'api'
+            ? 'border border-primary/20 bg-primary/10 text-primary'
+            : 'border border-warning/20 bg-warning/10 text-warning',
+        )}
+      >
+        {listSource === 'api'
+          ? `当前正在展示真实 API 历史实验列表，共 ${records.length} 条记录。`
+          : `当前已回退到 mock 历史实验列表${listFallbackReason ? `：${listFallbackReason}` : '。'}`}
+      </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         <div className="space-y-6 lg:col-span-9">
@@ -395,7 +478,10 @@ export const History: React.FC<HistoryProps> = ({
                 >
                   <div className="absolute right-0 top-0 p-2 opacity-0 transition-opacity group-hover:opacity-100">
                     <button
-                      onClick={() => setSelectedId(record.id)}
+                      onClick={() => {
+                        setRequestedDetailLevel('summary');
+                        setSelectedId(record.id);
+                      }}
                       className="p-1 text-on-surface-variant transition-colors hover:text-primary"
                     >
                       <ExternalLink className="h-5 w-5" />
@@ -415,6 +501,17 @@ export const History: React.FC<HistoryProps> = ({
                           <h3 className="font-bold text-on-background">{record.name}</h3>
                           <span className={cn('rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', statusClasses[record.status])}>
                             {record.status}
+                          </span>
+                          <span
+                            className={cn(
+                              'rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
+                              sourceBadgeClasses[(record.dataSource ?? (record.id.startsWith('api::') ? 'api' : 'mock')) as 'api' | 'mock'],
+                            )}
+                          >
+                            {(record.dataSource ?? (record.id.startsWith('api::') ? 'api' : 'mock')).toUpperCase()}
+                          </span>
+                          <span className="rounded border border-outline-variant/10 bg-surface-container-highest px-2 py-0.5 text-[10px] font-bold text-on-surface-variant">
+                            {modeLabels[record.mode]}
                           </span>
                           {comparisonSelectionIds.includes(record.taskId) ? (
                             <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">已加入对比</span>
@@ -503,19 +600,32 @@ export const History: React.FC<HistoryProps> = ({
 
             {previewTarget ? (
               <div className="space-y-6">
-                {selectedRecord?.id.startsWith('api::') && previewState === 'loading' ? (
-                  <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-primary">
-                    {previewSource === 'result' ? '正在同步该实验的真实结果详情...' : '正在同步该实验的真实摘要详情...'}
-                  </div>
-                ) : null}
-                {selectedRecord?.id.startsWith('api::') && previewState === 'error' ? (
-                  <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-xs text-warning">
-                    {previewErrorMessage || '真实详情加载失败，当前展示已拿到的摘要级信息。'}
-                  </div>
-                ) : null}
-                {selectedRecord?.id.startsWith('api::') && previewState === 'success' && previewSource === 'result' ? (
-                  <div className="rounded-xl border border-tertiary/20 bg-tertiary/10 px-4 py-3 text-xs text-tertiary">
-                    已同步该实验的真实 result 详情，当前预览优先显示结果级信息。
+                <div className="flex flex-wrap gap-2">
+                  <span
+                    className={cn(
+                      'rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider',
+                      sourceBadgeClasses[previewRecordSource as 'api' | 'mock'],
+                    )}
+                  >
+                    {previewRecordSource === 'api' ? 'API 数据' : 'Mock 数据'}
+                  </span>
+                  <span className="rounded border border-outline-variant/10 bg-surface-container-highest px-2 py-1 text-[10px] font-bold text-on-surface-variant">
+                    当前层级：{detailLevelLabels[previewSource]}
+                  </span>
+                  <span className="rounded border border-outline-variant/10 bg-surface-container-highest px-2 py-1 text-[10px] font-bold text-on-surface-variant">
+                    场景：{modeLabels[previewTarget.mode]}
+                  </span>
+                </div>
+                {previewStatusMessage ? (
+                  <div
+                    className={cn(
+                      'rounded-xl px-4 py-3 text-xs',
+                      previewStatusMessage.tone === 'primary' && 'border border-primary/20 bg-primary/10 text-primary',
+                      previewStatusMessage.tone === 'warning' && 'border border-warning/20 bg-warning/10 text-warning',
+                      previewStatusMessage.tone === 'tertiary' && 'border border-tertiary/20 bg-tertiary/10 text-tertiary',
+                    )}
+                  >
+                    {previewStatusMessage.text}
                   </div>
                 ) : null}
 
@@ -568,6 +678,7 @@ export const History: React.FC<HistoryProps> = ({
                 <div className="space-y-3 border-t border-outline-variant/10 pt-4">
                   <button
                     onClick={() => handleViewDetail(previewTarget)}
+                    disabled={!previewTarget.id.startsWith('api::') && previewTarget.status !== 'completed'}
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary py-3 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
                   >
                     <BarChart2 className="h-5 w-5" />
@@ -575,7 +686,9 @@ export const History: React.FC<HistoryProps> = ({
                       ? previewSource === 'result'
                         ? '刷新真实结果详情'
                         : '同步真实结果详情'
-                      : '生成完整分析报告'}
+                      : previewTarget.status === 'completed'
+                        ? '打开完整分析页'
+                        : '当前记录不可查看完整分析'}
                   </button>
                   <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-highest py-3 text-sm font-bold text-on-background transition-all hover:border-primary/50">
                     <Download className="h-5 w-5" />
