@@ -114,4 +114,35 @@ export interface ComparisonResult {
   metricComparison: ComparisonMetricDatum[];
   configDiff: ConfigDiffItem[];
   stages: ComparisonStage[];
+  dataSource?: 'api' | 'mock' | 'history';
+  dataSourceLabel?: string;
+  fallbackReason?: string;
+  updatedAt?: string;
+}
+
+export interface ShowcaseComparisonItem {
+  scenario: string;
+  experiment_mode?: string;
+  active_attacks?: string[];
+  active_defenses?: string[];
+  active_privacy_metrics?: string[];
+  recall20?: number | null;
+  ndcg20?: number | null;
+  loss?: number | null;
+  malicious_client_count?: number | null;
+  attacked_client_count?: number | null;
+  clipped_client_count?: number | null;
+  filtered_client_count?: number | null;
+  summary_path?: string;
+  result_path?: string;
+  display_note?: string;
+}
+
+export interface ShowcaseComparisonResponse {
+  source: string;
+  comparison_type: string;
+  updated_at?: string | null;
+  item_count: number;
+  metadata: Record<string, unknown>;
+  items: ShowcaseComparisonItem[];
 }

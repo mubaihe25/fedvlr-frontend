@@ -61,6 +61,12 @@ const accentClasses = {
   },
 } as const;
 
+const sourceBadgeClasses = {
+  api: 'bg-tertiary/10 text-tertiary',
+  history: 'bg-primary/10 text-primary',
+  mock: 'bg-error/10 text-error',
+} as const;
+
 export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) => {
   const [loadState, setLoadState] = useState<AsyncState>('loading');
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
@@ -97,7 +103,7 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
   if (loadState === 'loading') {
     return (
       <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-10 text-center text-on-surface-variant">
-        正在加载对比结果...
+        正在加载 ShowcaseV1 对比数据...
       </div>
     );
   }
@@ -111,22 +117,38 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
     );
   }
 
+  const dataSource = comparison.dataSource ?? 'mock';
+  const sourceLabel = comparison.dataSourceLabel ?? (dataSource === 'api' ? 'ShowcaseV1 真实 API 数据' : 'Mock 数据');
+  const displayCount = dataSource === 'history' ? comparisonSelectionIds.length : comparison.groups.length;
+  const headerDescription =
+    dataSource === 'api'
+      ? '当前展示 ShowcaseV1 三组正式实验结果：正常基线、攻击组与攻防对照组。'
+      : dataSource === 'history'
+        ? `当前已加载 ${comparisonSelectionIds.length} 条历史实验记录生成的对比结果。`
+        : '当前 API 不可用或未返回数据，页面已安全回退到本地 Mock 对比样例。';
+
   return (
     <div className="space-y-8 pb-12">
       <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
         <div>
-          <span className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-primary">Multi-Experiment Benchmarking</span>
+          <span className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-primary">ShowcaseV1 Benchmarking</span>
           <h3 className="text-4xl font-bold tracking-tight text-on-background">对比分析</h3>
-          <p className="mt-3 text-sm text-on-surface-variant">
-            {comparisonSelectionIds.length < 2
-              ? '当前展示默认三组样例数据；从历史实验加入对比后，这里会切换为动态组合结果。'
-              : `当前已加载 ${comparisonSelectionIds.length} 条历史实验记录生成的对比结果。`}
-          </p>
+          <p className="mt-3 text-sm text-on-surface-variant">{headerDescription}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className={cn('rounded-full px-3 py-1 text-xs font-bold', sourceBadgeClasses[dataSource])}>
+              {sourceLabel}
+            </span>
+            {comparison.fallbackReason ? (
+              <span className="rounded-full bg-error/10 px-3 py-1 text-xs font-bold text-error">
+                API 失败，已回退 Mock
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="flex gap-3">
           <button className="flex items-center gap-2 rounded-lg bg-surface-container-high px-6 py-2.5 text-sm font-semibold text-on-surface transition-all hover:bg-surface-container-highest">
             <Layers className="h-4 w-4" />
-            已选实验 {comparisonSelectionIds.length || 3} 项
+            当前对比 {displayCount || 3} 组
           </button>
         </div>
       </div>
@@ -150,8 +172,8 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
               </div>
               <h4 className="mb-1 text-sm font-bold text-on-surface-variant">{group.name}</h4>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-on-surface">{(group.metrics.recall10 * 100).toFixed(1)}%</span>
-                <span className="text-[10px] font-bold uppercase text-on-surface-variant">Recall@10</span>
+                <span className="text-3xl font-bold text-on-surface">{(group.metrics.recall20 * 100).toFixed(1)}%</span>
+                <span className="text-[10px] font-bold uppercase text-on-surface-variant">Recall@20</span>
               </div>
               <p className="mt-3 text-xs text-on-surface-variant">
                 攻击：{group.attackLabel} | 防御：{group.defenseLabel}
@@ -168,11 +190,11 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
             <div className="flex gap-4">
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded bg-primary" />
-                <span className="text-[10px] font-bold text-on-surface-variant">RECALL@10</span>
+                <span className="text-[10px] font-bold text-on-surface-variant">RECALL@20</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded bg-secondary" />
-                <span className="text-[10px] font-bold text-on-surface-variant">NDCG@10</span>
+                <span className="text-[10px] font-bold text-on-surface-variant">NDCG@20</span>
               </div>
             </div>
           </div>
@@ -191,7 +213,7 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
         </div>
 
         <div className="glass-panel flex flex-col rounded-2xl p-8 lg:col-span-4">
-          <h3 className="mb-8 text-sm font-bold uppercase tracking-widest text-on-surface-variant">演进阶段追踪</h3>
+          <h3 className="mb-8 text-sm font-bold uppercase tracking-widest text-on-surface-variant">场景链路追踪</h3>
           <div className="relative flex-1 space-y-8">
             <div className="absolute bottom-2 left-[11px] top-2 w-0.5 bg-surface-container-highest" />
             {comparison.stages.map((stage) => {
@@ -219,7 +241,7 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
               <h3 className="font-bold">实验配置矩阵</h3>
             </div>
             <button className="flex items-center gap-1 text-xs font-bold text-primary hover:underline">
-              查看完整参数 <ArrowRight className="h-3 w-3" />
+              查看关键参数 <ArrowRight className="h-3 w-3" />
             </button>
           </div>
           <div className="overflow-x-auto">
@@ -229,7 +251,7 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
                   <th className="px-8 py-4">字段</th>
                   <th className="px-8 py-4">基线</th>
                   <th className="px-8 py-4">攻击</th>
-                  <th className="px-8 py-4">防御</th>
+                  <th className="px-8 py-4">攻防</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/10">
