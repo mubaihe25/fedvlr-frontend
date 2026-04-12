@@ -8,8 +8,10 @@ import {
   getFamilyLabel,
   getModuleLabel,
   getParameterLabel,
+  getParameterValueLabel,
   getScenarioLabel,
   getStatusLabel,
+  hasParameterValueLabel,
 } from '../../lib/experimentLabels';
 import {cn} from '../../lib/utils';
 import type {StartTrainResponse} from '../../services/train';
@@ -450,9 +452,8 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-bold text-on-surface">{moduleLabel.title}</p>
-            <p className="mt-1 font-mono text-[10px] text-on-surface-variant">{moduleLabel.code}</p>
-            {moduleMeta?.notes || moduleLabel.description ? (
-              <p className="mt-2 text-xs text-on-surface-variant">{moduleMeta?.notes ?? moduleLabel.description}</p>
+            {moduleLabel.description || moduleMeta?.notes ? (
+              <p className="mt-2 text-xs text-on-surface-variant">{moduleLabel.description ?? moduleMeta?.notes}</p>
             ) : null}
           </div>
           <span className={cn('shrink-0 rounded px-2 py-0.5 text-[10px] font-bold', toneClass)}>已选择</span>
@@ -475,10 +476,28 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                     className="rounded-lg bg-surface-container-highest px-4 py-3 text-left text-xs font-semibold text-on-surface-variant transition hover:text-on-surface"
                   >
                     <span className="block text-on-surface">{paramLabel.title}</span>
-                    <span className="mt-1 block font-mono text-[10px] text-on-surface-variant">
-                      {paramLabel.code} · {Boolean(value) ? 'true' : 'false'}
+                    <span className="mt-1 block text-[10px] text-on-surface-variant">
+                      当前值：{Boolean(value) ? '开启' : '关闭'}
                     </span>
                   </button>
+                );
+              }
+
+              if (inputType === 'string' && typeof value === 'string' && hasParameterValueLabel(value)) {
+                return (
+                  <label key={paramName} className="space-y-1">
+                    <span className="block text-xs font-bold text-on-surface">{paramLabel.title}</span>
+                    <select
+                      value={value}
+                      onChange={(event) => updateModuleParam(field, moduleName, paramName, event.target.value)}
+                      className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 text-primary focus:ring-1 focus:ring-primary"
+                    >
+                      <option value={value}>{getParameterValueLabel(value)}</option>
+                    </select>
+                    <span className="block text-[10px] text-on-surface-variant">
+                      类型：{inputTypeLabel}，默认值：{getParameterValueLabel(String(defaultValue ?? '未提供'))}
+                    </span>
+                  </label>
                 );
               }
 
@@ -486,9 +505,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <label key={paramName} className="space-y-1">
                   <span className="block text-xs font-bold text-on-surface">
                     {paramLabel.title}
-                  </span>
-                  <span className="block font-mono text-[10px] text-on-surface-variant">
-                    {paramLabel.code}
                   </span>
                   <input
                     type={inputType === 'number' ? 'number' : 'text'}
@@ -505,7 +521,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                     className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
                   />
                   <span className="block text-[10px] text-on-surface-variant">
-                    类型：{inputTypeLabel}，默认值：{String(defaultValue ?? '未提供')}
+                    类型：{inputTypeLabel}，默认值：{getParameterValueLabel(String(defaultValue ?? '未提供'))}
                   </span>
                 </label>
               );
@@ -546,7 +562,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         )}
       >
         <span className="block">{moduleLabel.title}</span>
-        <span className="mt-0.5 block font-mono text-[10px] opacity-60">{moduleLabel.code}</span>
       </button>
     );
   };
@@ -559,7 +574,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <div>
             <h4 className="font-bold text-error">模块链选择</h4>
             <p className="mt-1 text-xs text-on-surface-variant">
-              按 attack → defense → metrics 顺序进入 launcher，多模块数量限制来自 schema。
+              按攻击链、防御链、观测模块的顺序提交，多模块数量限制来自后端配置。
             </p>
           </div>
         </div>
@@ -611,9 +626,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
   const renderChainSummary = (values: string[]) => (
     <span className="max-w-[65%] text-right text-on-surface">
       <span className="block">{formatModuleChain(values)}</span>
-      {values.length ? (
-        <span className="mt-0.5 block font-mono text-[10px] text-on-surface-variant">{values.join(' → ')}</span>
-      ) : null}
     </span>
   );
 
@@ -621,10 +633,10 @@ export const Configuration: React.FC<ConfigurationProps> = ({
     <div className="space-y-8 pb-12">
       <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
         <div>
-          <span className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-primary">Environment Setup</span>
+          <span className="mb-2 block text-xs font-bold tracking-[0.2em] text-primary">实验环境配置</span>
           <h3 className="text-4xl font-bold tracking-tight text-on-background">训练实验配置</h3>
           <p className="mt-3 text-sm text-on-surface-variant">
-            优先读取真实能力矩阵与统一实验 schema，支持多攻击、多防御与观测模块组合配置。
+            优先读取真实能力矩阵与统一配置结构，支持多攻击、多防御与观测模块组合配置。
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
             <span
@@ -644,7 +656,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   : 'Mock 兜底'}
             </span>
             <span className="rounded-full bg-surface-container-high px-3 py-1 text-on-surface-variant">
-              Schema {configurationSource.schemaVersion ?? 'local'}
+              配置版本：{configurationSource.schemaVersion ?? '本地'}
             </span>
             {configurationSource.fallbackReason ? (
               <span className="rounded-full bg-error/10 px-3 py-1 text-error">
@@ -765,7 +777,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               <Cpu className="h-5 w-5 text-tertiary" />
               <div>
                 <h4 className="text-lg font-bold">训练参数</h4>
-                <p className="text-xs text-on-surface-variant">对应 training_params：epochs / local_epochs / clients_sample_ratio / lr / l2_reg。</p>
+                <p className="text-xs text-on-surface-variant">这些字段会作为真实训练参数随实验配置提交。</p>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
@@ -773,7 +785,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <div className="flex items-end justify-between">
                   <label className="text-xs font-bold text-on-surface-variant">
                     {getParameterLabel('lr').title}
-                    <span className="ml-2 font-mono text-[10px]">{getParameterLabel('lr').code}</span>
                   </label>
                   <span className="font-mono text-sm text-primary">{formConfig.learningRate.toFixed(4)}</span>
                 </div>
@@ -794,7 +805,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <div className="flex items-end justify-between">
                   <label className="text-xs font-bold text-on-surface-variant">
                     {getParameterLabel('epochs').title}
-                    <span className="ml-2 font-mono text-[10px]">{getParameterLabel('epochs').code}</span>
                   </label>
                   <span className="font-mono text-sm text-primary">{formConfig.totalRounds}</span>
                 </div>
@@ -815,7 +825,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <div className="flex items-end justify-between">
                   <label className="text-xs font-bold text-on-surface-variant">
                     {getParameterLabel('clients_sample_ratio').title}
-                    <span className="ml-2 font-mono text-[10px]">{getParameterLabel('clients_sample_ratio').code}</span>
                   </label>
                   <span className="font-mono text-sm text-primary">{Math.round(formConfig.clientSamplingRate * 100)}%</span>
                 </div>
@@ -835,7 +844,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               <div className="space-y-2">
                 <label className="text-xs font-bold text-on-surface-variant">
                   {getParameterLabel('local_epochs').title}
-                  <span className="ml-2 font-mono text-[10px]">{getParameterLabel('local_epochs').code}</span>
                 </label>
                 <input
                   type="number"
@@ -855,7 +863,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               <div className="space-y-2">
                 <label className="text-xs font-bold text-on-surface-variant">
                   {getParameterLabel('l2_reg').title}
-                  <span className="ml-2 font-mono text-[10px]">{getParameterLabel('l2_reg').code}</span>
                 </label>
                 <input
                   type="number"
@@ -910,7 +917,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             <div className="mb-6">
               <h4 className="text-lg font-bold">模块专属参数</h4>
               <p className="mt-1 text-xs text-on-surface-variant">
-                参数来自 capabilities 的 config_schema 与 default_values，会写入 attackParams / defenseParams / privacyParams 并随实验提交。
+                参数来自真实能力矩阵的模块定义，会随实验配置提交给后端。
               </p>
             </div>
             <div className="space-y-4">
@@ -948,7 +955,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <span className="text-on-surface-variant">场景</span>
                 <span className="text-right text-on-surface">
                   {getScenarioLabel(scenario).title}
-                  <span className="ml-2 font-mono text-xs text-on-surface-variant">{scenario}</span>
                 </span>
               </div>
               <div className="flex items-start justify-between gap-4 text-sm">
@@ -1006,7 +1012,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 {realTrainingParams.map((param) => (
                   <div key={param.key} className="rounded-lg bg-surface-container-low p-3">
                     <p className="text-[10px] font-bold text-on-surface-variant">{getParameterLabel(param.key).title}</p>
-                    <p className="mt-0.5 font-mono text-[10px] text-on-surface-variant">{getParameterLabel(param.key).code}</p>
                     <p className="mt-1 font-mono text-sm text-primary">{String(param.value)}</p>
                   </div>
                 ))}
@@ -1015,9 +1020,12 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             <div className="relative mt-8 overflow-hidden rounded-lg border border-primary/10 aspect-video">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,236,255,0.18),_transparent_45%),linear-gradient(135deg,#0c141b,#172129)]" />
               <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-surface-container to-transparent p-4">
-                <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-primary">Launcher Mapping</p>
+                <p className="mb-1 text-[10px] font-bold tracking-widest text-primary">提交映射</p>
                 <p className="text-xs text-on-surface/80">
-                  {formConfig.model} / {formConfig.dataset} / {scenario} / {configurationSource.executionOrder}
+                  {formConfig.model} / {formConfig.dataset} / {getScenarioLabel(scenario).title}
+                </p>
+                <p className="mt-1 text-xs text-on-surface/60">
+                  执行顺序：攻击链 → 防御链 → 观测模块
                 </p>
               </div>
             </div>
@@ -1026,11 +1034,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <Info className="mt-0.5 h-4 w-4 text-primary" />
                 <span>
                   {isValidatedCombination
-                    ? `已匹配验证组合：${validatedCombination?.name}。`
+                    ? '已匹配验证组合。'
                     : configurationSource.dataSource === 'api'
-                      ? `当前组合尚未在能力矩阵中标记为已验证；后端执行顺序：${configurationSource.executionOrder}。`
+                      ? '当前组合尚未在能力矩阵中标记为已验证；后端会按攻击、防御、观测顺序处理。'
                       : formConfig.advanced.notes}
-                  {' '}必填字段：{configurationSource.requiredFields.join(' / ') || 'model / dataset / scenario'}。
+                  {' '}必填字段：模型 / 数据集 / 实验场景。
                 </span>
               </div>
             </div>
@@ -1047,16 +1055,12 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               <span className="text-on-surface-variant">模型家族</span>
               <p className="mt-1 font-semibold text-on-surface">
                 {getFamilyLabel(currentModel?.family ?? 'unknown').title}
-                {currentModel?.family ? <span className="ml-2 font-mono text-xs text-on-surface-variant">{currentModel.family}</span> : null}
               </p>
             </div>
             <div className="rounded-lg bg-surface-container-low p-3">
               <span className="text-on-surface-variant">兼容状态</span>
               <p className="mt-1 font-semibold text-on-surface">
                 {getStatusLabel(currentModel?.compatibility_status ?? 'unknown').title}
-                {currentModel?.compatibility_status ? (
-                  <span className="ml-2 font-mono text-xs text-on-surface-variant">{currentModel.compatibility_status}</span>
-                ) : null}
               </p>
             </div>
             <div className="rounded-lg bg-surface-container-low p-3">
@@ -1069,24 +1073,24 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             </div>
             <div className="rounded-lg bg-surface-container-low p-3 md:col-span-2">
               <span className="text-on-surface-variant">推荐覆盖项</span>
-              <p className="mt-1 font-mono text-xs text-on-surface">
-                {currentModelOverrides ? JSON.stringify(currentModelOverrides) : '未提供'}
+              <p className="mt-1 text-xs text-on-surface">
+                {currentModelOverrides ? '后端提供了推荐训练覆盖参数，将作为参考使用。' : '未提供'}
               </p>
             </div>
             <div className="rounded-lg bg-surface-container-low p-3 md:col-span-2">
               <span className="text-on-surface-variant">客户端总数</span>
-              <p className="mt-1 text-xs text-on-surface-variant">当前 API/schema 未暴露，不作为可编辑参数展示。</p>
+              <p className="mt-1 text-xs text-on-surface-variant">当前接口未暴露，不作为可编辑参数展示。</p>
             </div>
           </div>
         </div>
 
         <div className="glass-panel rounded-xl p-6">
           <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">规划中功能</h4>
-          <p className="mb-4 text-xs text-on-surface-variant">以下功能保留为路线提示，当前不会随实验启动提交给后端 launcher。</p>
+          <p className="mb-4 text-xs text-on-surface-variant">以下功能保留为路线提示，当前不会随实验启动提交给后端启动器。</p>
           <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
             <div className="rounded-lg bg-surface-container-low p-3">
               <p className="font-semibold text-on-surface">优化器选择</p>
-              <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.optimizer}，暂未接入 launcher。</p>
+              <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.optimizer}，暂未接入后端启动器。</p>
             </div>
             <div className="rounded-lg bg-surface-container-low p-3">
               <p className="font-semibold text-on-surface">差分隐私 ε</p>

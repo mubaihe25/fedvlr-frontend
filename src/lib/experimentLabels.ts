@@ -12,7 +12,7 @@ const humanizeCode = (value: string) =>
     .join(' ');
 
 const createFallbackLabel = (code: string): ExperimentDisplayLabel => ({
-  title: humanizeCode(code) || code,
+  title: humanizeCode(code) ? '未命名项' : '未知项',
   code,
 });
 
@@ -43,7 +43,7 @@ const moduleLabels: Record<string, ExperimentDisplayLabel> = {
     description: '在聚合前对客户端更新做全局范数裁剪。',
   },
   update_filter: {
-    title: '异常更新过滤防御',
+    title: '更新过滤防御',
     code: 'update_filter',
     description: '基于更新范数规则过滤可疑客户端更新。',
   },
@@ -53,29 +53,29 @@ const moduleLabels: Record<string, ExperimentDisplayLabel> = {
     description: '通过逐坐标截尾降低极端更新影响。',
   },
   client_update_anomaly: {
-    title: '客户端更新异常检测',
+    title: '异常更新检测',
     code: 'client_update_anomaly',
     description: '只读检测聚合前的可疑客户端更新。',
   },
   client_update_anomaly_detector: {
-    title: '客户端更新异常检测',
+    title: '异常更新检测',
     code: 'client_update_anomaly_detector',
     description: '只读检测聚合前的可疑客户端更新。',
   },
   client_update_norm: {
-    title: '客户端更新范数观测',
+    title: '更新范数观测',
     code: 'client_update_norm',
     description: '记录参与客户端上传更新的范数统计。',
   },
   client_update_norm_metric: {
-    title: '客户端更新范数观测',
+    title: '更新范数观测',
     code: 'client_update_norm_metric',
     description: '记录参与客户端上传更新的范数统计。',
   },
 };
 
 const parameterLabels: Record<string, ExperimentDisplayLabel> = {
-  replacement_scale: {title: '模型替换缩放系数', code: 'replacement_scale'},
+  replacement_scale: {title: '替换缩放系数', code: 'replacement_scale'},
   replacement_rule: {title: '模型替换规则', code: 'replacement_rule'},
   attack_scale: {title: '攻击缩放系数', code: 'attack_scale'},
   sign_flip_scale: {title: '符号翻转缩放系数', code: 'sign_flip_scale'},
@@ -95,6 +95,12 @@ const parameterLabels: Record<string, ExperimentDisplayLabel> = {
   clients_sample_ratio: {title: '客户端采样率', code: 'clients_sample_ratio'},
   lr: {title: '学习率', code: 'lr'},
   l2_reg: {title: 'L2 正则', code: 'l2_reg'},
+};
+
+const parameterValueLabels: Record<string, string> = {
+  aligned_mean: '对齐均值',
+  coordinate_trimmed_mean: '逐坐标截尾均值',
+  'update_norm > mean + filter_std_factor * std': '更新范数高于均值阈值',
 };
 
 const scenarioLabels: Record<string, ExperimentDisplayLabel> = {
@@ -131,6 +137,10 @@ const statusLabels: Record<string, ExperimentDisplayLabel> = {
 export const getModuleLabel = (code: string) => moduleLabels[code] ?? createFallbackLabel(code);
 
 export const getParameterLabel = (code: string) => parameterLabels[code] ?? createFallbackLabel(code);
+
+export const getParameterValueLabel = (value: string) => parameterValueLabels[value] ?? value;
+
+export const hasParameterValueLabel = (value: string) => value in parameterValueLabels;
 
 export const getScenarioLabel = (code: string) => scenarioLabels[code] ?? createFallbackLabel(code);
 
