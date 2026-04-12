@@ -1,4 +1,5 @@
 import {mockConfigurationData} from '../mock/configuration';
+import {getModuleLabel} from '../lib/experimentLabels';
 import type {SelectOption} from '../types/common';
 import type {
   CapabilitiesResponse,
@@ -33,18 +34,6 @@ export interface ExperimentConfigurationSource {
   schema?: ExperimentConfigSchemaResponse['data'];
 }
 
-const MODULE_LABELS: Record<string, string> = {
-  client_update_scale: 'ClientUpdateScaleAttack',
-  sign_flip: 'SignFlipAttack',
-  model_replacement: 'ModelReplacementAttack',
-  client_preference_leakage_probe: 'ClientPreferenceLeakageProbe',
-  client_update_anomaly: 'ClientUpdateAnomalyDetector',
-  norm_clip: 'NormClipDefense',
-  update_filter: 'UpdateFilterDefense',
-  trimmed_mean: 'TrimmedMeanDefense',
-  client_update_norm: 'ClientUpdateNormMetric',
-};
-
 export const modeToScenario = (mode: TrainConfig['mode']): UnifiedExperimentScenario => {
   switch (mode) {
     case 'attack':
@@ -69,19 +58,14 @@ export const getSelectedDefenses = (config: TrainConfig) =>
 
 export const getSelectedPrivacyMetrics = (config: TrainConfig) => compact(config.enabledPrivacyMetrics);
 
-const formatModuleName = (name: string) =>
-  MODULE_LABELS[name] ??
-  name
-    .split(/[_-]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-
-const mapModuleToOption = (module: CapabilityModule): SelectOption => ({
-  value: module.name,
-  label: formatModuleName(module.name),
-  description: module.notes,
-});
+const mapModuleToOption = (module: CapabilityModule): SelectOption => {
+  const display = getModuleLabel(module.name);
+  return {
+    value: module.name,
+    label: display.title,
+    description: [display.code, module.notes ?? display.description].filter(Boolean).join(' · '),
+  };
+};
 
 const mapCapabilitiesToSource = (
   capabilitiesResponse: CapabilitiesResponse,
@@ -126,7 +110,13 @@ export const createFallbackExperimentConfigurationSource = (fallbackReason?: str
   modelOptions: mockConfigurationData.modelOptions,
   attackOptions: mockConfigurationData.attackOptions.filter((option) => option.value !== 'none'),
   defenseOptions: mockConfigurationData.defenseOptions.filter((option) => option.value !== 'none'),
-  privacyMetricOptions: [{value: 'client_update_norm', label: 'ClientUpdateNormMetric', description: 'Mock 兜底观测模块'}],
+  privacyMetricOptions: [
+    {
+      value: 'client_update_norm',
+      label: getModuleLabel('client_update_norm').title,
+      description: 'client_update_norm · Mock 兜底观测模块',
+    },
+  ],
   requiredFields: ['model', 'dataset', 'scenario'],
   maxEnabledAttacks: 2,
   maxEnabledDefenses: 2,

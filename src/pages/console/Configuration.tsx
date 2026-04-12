@@ -3,6 +3,14 @@ import {ChevronDown, Cpu, Info, Settings, ShieldAlert} from 'lucide-react';
 import {mockConfigurationData} from '../../mock/configuration';
 import type {AsyncState} from '../../types/common';
 import type {CapabilityModule, LaunchExperimentOptions, TrainConfig} from '../../types/train';
+import {
+  formatModuleChain,
+  getFamilyLabel,
+  getModuleLabel,
+  getParameterLabel,
+  getScenarioLabel,
+  getStatusLabel,
+} from '../../lib/experimentLabels';
 import {cn} from '../../lib/utils';
 import type {StartTrainResponse} from '../../services/train';
 import {
@@ -29,26 +37,6 @@ interface ConfigurationProps {
 const cloneConfig = (config: TrainConfig) => structuredClone(config);
 
 type ModuleParamField = 'attackParams' | 'defenseParams' | 'privacyParams';
-
-const scenarioLabels: Record<string, string> = {
-  baseline: '基线实验',
-  attack_only: '攻击实验',
-  defense_only: '防御实验',
-  attack_and_defense: '攻防对比实验',
-  privacy_observation: '隐私观测实验',
-  custom: '自定义组合',
-};
-
-const familyLabels: Record<string, string> = {
-  single_modal: '单模态',
-  single_modal_with_visual_features: '单模态 + 视觉特征',
-  single_modal_personalized: '个性化单模态',
-  multi_modal: '多模态',
-  multi_modal_personalized: '个性化多模态',
-  multi_modal_graph: '多模态图模型',
-};
-
-const labelForList = (values: string[]) => (values.length ? values.join(' -> ') : '未启用');
 
 const moduleParamInputType = (schemaType: string | undefined, defaultValue: unknown) => {
   const normalizedType = schemaType?.toLowerCase() ?? '';
@@ -168,11 +156,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
   const currentModel = configurationSource.capabilities?.models.find((model) => model.name === formConfig.model);
   const currentModelOverrides = currentModel?.recommended_training_overrides;
   const realTrainingParams = [
-    {label: 'epochs', value: formConfig.totalRounds},
-    {label: 'local_epochs', value: formConfig.advanced.localEpochs},
-    {label: 'clients_sample_ratio', value: formConfig.clientSamplingRate},
-    {label: 'lr', value: formConfig.learningRate},
-    {label: 'l2_reg', value: formConfig.advanced.weightDecay},
+    {key: 'epochs', value: formConfig.totalRounds},
+    {key: 'local_epochs', value: formConfig.advanced.localEpochs},
+    {key: 'clients_sample_ratio', value: formConfig.clientSamplingRate},
+    {key: 'lr', value: formConfig.learningRate},
+    {key: 'l2_reg', value: formConfig.advanced.weightDecay},
   ];
 
   const updateConfig = (updater: (current: TrainConfig) => TrainConfig) => {
@@ -449,6 +437,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
     const moduleMeta = registry?.find((module) => module.name === moduleName);
     const entries = Object.entries(moduleMeta?.config_schema ?? {});
     const moduleParams = formConfig[field]?.[moduleName] ?? {};
+    const moduleLabel = getModuleLabel(moduleName);
     const toneClass =
       tone === 'error'
         ? 'border-error/20 bg-error/10 text-error'
@@ -460,8 +449,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       <div key={`${field}-${moduleName}`} className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-on-surface">{moduleName}</p>
-            {moduleMeta?.notes ? <p className="mt-1 text-xs text-on-surface-variant">{moduleMeta.notes}</p> : null}
+            <p className="text-sm font-bold text-on-surface">{moduleLabel.title}</p>
+            <p className="mt-1 font-mono text-[10px] text-on-surface-variant">{moduleLabel.code}</p>
+            {moduleMeta?.notes || moduleLabel.description ? (
+              <p className="mt-2 text-xs text-on-surface-variant">{moduleMeta?.notes ?? moduleLabel.description}</p>
+            ) : null}
           </div>
           <span className={cn('shrink-0 rounded px-2 py-0.5 text-[10px] font-bold', toneClass)}>已选择</span>
         </div>
@@ -471,6 +463,9 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               const defaultValue = moduleMeta?.default_values?.[paramName];
               const value = moduleParams[paramName] ?? defaultValue ?? '';
               const inputType = moduleParamInputType(schemaType, defaultValue);
+              const paramLabel = getParameterLabel(paramName);
+              const inputTypeLabel =
+                inputType === 'number' ? '数字' : inputType === 'boolean' ? '布尔' : '文本';
 
               if (inputType === 'boolean') {
                 return (
@@ -479,15 +474,21 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                     onClick={() => updateModuleParam(field, moduleName, paramName, !Boolean(value))}
                     className="rounded-lg bg-surface-container-highest px-4 py-3 text-left text-xs font-semibold text-on-surface-variant transition hover:text-on-surface"
                   >
-                    {paramName}：{Boolean(value) ? 'true' : 'false'}
+                    <span className="block text-on-surface">{paramLabel.title}</span>
+                    <span className="mt-1 block font-mono text-[10px] text-on-surface-variant">
+                      {paramLabel.code} · {Boolean(value) ? 'true' : 'false'}
+                    </span>
                   </button>
                 );
               }
 
               return (
                 <label key={paramName} className="space-y-1">
-                  <span className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-                    {paramName}
+                  <span className="block text-xs font-bold text-on-surface">
+                    {paramLabel.title}
+                  </span>
+                  <span className="block font-mono text-[10px] text-on-surface-variant">
+                    {paramLabel.code}
                   </span>
                   <input
                     type={inputType === 'number' ? 'number' : 'text'}
@@ -504,7 +505,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                     className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
                   />
                   <span className="block text-[10px] text-on-surface-variant">
-                    类型：{schemaType}，默认值：{String(defaultValue ?? '未提供')}
+                    类型：{inputTypeLabel}，默认值：{String(defaultValue ?? '未提供')}
                   </span>
                 </label>
               );
@@ -516,6 +517,105 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       </div>
     );
   };
+
+  const renderModuleOption = (
+    option: {value: string; label: string; description?: string; disabled?: boolean},
+    isActive: boolean,
+    onClick: () => void,
+    tone: 'error' | 'tertiary' | 'primary',
+  ) => {
+    const moduleLabel = getModuleLabel(option.value);
+    const activeClass =
+      tone === 'error'
+        ? 'border border-error/20 bg-error/10 text-error'
+        : tone === 'tertiary'
+          ? 'border border-tertiary/20 bg-tertiary/10 text-tertiary'
+          : 'border border-primary/20 bg-primary/10 text-primary';
+
+    return (
+      <button
+        key={option.value}
+        title={option.description}
+        onClick={onClick}
+        disabled={option.disabled}
+        className={cn(
+          'rounded-lg px-3 py-2 text-left text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-45',
+          isActive
+            ? activeClass
+            : 'bg-surface-container-highest text-on-surface-variant hover:text-on-surface',
+        )}
+      >
+        <span className="block">{moduleLabel.title}</span>
+        <span className="mt-0.5 block font-mono text-[10px] opacity-60">{moduleLabel.code}</span>
+      </button>
+    );
+  };
+
+  const renderModuleSelector = () => (
+    <div className="overflow-hidden rounded-xl glass-panel">
+      <div className="border-b border-error/20 bg-error/10 p-4">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="h-5 w-5 text-error" />
+          <div>
+            <h4 className="font-bold text-error">模块链选择</h4>
+            <p className="mt-1 text-xs text-on-surface-variant">
+              按 attack → defense → metrics 顺序进入 launcher，多模块数量限制来自 schema。
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-5 p-6 xl:grid-cols-3">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">攻击链</label>
+            <span className="text-[10px] text-on-surface-variant">
+              {selectedAttacks.length}/{configurationSource.maxEnabledAttacks}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {configurationSource.attackOptions.map((option) =>
+              renderModuleOption(option, selectedAttacks.includes(option.value), () => toggleAttack(option.value), 'error'),
+            )}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">防御链</label>
+            <span className="text-[10px] text-on-surface-variant">
+              {selectedDefenses.length}/{configurationSource.maxEnabledDefenses}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {configurationSource.defenseOptions.map((option) =>
+              renderModuleOption(option, selectedDefenses.includes(option.value), () => toggleDefense(option.value), 'tertiary'),
+            )}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">观测模块</label>
+            <span className="text-[10px] text-on-surface-variant">
+              {selectedPrivacyMetrics.length}/{configurationSource.maxEnabledPrivacyMetrics}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {configurationSource.privacyMetricOptions.map((option) =>
+              renderModuleOption(option, selectedPrivacyMetrics.includes(option.value), () => togglePrivacyMetric(option.value), 'primary'),
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderChainSummary = (values: string[]) => (
+    <span className="max-w-[65%] text-right text-on-surface">
+      <span className="block">{formatModuleChain(values)}</span>
+      {values.length ? (
+        <span className="mt-0.5 block font-mono text-[10px] text-on-surface-variant">{values.join(' → ')}</span>
+      ) : null}
+    </span>
+  );
 
   return (
     <div className="space-y-8 pb-12">
@@ -658,6 +758,8 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             </div>
           </div>
 
+          {renderModuleSelector()}
+
           <div className="glass-panel rounded-xl p-6">
             <div className="mb-6 flex items-center gap-2">
               <Cpu className="h-5 w-5 text-tertiary" />
@@ -669,7 +771,10 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
               <div className="space-y-4">
                 <div className="flex items-end justify-between">
-                  <label className="text-xs font-bold uppercase text-on-surface-variant">学习率 lr</label>
+                  <label className="text-xs font-bold text-on-surface-variant">
+                    {getParameterLabel('lr').title}
+                    <span className="ml-2 font-mono text-[10px]">{getParameterLabel('lr').code}</span>
+                  </label>
                   <span className="font-mono text-sm text-primary">{formConfig.learningRate.toFixed(4)}</span>
                 </div>
                 <input
@@ -687,7 +792,10 @@ export const Configuration: React.FC<ConfigurationProps> = ({
 
               <div className="space-y-4">
                 <div className="flex items-end justify-between">
-                  <label className="text-xs font-bold uppercase text-on-surface-variant">总训练轮数 epochs</label>
+                  <label className="text-xs font-bold text-on-surface-variant">
+                    {getParameterLabel('epochs').title}
+                    <span className="ml-2 font-mono text-[10px]">{getParameterLabel('epochs').code}</span>
+                  </label>
                   <span className="font-mono text-sm text-primary">{formConfig.totalRounds}</span>
                 </div>
                 <input
@@ -705,7 +813,10 @@ export const Configuration: React.FC<ConfigurationProps> = ({
 
               <div className="space-y-4">
                 <div className="flex items-end justify-between">
-                  <label className="text-xs font-bold uppercase text-on-surface-variant">客户端采样率</label>
+                  <label className="text-xs font-bold text-on-surface-variant">
+                    {getParameterLabel('clients_sample_ratio').title}
+                    <span className="ml-2 font-mono text-[10px]">{getParameterLabel('clients_sample_ratio').code}</span>
+                  </label>
                   <span className="font-mono text-sm text-primary">{Math.round(formConfig.clientSamplingRate * 100)}%</span>
                 </div>
                 <input
@@ -722,7 +833,10 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase text-on-surface-variant">本地训练轮数 local_epochs</label>
+                <label className="text-xs font-bold text-on-surface-variant">
+                  {getParameterLabel('local_epochs').title}
+                  <span className="ml-2 font-mono text-[10px]">{getParameterLabel('local_epochs').code}</span>
+                </label>
                 <input
                   type="number"
                   min="1"
@@ -739,7 +853,10 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase text-on-surface-variant">L2 正则 l2_reg</label>
+                <label className="text-xs font-bold text-on-surface-variant">
+                  {getParameterLabel('l2_reg').title}
+                  <span className="ml-2 font-mono text-[10px]">{getParameterLabel('l2_reg').code}</span>
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -816,121 +933,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         </div>
 
         <div className="space-y-6 lg:col-span-4">
-          <div className="overflow-hidden rounded-xl glass-panel">
-            <div className="border-b border-error/20 bg-error/10 p-4">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5 text-error" />
-                <h4 className="font-bold text-error">模块链选择</h4>
-              </div>
-            </div>
-            <div className="space-y-4 p-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">攻击链</label>
-                  <span className="text-[10px] text-on-surface-variant">
-                    {selectedAttacks.length}/{configurationSource.maxEnabledAttacks}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {configurationSource.attackOptions.map((option) => {
-                    const isActive = selectedAttacks.includes(option.value);
-                    return (
-                      <button
-                        key={option.value}
-                        title={option.description}
-                        onClick={() => toggleAttack(option.value)}
-                        className={cn(
-                          'rounded px-3 py-1 text-[11px] font-bold transition-all',
-                          isActive
-                            ? 'border border-error/20 bg-error/10 text-error'
-                            : 'bg-surface-container-highest text-on-surface-variant hover:text-on-surface',
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-2 pt-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">防御链</label>
-                  <span className="text-[10px] text-on-surface-variant">
-                    {selectedDefenses.length}/{configurationSource.maxEnabledDefenses}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {configurationSource.defenseOptions.map((option) => {
-                    const isActive = selectedDefenses.includes(option.value);
-                    return (
-                      <button
-                        key={option.value}
-                        title={option.description}
-                        onClick={() => toggleDefense(option.value)}
-                        className={cn(
-                          'rounded px-3 py-1 text-[11px] font-bold transition-all',
-                          isActive
-                            ? 'border border-tertiary/20 bg-tertiary/10 text-tertiary'
-                            : 'bg-surface-container-highest text-on-surface-variant hover:text-on-surface',
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-2 pt-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">观测模块</label>
-                  <span className="text-[10px] text-on-surface-variant">
-                    {selectedPrivacyMetrics.length}/{configurationSource.maxEnabledPrivacyMetrics}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {configurationSource.privacyMetricOptions.map((option) => {
-                    const isActive = selectedPrivacyMetrics.includes(option.value);
-                    return (
-                      <button
-                        key={option.value}
-                        title={option.description}
-                        onClick={() => togglePrivacyMetric(option.value)}
-                        className={cn(
-                          'rounded px-3 py-1 text-[11px] font-bold transition-all',
-                          isActive
-                            ? 'border border-primary/20 bg-primary/10 text-primary'
-                            : 'bg-surface-container-highest text-on-surface-variant hover:text-on-surface',
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-2 pt-4">
-                <button
-                  onClick={() => setValidateOnly((current) => !current)}
-                  className={cn(
-                    'w-full rounded-lg px-4 py-3 text-left text-xs font-semibold transition-all',
-                    validateOnly ? 'bg-primary/10 text-primary' : 'bg-surface-container-highest text-on-surface-variant',
-                  )}
-                >
-                  {validateOnly ? '当前为仅校验配置，不启动训练' : '当前会同步调用后端启动实验'}
-                </button>
-                <button
-                  onClick={() => setStrictValidation((current) => !current)}
-                  className={cn(
-                    'w-full rounded-lg px-4 py-3 text-left text-xs font-semibold transition-all',
-                    strictValidation ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant',
-                  )}
-                >
-                  {strictValidation ? '严格校验已启用：未验证组合会被后端拒绝' : '严格校验未启用：未验证组合仅提示'}
-                </button>
-              </div>
-            </div>
-          </div>
-
           <div className="glass-panel rounded-xl border-l-4 border-primary p-6">
             <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">实验概览</h4>
             <div className="space-y-4">
@@ -944,25 +946,22 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-on-surface-variant">场景</span>
-                <span className="font-mono text-on-surface">{scenarioLabels[scenario] ?? scenario}</span>
+                <span className="text-right text-on-surface">
+                  {getScenarioLabel(scenario).title}
+                  <span className="ml-2 font-mono text-xs text-on-surface-variant">{scenario}</span>
+                </span>
               </div>
               <div className="flex items-start justify-between gap-4 text-sm">
                 <span className="text-on-surface-variant">攻击链</span>
-                <span className="max-w-[65%] text-right font-mono text-on-surface">
-                  {labelForList(selectedAttacks)}
-                </span>
+                {renderChainSummary(selectedAttacks)}
               </div>
               <div className="flex items-start justify-between gap-4 text-sm">
                 <span className="text-on-surface-variant">防御链</span>
-                <span className="max-w-[65%] text-right font-mono text-on-surface">
-                  {labelForList(selectedDefenses)}
-                </span>
+                {renderChainSummary(selectedDefenses)}
               </div>
               <div className="flex items-start justify-between gap-4 text-sm">
                 <span className="text-on-surface-variant">观测链</span>
-                <span className="max-w-[65%] text-right font-mono text-on-surface">
-                  {labelForList(selectedPrivacyMetrics)}
-                </span>
+                {renderChainSummary(selectedPrivacyMetrics)}
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-on-surface-variant">组合状态</span>
@@ -983,10 +982,31 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <span className="text-on-surface-variant">提交模式</span>
                 <span className="font-mono text-on-surface">{validateOnly ? '仅校验' : '同步启动'}</span>
               </div>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => setValidateOnly((current) => !current)}
+                  className={cn(
+                    'rounded-lg px-4 py-3 text-left text-xs font-semibold transition-all',
+                    validateOnly ? 'bg-primary/10 text-primary' : 'bg-surface-container-highest text-on-surface-variant',
+                  )}
+                >
+                  {validateOnly ? '仅校验配置，不启动训练' : '提交后同步调用后端启动实验'}
+                </button>
+                <button
+                  onClick={() => setStrictValidation((current) => !current)}
+                  className={cn(
+                    'rounded-lg px-4 py-3 text-left text-xs font-semibold transition-all',
+                    strictValidation ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant',
+                  )}
+                >
+                  {strictValidation ? '严格校验：未验证组合可能被拒绝' : '宽松校验：未验证组合仅提示'}
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-2 pt-2">
                 {realTrainingParams.map((param) => (
-                  <div key={param.label} className="rounded-lg bg-surface-container-low p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{param.label}</p>
+                  <div key={param.key} className="rounded-lg bg-surface-container-low p-3">
+                    <p className="text-[10px] font-bold text-on-surface-variant">{getParameterLabel(param.key).title}</p>
+                    <p className="mt-0.5 font-mono text-[10px] text-on-surface-variant">{getParameterLabel(param.key).code}</p>
                     <p className="mt-1 font-mono text-sm text-primary">{String(param.value)}</p>
                   </div>
                 ))}
@@ -1016,58 +1036,69 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             </div>
           </div>
 
-          <div className="glass-panel rounded-xl p-6">
-            <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">只读环境信息</h4>
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-on-surface-variant">模型家族</span>
-                <span className="font-mono text-on-surface">{familyLabels[currentModel?.family ?? ''] ?? currentModel?.family ?? '未知'}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-on-surface-variant">兼容状态</span>
-                <span className="font-mono text-on-surface">{currentModel?.compatibility_status ?? '未提供'}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-on-surface-variant">推荐数据集</span>
-                <span className="font-mono text-on-surface">{currentModel?.recommended_dataset ?? formConfig.dataset}</span>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <span className="text-on-surface-variant">推荐覆盖项</span>
-                <span className="max-w-[65%] text-right font-mono text-on-surface">
-                  {currentModelOverrides ? JSON.stringify(currentModelOverrides) : '未提供'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-on-surface-variant">配置来源</span>
-                <span className="font-mono text-on-surface">{configurationSource.dataSourceLabel}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-on-surface-variant">客户端总数</span>
-                <span className="font-mono text-on-surface">当前 API/schema 未暴露</span>
-              </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="glass-panel rounded-xl p-6">
+          <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">只读环境信息</h4>
+          <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-lg bg-surface-container-low p-3">
+              <span className="text-on-surface-variant">模型家族</span>
+              <p className="mt-1 font-semibold text-on-surface">
+                {getFamilyLabel(currentModel?.family ?? 'unknown').title}
+                {currentModel?.family ? <span className="ml-2 font-mono text-xs text-on-surface-variant">{currentModel.family}</span> : null}
+              </p>
+            </div>
+            <div className="rounded-lg bg-surface-container-low p-3">
+              <span className="text-on-surface-variant">兼容状态</span>
+              <p className="mt-1 font-semibold text-on-surface">
+                {getStatusLabel(currentModel?.compatibility_status ?? 'unknown').title}
+                {currentModel?.compatibility_status ? (
+                  <span className="ml-2 font-mono text-xs text-on-surface-variant">{currentModel.compatibility_status}</span>
+                ) : null}
+              </p>
+            </div>
+            <div className="rounded-lg bg-surface-container-low p-3">
+              <span className="text-on-surface-variant">推荐数据集</span>
+              <p className="mt-1 font-mono font-semibold text-on-surface">{currentModel?.recommended_dataset ?? formConfig.dataset}</p>
+            </div>
+            <div className="rounded-lg bg-surface-container-low p-3">
+              <span className="text-on-surface-variant">配置来源</span>
+              <p className="mt-1 font-semibold text-on-surface">{configurationSource.dataSourceLabel}</p>
+            </div>
+            <div className="rounded-lg bg-surface-container-low p-3 md:col-span-2">
+              <span className="text-on-surface-variant">推荐覆盖项</span>
+              <p className="mt-1 font-mono text-xs text-on-surface">
+                {currentModelOverrides ? JSON.stringify(currentModelOverrides) : '未提供'}
+              </p>
+            </div>
+            <div className="rounded-lg bg-surface-container-low p-3 md:col-span-2">
+              <span className="text-on-surface-variant">客户端总数</span>
+              <p className="mt-1 text-xs text-on-surface-variant">当前 API/schema 未暴露，不作为可编辑参数展示。</p>
             </div>
           </div>
+        </div>
 
-          <div className="glass-panel rounded-xl p-6">
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">规划中功能</h4>
-            <p className="mb-4 text-xs text-on-surface-variant">以下字段仍保留为方向说明，当前不会随实验启动提交给后端 launcher。</p>
-            <div className="space-y-3 text-sm">
-              <div className="rounded-lg bg-surface-container-low p-3">
-                <p className="font-semibold text-on-surface">优化器选择</p>
-                <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.optimizer}。launcher 暂未从前端接收 optimizer 字段。</p>
-              </div>
-              <div className="rounded-lg bg-surface-container-low p-3">
-                <p className="font-semibold text-on-surface">差分隐私 ε</p>
-                <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.differentialPrivacyEpsilon ?? '未设置'}。当前不随启动生效。</p>
-              </div>
-              <div className="rounded-lg bg-surface-container-low p-3">
-                <p className="font-semibold text-on-surface">安全聚合</p>
-                <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.secureAggregation ? '已启用占位' : '未启用'}。当前不随启动生效。</p>
-              </div>
-              <div className="rounded-lg bg-surface-container-low p-3">
-                <p className="font-semibold text-on-surface">客户端总数 / 批大小 / 梯度裁剪</p>
-                <p className="mt-1 text-xs text-on-surface-variant">这些字段仍在类型中保留给旧 mock 与后续扩展，但当前配置页不再作为真实可编辑参数展示。</p>
-              </div>
+        <div className="glass-panel rounded-xl p-6">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">规划中功能</h4>
+          <p className="mb-4 text-xs text-on-surface-variant">以下功能保留为路线提示，当前不会随实验启动提交给后端 launcher。</p>
+          <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-lg bg-surface-container-low p-3">
+              <p className="font-semibold text-on-surface">优化器选择</p>
+              <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.optimizer}，暂未接入 launcher。</p>
+            </div>
+            <div className="rounded-lg bg-surface-container-low p-3">
+              <p className="font-semibold text-on-surface">差分隐私 ε</p>
+              <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.differentialPrivacyEpsilon ?? '未设置'}，当前不生效。</p>
+            </div>
+            <div className="rounded-lg bg-surface-container-low p-3">
+              <p className="font-semibold text-on-surface">安全聚合</p>
+              <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.secureAggregation ? '占位开启' : '未启用'}，当前不生效。</p>
+            </div>
+            <div className="rounded-lg bg-surface-container-low p-3">
+              <p className="font-semibold text-on-surface">批大小 / 梯度裁剪</p>
+              <p className="mt-1 text-xs text-on-surface-variant">仍保留在类型中用于后续扩展，当前不作为真实可编辑参数。</p>
             </div>
           </div>
         </div>
