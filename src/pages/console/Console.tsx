@@ -2,7 +2,7 @@ import React from 'react';
 import type {ExperimentConfigurationSource} from '../../services/experiment';
 import type {StartTrainResponse} from '../../services/train';
 import type {ConsoleSessionState, PageType} from '../../types/common';
-import type {LaunchExperimentOptions, TrainConfig} from '../../types/train';
+import type {LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../../types/train';
 import {Analysis} from './Analysis';
 import {Comparison} from './Comparison';
 import {Configuration} from './Configuration';
@@ -19,6 +19,7 @@ interface ConsoleProps {
     options?: LaunchExperimentOptions,
     source?: ExperimentConfigurationSource,
   ) => Promise<StartTrainResponse>;
+  onLaunchStatusChange: (status: LaunchExperimentResponse) => void;
   onOpenAnalysis: (taskId: string | null) => void;
   onAddComparisonSelection: (taskId: string) => void;
   onReuseConfig: (config: TrainConfig, taskId: string | null) => void;
@@ -29,6 +30,7 @@ export const Console: React.FC<ConsoleProps> = ({
   session,
   onDraftConfigChange,
   onStartTrain,
+  onLaunchStatusChange,
   onOpenAnalysis,
   onAddComparisonSelection,
   onReuseConfig,
@@ -49,6 +51,7 @@ export const Console: React.FC<ConsoleProps> = ({
           lastLaunchRecord={session.lastLaunchRecord}
           experimentContext={session.currentExperimentContext}
           onOpenAnalysis={onOpenAnalysis}
+          onLaunchStatusChange={onLaunchStatusChange}
         />
       );
     case 'analysis':

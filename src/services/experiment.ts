@@ -232,3 +232,7 @@ export const launchExperiment = async (
     strict_validation: options.strictValidation ?? false,
   });
 };
+
+export const getLaunchStatus = async (launchId: string): Promise<LaunchExperimentResponse> => {
+  return apiGet<LaunchExperimentResponse>(`/experiments/launch/${encodeURIComponent(launchId)}`);
+};

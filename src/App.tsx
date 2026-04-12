@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useCallback, useState} from 'react';
 import {MainLayout} from './layouts/MainLayout';
 import {mockConfigurationData} from './mock/configuration';
 import {Architecture} from './pages/Architecture';
@@ -7,7 +7,7 @@ import {Console} from './pages/console/Console';
 import type {ExperimentConfigurationSource} from './services/experiment';
 import {startTrain, type StartTrainResponse} from './services/train';
 import type {ConsoleExperimentContext, ConsoleSessionState, PageType} from './types/common';
-import type {LaunchExperimentOptions, TrainConfig} from './types/train';
+import type {LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from './types/train';
 
 const cloneConfig = (config: TrainConfig) => structuredClone(config);
 
@@ -40,7 +40,7 @@ const createLaunchContext = (response: StartTrainResponse): ConsoleExperimentCon
   source: isValidationLaunch(response) ? 'validate_only' : 'recent_launch',
   taskId: response.taskId,
   experimentKey: null,
-  launchId: response.launchResult?.experiment_id ?? response.taskId,
+  launchId: response.launchResult?.launch_id ?? response.launchResult?.experiment_id ?? response.taskId,
   dataSourceLabel: isValidationLaunch(response) ? '最近一次配置校验' : '最近一次真实启动',
   analysisLockedToHistory: false,
   monitoringLockedToRecentLaunch: true,
@@ -114,6 +114,40 @@ const App: React.FC = () => {
     return response;
   };
 
+  const handleLaunchStatusChange = useCallback((status: LaunchExperimentResponse) => {
+    setConsoleSession((prev) => {
+      if (!prev.lastLaunchRecord) {
+        return prev;
+      }
+
+      const currentLaunchId = prev.lastLaunchRecord.response.launch_id ?? prev.lastLaunchRecord.taskId;
+      const nextLaunchId = status.launch_id ?? status.experiment_id ?? prev.lastLaunchRecord.taskId;
+      if (currentLaunchId !== nextLaunchId) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        activeTaskId: status.launch_id ?? prev.activeTaskId,
+        analysisTaskId: prev.analysisTaskId === prev.lastLaunchRecord.taskId ? (status.launch_id ?? prev.analysisTaskId) : prev.analysisTaskId,
+        lastLaunchRecord: {
+          ...prev.lastLaunchRecord,
+          taskId: status.launch_id ?? prev.lastLaunchRecord.taskId,
+          response: status,
+        },
+        currentExperimentContext:
+          prev.currentExperimentContext.source === 'recent_launch' || prev.currentExperimentContext.source === 'validate_only'
+            ? {
+                ...prev.currentExperimentContext,
+                taskId: status.launch_id ?? prev.currentExperimentContext.taskId,
+                launchId: status.launch_id ?? status.experiment_id ?? prev.currentExperimentContext.launchId,
+                updatedAt: new Date().toISOString(),
+              }
+            : prev.currentExperimentContext,
+      };
+    });
+  }, []);
+
   const handleOpenAnalysis = (taskId: string | null) => {
     setConsoleSession((prev) => ({
       ...prev,
@@ -169,6 +203,7 @@ const App: React.FC = () => {
             session={consoleSession}
             onDraftConfigChange={handleDraftConfigChange}
             onStartTrain={handleStartTrain}
+            onLaunchStatusChange={handleLaunchStatusChange}
             onOpenAnalysis={handleOpenAnalysis}
             onAddComparisonSelection={handleAddComparisonSelection}
             onReuseConfig={handleReuseConfig}

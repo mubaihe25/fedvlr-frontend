@@ -62,11 +62,18 @@ export const startTrain = async (
     const response = await launchExperiment(config, source, options);
     const errors = response.errors ?? [];
     const warnings = response.validation_warnings ?? [];
-    const taskId = response.experiment_id ?? `launch-${Date.now()}`;
+    const taskId = response.launch_id ?? response.experiment_id ?? `launch-${Date.now()}`;
+    const launchStatus = response.status;
+    const status: TaskLifecycleStatus =
+      response.accepted && (launchStatus === 'running' || launchStatus === 'queued')
+        ? 'running'
+        : response.success
+          ? 'completed'
+          : 'failed';
 
     return {
       taskId,
-      status: response.success ? 'completed' : 'failed',
+      status,
       dataSource: 'api',
       launchMode: response.launch_mode,
       resultDir: response.result_dir,
@@ -78,7 +85,12 @@ export const startTrain = async (
       launchResult: response,
       message: response.success
         ? [
-            response.launch_mode === 'validate_only' ? '实验配置校验通过。' : '实验已由真实后端启动并返回结果。',
+            response.launch_mode === 'validate_only' || response.launch_mode === 'dry_run'
+              ? '实验配置校验通过，未启动训练。'
+              : response.status === 'running' || response.status === 'queued'
+                ? '实验已提交后端 launcher，正在运行中。'
+                : '实验已由真实后端完成并返回结果。',
+            response.launch_id ? `Launch ID：${response.launch_id}` : null,
             response.experiment_id ? `实验 ID：${response.experiment_id}` : null,
             response.summary_path ? `摘要：${response.summary_path}` : null,
             warnings.length ? `提示：${warnings.join('；')}` : null,

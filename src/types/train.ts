@@ -206,9 +206,15 @@ export interface LaunchExperimentOptions {
 }
 
 export interface LaunchExperimentResponse {
+  launch_id?: string | null;
   accepted: boolean;
   success: boolean;
+  status?: string | null;
   launch_mode: string;
+  submitted_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  pid?: number | null;
   command: string[];
   return_code?: number | null;
   experiment_id?: string | null;
@@ -221,6 +227,10 @@ export interface LaunchExperimentResponse {
   stdout_tail?: string | null;
   stderr_tail?: string | null;
   launcher_payload?: Record<string, unknown>;
+  config_summary?: Record<string, unknown>;
+  validate_only?: boolean;
+  dry_run?: boolean;
+  strict_validation?: boolean;
 }
 
 export interface LaunchExperimentRecord {

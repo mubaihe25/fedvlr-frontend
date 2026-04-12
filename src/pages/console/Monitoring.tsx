@@ -24,16 +24,18 @@ import {
   XCircle,
 } from 'lucide-react';
 import {getTaskStatus, stopTask} from '../../services/task';
+import {getLaunchStatus} from '../../services/experiment';
 import {cn} from '../../lib/utils';
 import type {AsyncState, ConsoleExperimentContext} from '../../types/common';
 import type {TaskLogLevel, TaskStatusResponse} from '../../types/task';
-import type {LaunchExperimentRecord} from '../../types/train';
+import type {LaunchExperimentRecord, LaunchExperimentResponse} from '../../types/train';
 
 interface MonitoringProps {
   activeTaskId: string | null;
   lastLaunchRecord: LaunchExperimentRecord | null;
   experimentContext: ConsoleExperimentContext;
   onOpenAnalysis: (taskId: string | null) => void;
+  onLaunchStatusChange: (status: LaunchExperimentResponse) => void;
 }
 
 const statusToneClasses = {
@@ -86,11 +88,71 @@ const isValidationLaunch = (record: LaunchExperimentRecord) =>
       record.response.launch_mode === 'dry_run',
   );
 
-export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, lastLaunchRecord, experimentContext, onOpenAnalysis}) => {
+export const Monitoring: React.FC<MonitoringProps> = ({
+  activeTaskId,
+  lastLaunchRecord,
+  experimentContext,
+  onOpenAnalysis,
+  onLaunchStatusChange,
+}) => {
   const [loadState, setLoadState] = useState<AsyncState>('idle');
   const [task, setTask] = useState<TaskStatusResponse | null>(null);
+  const [launchStatus, setLaunchStatus] = useState<LaunchExperimentResponse | null>(null);
+  const [launchPollState, setLaunchPollState] = useState<AsyncState>('idle');
+  const [launchPollError, setLaunchPollError] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isStopping, setIsStopping] = useState(false);
+
+  useEffect(() => {
+    const launchId = lastLaunchRecord?.response.launch_id ?? experimentContext.launchId;
+    if (!lastLaunchRecord || !launchId) {
+      setLaunchStatus(null);
+      setLaunchPollState('idle');
+      setLaunchPollError('');
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const terminalStatuses = new Set(['completed', 'failed', 'stopped']);
+
+    const pollLaunchStatus = async () => {
+      try {
+        setLaunchPollState((current) => (current === 'success' ? current : 'loading'));
+        const nextStatus = await getLaunchStatus(launchId);
+        if (cancelled) {
+          return;
+        }
+
+        setLaunchStatus(nextStatus);
+        onLaunchStatusChange(nextStatus);
+        setLaunchPollState('success');
+        setLaunchPollError('');
+        const status = nextStatus.status ?? '';
+        const shouldStopPolling =
+          terminalStatuses.has(status) ||
+          ((nextStatus.launch_mode === 'validate_only' || nextStatus.launch_mode === 'dry_run') && status === 'completed');
+        if (!shouldStopPolling) {
+          timer = setTimeout(pollLaunchStatus, 2500);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLaunchPollState('error');
+          setLaunchPollError(error instanceof Error ? error.message : '启动状态轮询失败');
+          timer = setTimeout(pollLaunchStatus, 4000);
+        }
+      }
+    };
+
+    void pollLaunchStatus();
+
+    return () => {
+      cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [experimentContext.launchId, lastLaunchRecord?.response.launch_id, lastLaunchRecord?.taskId, onLaunchStatusChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,23 +217,37 @@ export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, lastLaunchR
   };
 
   if (lastLaunchRecord) {
-    const {response} = lastLaunchRecord;
-    const validationOnly = isValidationLaunch(lastLaunchRecord);
+    const response = launchStatus ?? lastLaunchRecord.response;
+    const validationOnly =
+      isValidationLaunch(lastLaunchRecord) ||
+      response.launch_mode === 'validate_only' ||
+      response.launch_mode === 'dry_run';
     const warnings = response.validation_warnings ?? [];
     const errors = response.errors ?? [];
     const stdoutTail = response.stdout_tail?.trim();
     const stderrTail = response.stderr_tail?.trim();
-    const statusTone = response.success
-      ? 'border-tertiary/20 bg-tertiary/10 text-tertiary'
-      : 'border-error/20 bg-error/10 text-error';
-    const StatusIcon = response.success ? CheckCircle2 : XCircle;
+    const isRunning = response.status === 'running' || response.status === 'queued';
+    const isFailed = response.status === 'failed' || (!response.success && !isRunning);
+    const statusTone = isRunning
+      ? 'border-primary/20 bg-primary/10 text-primary'
+      : isFailed
+        ? 'border-error/20 bg-error/10 text-error'
+        : 'border-tertiary/20 bg-tertiary/10 text-tertiary';
+    const StatusIcon = isRunning ? TerminalIcon : isFailed ? XCircle : CheckCircle2;
+    const launchId = response.launch_id ?? lastLaunchRecord.response.launch_id ?? lastLaunchRecord.taskId;
+    const canOpenAnalysis = !validationOnly && response.status === 'completed' && Boolean(response.experiment_id || response.summary_path || response.result_path);
     const overviewItems = [
+      {label: 'Launch ID', value: launchId, mono: true},
+      {label: '当前状态', value: validationOnly ? '仅校验' : response.status ?? '未知'},
+      {label: '进程 PID', value: response.pid ? String(response.pid) : '未返回', mono: true},
       {label: '接口接收', value: response.accepted ? '已接收' : '未接收'},
       {label: '执行结果', value: response.success ? '成功' : '失败'},
       {label: '提交模式', value: validationOnly ? '仅校验' : '已启动训练'},
       {label: '后端模式', value: response.launch_mode || '未返回'},
       {label: '实验 ID', value: response.experiment_id ?? lastLaunchRecord.taskId ?? '未返回', mono: true},
-      {label: '提交时间', value: formatSubmittedAt(lastLaunchRecord.submittedAt)},
+      {label: '提交时间', value: response.submitted_at ? formatSubmittedAt(response.submitted_at) : formatSubmittedAt(lastLaunchRecord.submittedAt)},
+      {label: '开始时间', value: response.started_at ? formatSubmittedAt(response.started_at) : '未开始'},
+      {label: '完成时间', value: response.finished_at ? formatSubmittedAt(response.finished_at) : '未完成'},
     ];
     const pathItems = [
       {label: '结果目录', value: response.result_dir},
@@ -199,15 +275,19 @@ export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, lastLaunchR
           </div>
           <button
             onClick={() => onOpenAnalysis(lastLaunchRecord.taskId)}
-            className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40"
+            disabled={!validationOnly && !canOpenAnalysis}
+            title={!validationOnly && !canOpenAnalysis ? '结果尚未生成，训练完成后可进入分析页' : undefined}
+            className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <BarChart3 className="h-4 w-4" />
-            {validationOnly ? '查看校验说明' : '查看单次分析'}
+            {validationOnly ? '查看校验说明' : canOpenAnalysis ? '查看单次分析' : '结果尚未生成'}
           </button>
         </div>
 
         <div className="rounded-xl border border-primary/20 bg-primary/10 px-5 py-4 text-sm text-primary">
-          当前展示的是{experimentContext.dataSourceLabel}；实时轮次、实时曲线和流式日志仍等待后端任务系统接入，不再用 mock 图表冒充真实训练过程。
+          当前展示的是{experimentContext.dataSourceLabel}；页面会基于 Launch ID 轮询真实启动状态、日志摘要和结果路径。
+          {launchPollState === 'loading' ? ' 正在刷新状态...' : null}
+          {launchPollState === 'error' ? ` 状态轮询暂时失败：${launchPollError}，保留最近一次成功快照。` : null}
         </div>
 
         <div className="grid grid-cols-12 gap-6">
