@@ -6,10 +6,21 @@ import {Home} from './pages/Home';
 import {Console} from './pages/console/Console';
 import type {ExperimentConfigurationSource} from './services/experiment';
 import {startTrain, type StartTrainResponse} from './services/train';
-import type {ConsoleSessionState, PageType} from './types/common';
+import type {ConsoleExperimentContext, ConsoleSessionState, PageType} from './types/common';
 import type {LaunchExperimentOptions, TrainConfig} from './types/train';
 
 const cloneConfig = (config: TrainConfig) => structuredClone(config);
+
+const createMockContext = (): ConsoleExperimentContext => ({
+  source: 'mock',
+  taskId: null,
+  experimentKey: null,
+  launchId: null,
+  dataSourceLabel: 'Mock 示例上下文',
+  analysisLockedToHistory: false,
+  monitoringLockedToRecentLaunch: false,
+  updatedAt: new Date().toISOString(),
+});
 
 const createInitialSession = (): ConsoleSessionState => ({
   activeTaskId: null,
@@ -17,6 +28,45 @@ const createInitialSession = (): ConsoleSessionState => ({
   comparisonSelectionIds: [],
   analysisTaskId: null,
   lastLaunchRecord: null,
+  currentExperimentContext: createMockContext(),
+});
+
+const getExperimentKeyFromTaskId = (taskId: string | null) => (taskId?.startsWith('api::') ? taskId.slice(5) : null);
+
+const isValidationLaunch = (response: StartTrainResponse) =>
+  Boolean(response.launchResult?.launch_mode === 'validate_only' || response.launchResult?.launch_mode === 'dry_run');
+
+const createLaunchContext = (response: StartTrainResponse): ConsoleExperimentContext => ({
+  source: isValidationLaunch(response) ? 'validate_only' : 'recent_launch',
+  taskId: response.taskId,
+  experimentKey: null,
+  launchId: response.launchResult?.experiment_id ?? response.taskId,
+  dataSourceLabel: isValidationLaunch(response) ? '最近一次配置校验' : '最近一次真实启动',
+  analysisLockedToHistory: false,
+  monitoringLockedToRecentLaunch: true,
+  updatedAt: new Date().toISOString(),
+});
+
+const createHistoryContext = (taskId: string): ConsoleExperimentContext => ({
+  source: 'history_record',
+  taskId,
+  experimentKey: getExperimentKeyFromTaskId(taskId),
+  launchId: null,
+  dataSourceLabel: '历史实验真实上下文',
+  analysisLockedToHistory: true,
+  monitoringLockedToRecentLaunch: false,
+  updatedAt: new Date().toISOString(),
+});
+
+const createMockTaskContext = (taskId: string | null): ConsoleExperimentContext => ({
+  source: 'mock',
+  taskId,
+  experimentKey: null,
+  launchId: taskId,
+  dataSourceLabel: 'Mock 示例上下文',
+  analysisLockedToHistory: false,
+  monitoringLockedToRecentLaunch: false,
+  updatedAt: new Date().toISOString(),
 });
 
 const App: React.FC = () => {
@@ -55,6 +105,7 @@ const App: React.FC = () => {
       analysisTaskId: response.status === 'failed' ? prev.analysisTaskId : response.taskId,
       draftTrainConfig: cloneConfig(config),
       lastLaunchRecord: launchRecord,
+      currentExperimentContext: launchRecord ? createLaunchContext(response) : createMockTaskContext(response.taskId),
     }));
     if (response.status !== 'failed') {
       setCurrentPage('monitoring');
@@ -67,6 +118,17 @@ const App: React.FC = () => {
     setConsoleSession((prev) => ({
       ...prev,
       analysisTaskId: taskId,
+      currentExperimentContext: taskId?.startsWith('api::')
+        ? createHistoryContext(taskId)
+        : prev.lastLaunchRecord && taskId === prev.lastLaunchRecord.taskId
+          ? createLaunchContext({
+              taskId: prev.lastLaunchRecord.taskId,
+              status: prev.lastLaunchRecord.response.success ? 'completed' : 'failed',
+              message: prev.lastLaunchRecord.message ?? '',
+              dataSource: prev.lastLaunchRecord.dataSource,
+              launchResult: prev.lastLaunchRecord.response,
+            })
+          : createMockTaskContext(taskId),
     }));
     setCurrentPage('analysis');
   };
@@ -84,6 +146,7 @@ const App: React.FC = () => {
       ...prev,
       draftTrainConfig: cloneConfig(config),
       analysisTaskId: taskId,
+      currentExperimentContext: taskId?.startsWith('api::') ? createHistoryContext(taskId) : prev.currentExperimentContext,
     }));
     setCurrentPage('console');
   };

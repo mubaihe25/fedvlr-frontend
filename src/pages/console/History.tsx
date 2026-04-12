@@ -676,6 +676,15 @@ export const History: React.FC<HistoryProps> = ({
                 </div>
 
                 <div className="space-y-3 border-t border-outline-variant/10 pt-4">
+                  {previewTarget.id.startsWith('api::') && previewTarget.status === 'completed' ? (
+                    <button
+                      onClick={() => onOpenAnalysis(previewTarget.taskId)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95"
+                    >
+                      <BarChart2 className="h-5 w-5" />
+                      打开真实分析页
+                    </button>
+                  ) : null}
                   <button
                     onClick={() => handleViewDetail(previewTarget)}
                     disabled={!previewTarget.id.startsWith('api::') && previewTarget.status !== 'completed'}

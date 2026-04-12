@@ -39,10 +39,24 @@ export interface CardItem {
   tone?: StatusBadgeType;
 }
 
+export type ConsoleExperimentContextSource = 'recent_launch' | 'history_record' | 'validate_only' | 'mock';
+
+export interface ConsoleExperimentContext {
+  source: ConsoleExperimentContextSource;
+  taskId: Nullable<string>;
+  experimentKey: Nullable<string>;
+  launchId: Nullable<string>;
+  dataSourceLabel: string;
+  analysisLockedToHistory: boolean;
+  monitoringLockedToRecentLaunch: boolean;
+  updatedAt: string;
+}
+
 export interface ConsoleSessionState {
   activeTaskId: Nullable<string>;
   draftTrainConfig: TrainConfig;
   comparisonSelectionIds: string[];
   analysisTaskId: Nullable<string>;
   lastLaunchRecord: Nullable<LaunchExperimentRecord>;
+  currentExperimentContext: ConsoleExperimentContext;
 }

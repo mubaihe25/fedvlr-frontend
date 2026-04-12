@@ -25,13 +25,14 @@ import {
 } from 'lucide-react';
 import {getTaskStatus, stopTask} from '../../services/task';
 import {cn} from '../../lib/utils';
-import type {AsyncState} from '../../types/common';
+import type {AsyncState, ConsoleExperimentContext} from '../../types/common';
 import type {TaskLogLevel, TaskStatusResponse} from '../../types/task';
 import type {LaunchExperimentRecord} from '../../types/train';
 
 interface MonitoringProps {
   activeTaskId: string | null;
   lastLaunchRecord: LaunchExperimentRecord | null;
+  experimentContext: ConsoleExperimentContext;
   onOpenAnalysis: (taskId: string | null) => void;
 }
 
@@ -85,7 +86,7 @@ const isValidationLaunch = (record: LaunchExperimentRecord) =>
       record.response.launch_mode === 'dry_run',
   );
 
-export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, lastLaunchRecord, onOpenAnalysis}) => {
+export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, lastLaunchRecord, experimentContext, onOpenAnalysis}) => {
   const [loadState, setLoadState] = useState<AsyncState>('idle');
   const [task, setTask] = useState<TaskStatusResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -196,10 +197,17 @@ export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, lastLaunchR
                 : '已提交后端 launcher。当前 API 尚未提供实时任务轮询，本页展示启动返回、输出路径与基础日志摘要。'}
             </p>
           </div>
+          <button
+            onClick={() => onOpenAnalysis(lastLaunchRecord.taskId)}
+            className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40"
+          >
+            <BarChart3 className="h-4 w-4" />
+            {validationOnly ? '查看校验说明' : '查看单次分析'}
+          </button>
         </div>
 
         <div className="rounded-xl border border-primary/20 bg-primary/10 px-5 py-4 text-sm text-primary">
-          当前展示的是最近一次真实后端启动返回；实时轮次、实时曲线和流式日志仍等待后端任务系统接入，不再用 mock 图表冒充真实训练过程。
+          当前展示的是{experimentContext.dataSourceLabel}；实时轮次、实时曲线和流式日志仍等待后端任务系统接入，不再用 mock 图表冒充真实训练过程。
         </div>
 
         <div className="grid grid-cols-12 gap-6">

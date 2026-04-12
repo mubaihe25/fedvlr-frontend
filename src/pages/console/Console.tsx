@@ -47,11 +47,18 @@ export const Console: React.FC<ConsoleProps> = ({
         <Monitoring
           activeTaskId={session.activeTaskId}
           lastLaunchRecord={session.lastLaunchRecord}
+          experimentContext={session.currentExperimentContext}
           onOpenAnalysis={onOpenAnalysis}
         />
       );
     case 'analysis':
-      return <Analysis taskId={session.analysisTaskId ?? session.activeTaskId} lastLaunchRecord={session.lastLaunchRecord} />;
+      return (
+        <Analysis
+          taskId={session.analysisTaskId ?? session.activeTaskId}
+          lastLaunchRecord={session.lastLaunchRecord}
+          experimentContext={session.currentExperimentContext}
+        />
+      );
     case 'comparison':
       return <Comparison comparisonSelectionIds={session.comparisonSelectionIds} />;
     case 'history':

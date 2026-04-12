@@ -11,13 +11,14 @@ import {
 import {AlertCircle, CheckCircle2, Database, FileText, Info, ShieldCheck, Zap} from 'lucide-react';
 import {getAnalysisResult} from '../../services/result';
 import {cn} from '../../lib/utils';
-import type {AsyncState} from '../../types/common';
+import type {AsyncState, ConsoleExperimentContext} from '../../types/common';
 import type {AnalysisResultResponse, CurveSeries, ExperimentResult} from '../../types/result';
 import type {LaunchExperimentRecord} from '../../types/train';
 
 interface AnalysisProps {
   taskId: string | null;
   lastLaunchRecord: LaunchExperimentRecord | null;
+  experimentContext: ConsoleExperimentContext;
 }
 
 const cardToneClasses = {
@@ -56,7 +57,7 @@ const buildChartData = (seriesList: CurveSeries[]) => {
   return Array.from(rows.values());
 };
 
-export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord}) => {
+export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, experimentContext}) => {
   const [loadState, setLoadState] = useState<AsyncState>('idle');
   const [analysisState, setAnalysisState] = useState<AnalysisResultResponse | null>(null);
   const [result, setResult] = useState<ExperimentResult | null>(null);
@@ -188,6 +189,10 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord}) =>
           <p className="text-sm text-on-surface-variant">
             实验标识：<span className="font-mono text-primary">{result.experimentId ?? result.taskId}</span> | 数据来源：
             {result.dataSourceLabel ?? analysisState?.dataSourceLabel ?? '未知'}
+          </p>
+          <p className="text-xs text-on-surface-variant">
+            当前上下文：{experimentContext.dataSourceLabel}
+            {experimentContext.analysisLockedToHistory ? '，已锁定历史实验记录' : ''}
           </p>
         </div>
       </div>
