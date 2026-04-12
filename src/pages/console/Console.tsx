@@ -43,7 +43,13 @@ export const Console: React.FC<ConsoleProps> = ({
         />
       );
     case 'monitoring':
-      return <Monitoring activeTaskId={session.activeTaskId} onOpenAnalysis={onOpenAnalysis} />;
+      return (
+        <Monitoring
+          activeTaskId={session.activeTaskId}
+          lastLaunchRecord={session.lastLaunchRecord}
+          onOpenAnalysis={onOpenAnalysis}
+        />
+      );
     case 'analysis':
       return <Analysis taskId={session.analysisTaskId ?? session.activeTaskId} />;
     case 'comparison':

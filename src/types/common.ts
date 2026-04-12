@@ -1,4 +1,4 @@
-import type {TrainConfig} from './train';
+import type {LaunchExperimentRecord, TrainConfig} from './train';
 
 export type PageType = 'home' | 'console' | 'monitoring' | 'analysis' | 'comparison' | 'history' | 'architecture';
 
@@ -44,4 +44,5 @@ export interface ConsoleSessionState {
   draftTrainConfig: TrainConfig;
   comparisonSelectionIds: string[];
   analysisTaskId: Nullable<string>;
+  lastLaunchRecord: Nullable<LaunchExperimentRecord>;
 }

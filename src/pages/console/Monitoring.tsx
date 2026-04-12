@@ -10,14 +10,28 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import {BarChart3, Download, Info, StopCircle, Terminal as TerminalIcon, TrendingUp} from 'lucide-react';
+import {
+  AlertTriangle,
+  BarChart3,
+  CheckCircle2,
+  Download,
+  FileText,
+  FolderOpen,
+  Info,
+  StopCircle,
+  Terminal as TerminalIcon,
+  TrendingUp,
+  XCircle,
+} from 'lucide-react';
 import {getTaskStatus, stopTask} from '../../services/task';
 import {cn} from '../../lib/utils';
 import type {AsyncState} from '../../types/common';
 import type {TaskLogLevel, TaskStatusResponse} from '../../types/task';
+import type {LaunchExperimentRecord} from '../../types/train';
 
 interface MonitoringProps {
   activeTaskId: string | null;
+  lastLaunchRecord: LaunchExperimentRecord | null;
   onOpenAnalysis: (taskId: string | null) => void;
 }
 
@@ -48,7 +62,30 @@ const logToneClasses: Record<TaskLogLevel, string> = {
   error: 'text-error',
 };
 
-export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, onOpenAnalysis}) => {
+const formatSubmittedAt = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date);
+};
+
+const isValidationLaunch = (record: LaunchExperimentRecord) =>
+  Boolean(
+    record.options.validateOnly ||
+      record.options.dryRun ||
+      record.response.launch_mode === 'validate_only' ||
+      record.response.launch_mode === 'dry_run',
+  );
+
+export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, lastLaunchRecord, onOpenAnalysis}) => {
   const [loadState, setLoadState] = useState<AsyncState>('idle');
   const [task, setTask] = useState<TaskStatusResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -56,6 +93,15 @@ export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, onOpenAnaly
 
   useEffect(() => {
     let cancelled = false;
+
+    if (lastLaunchRecord) {
+      setTask(null);
+      setErrorMessage('');
+      setLoadState('success');
+      return () => {
+        cancelled = true;
+      };
+    }
 
     if (!activeTaskId) {
       setTask(null);
@@ -88,7 +134,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, onOpenAnaly
     return () => {
       cancelled = true;
     };
-  }, [activeTaskId]);
+  }, [activeTaskId, lastLaunchRecord]);
 
   const handleStop = async () => {
     if (!activeTaskId) {
@@ -107,12 +153,193 @@ export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, onOpenAnaly
     }
   };
 
+  if (lastLaunchRecord) {
+    const {response} = lastLaunchRecord;
+    const validationOnly = isValidationLaunch(lastLaunchRecord);
+    const warnings = response.validation_warnings ?? [];
+    const errors = response.errors ?? [];
+    const stdoutTail = response.stdout_tail?.trim();
+    const stderrTail = response.stderr_tail?.trim();
+    const statusTone = response.success
+      ? 'border-tertiary/20 bg-tertiary/10 text-tertiary'
+      : 'border-error/20 bg-error/10 text-error';
+    const StatusIcon = response.success ? CheckCircle2 : XCircle;
+    const overviewItems = [
+      {label: '接口接收', value: response.accepted ? '已接收' : '未接收'},
+      {label: '执行结果', value: response.success ? '成功' : '失败'},
+      {label: '提交模式', value: validationOnly ? '仅校验' : '已启动训练'},
+      {label: '后端模式', value: response.launch_mode || '未返回'},
+      {label: '实验 ID', value: response.experiment_id ?? lastLaunchRecord.taskId ?? '未返回', mono: true},
+      {label: '提交时间', value: formatSubmittedAt(lastLaunchRecord.submittedAt)},
+    ];
+    const pathItems = [
+      {label: '结果目录', value: response.result_dir},
+      {label: '摘要文件', value: response.summary_path},
+      {label: '详细结果', value: response.result_path},
+      {label: 'CSV 文件', value: response.csv_path},
+    ].filter((item) => item.value);
+
+    return (
+      <div className="space-y-8 pb-12">
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-3xl font-bold tracking-tight text-on-background">运行监控中心</h2>
+              <div className={cn('flex items-center gap-2 rounded-full border px-3 py-1', statusTone)}>
+                <StatusIcon className="h-3.5 w-3.5" />
+                <span className="text-xs font-bold">{validationOnly ? '配置校验结果' : '真实启动结果'}</span>
+              </div>
+            </div>
+            <p className="max-w-3xl text-sm text-on-surface-variant">
+              {validationOnly
+                ? '当前为配置校验结果，未启动训练。'
+                : '已提交后端 launcher。当前 API 尚未提供实时任务轮询，本页展示启动返回、输出路径与基础日志摘要。'}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-primary/20 bg-primary/10 px-5 py-4 text-sm text-primary">
+          当前展示的是最近一次真实后端启动返回；实时轮次、实时曲线和流式日志仍等待后端任务系统接入，不再用 mock 图表冒充真实训练过程。
+        </div>
+
+        <div className="grid grid-cols-12 gap-6">
+          <div className="col-span-12 rounded-xl border border-outline-variant/10 bg-surface-container-low p-6 shadow-xl lg:col-span-5">
+            <h3 className="mb-5 flex items-center gap-2 text-sm font-bold">
+              <Info className="h-4 w-4 text-primary" />
+              最近一次提交概览
+            </h3>
+            <div className="space-y-3">
+              {overviewItems.map((item) => (
+                <div key={item.label} className="flex items-center justify-between gap-6 border-b border-outline-variant/10 py-2">
+                  <span className="text-sm text-on-surface-variant">{item.label}</span>
+                  <span className={cn('text-right text-sm font-semibold text-on-surface', item.mono && 'font-mono')}>
+                    {item.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {lastLaunchRecord.message ? (
+              <div className="mt-6 rounded-lg bg-surface-container-highest px-4 py-3 text-xs text-on-surface-variant">
+                {lastLaunchRecord.message}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="col-span-12 rounded-xl border border-outline-variant/10 bg-surface-container-low p-6 shadow-xl lg:col-span-7">
+            <h3 className="mb-5 flex items-center gap-2 text-sm font-bold">
+              <FolderOpen className="h-4 w-4 text-tertiary" />
+              结果文件路径
+            </h3>
+            {pathItems.length ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {pathItems.map((item) => (
+                  <div key={item.label} className="rounded-lg bg-surface-container-highest p-4">
+                    <p className="mb-2 text-xs font-bold text-on-surface-variant">{item.label}</p>
+                    <p className="break-all font-mono text-xs leading-relaxed text-on-surface">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg bg-surface-container-highest p-4 text-sm text-on-surface-variant">
+                后端本次未返回结果文件路径。若这是仅校验模式，这是预期表现。
+              </div>
+            )}
+          </div>
+
+          <div className="col-span-12 rounded-xl border border-outline-variant/10 bg-surface-container-low p-6 shadow-xl lg:col-span-6">
+            <h3 className="mb-5 flex items-center gap-2 text-sm font-bold">
+              <AlertTriangle className="h-4 w-4 text-error" />
+              Warnings / Errors 摘要
+            </h3>
+            <div className="space-y-3">
+              {warnings.length ? (
+                warnings.map((warning) => (
+                  <div key={warning} className="rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-primary">
+                    {warning}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg bg-surface-container-highest px-4 py-3 text-xs text-on-surface-variant">
+                  暂无校验警告。
+                </div>
+              )}
+              {errors.length ? (
+                errors.map((error) => (
+                  <div key={error} className="rounded-lg border border-error/20 bg-error/10 px-4 py-3 text-xs text-error">
+                    {error}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg bg-surface-container-highest px-4 py-3 text-xs text-on-surface-variant">
+                  暂无错误信息。
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="col-span-12 rounded-xl border border-outline-variant/10 bg-surface-container-low p-6 shadow-xl lg:col-span-6">
+            <h3 className="mb-5 flex items-center gap-2 text-sm font-bold">
+              <FileText className="h-4 w-4 text-primary" />
+              提交配置摘要
+            </h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg bg-surface-container-highest p-4">
+                <p className="text-xs text-on-surface-variant">模型</p>
+                <p className="mt-1 font-semibold text-on-surface">{lastLaunchRecord.config.model}</p>
+              </div>
+              <div className="rounded-lg bg-surface-container-highest p-4">
+                <p className="text-xs text-on-surface-variant">数据集</p>
+                <p className="mt-1 font-semibold text-on-surface">{lastLaunchRecord.config.dataset}</p>
+              </div>
+              <div className="rounded-lg bg-surface-container-highest p-4">
+                <p className="text-xs text-on-surface-variant">训练轮数</p>
+                <p className="mt-1 font-mono font-semibold text-primary">{lastLaunchRecord.config.totalRounds}</p>
+              </div>
+              <div className="rounded-lg bg-surface-container-highest p-4">
+                <p className="text-xs text-on-surface-variant">客户端采样率</p>
+                <p className="mt-1 font-mono font-semibold text-primary">
+                  {Math.round(lastLaunchRecord.config.clientSamplingRate * 100)}%
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-span-12 overflow-hidden rounded-xl border border-outline-variant/10 bg-surface-container-low shadow-2xl">
+            <div className="flex items-center justify-between border-b border-outline-variant/10 bg-surface-container-highest px-6 py-4">
+              <div className="flex items-center gap-3">
+                <TerminalIcon className="h-4 w-4 text-on-surface-variant" />
+                <h3 className="text-sm font-bold">Launcher 输出摘要</h3>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+                stdout / stderr tail
+              </span>
+            </div>
+            <div className="grid grid-cols-1 gap-4 bg-black/60 p-6 lg:grid-cols-2">
+              <div>
+                <p className="mb-2 text-xs font-bold text-primary">stdout_tail</p>
+                <pre className="min-h-44 whitespace-pre-wrap break-words rounded-lg bg-black/50 p-4 font-mono text-xs leading-relaxed text-on-surface-variant">
+                  {stdoutTail || '暂无 stdout 输出摘要。'}
+                </pre>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-bold text-error">stderr_tail</p>
+                <pre className="min-h-44 whitespace-pre-wrap break-words rounded-lg bg-black/50 p-4 font-mono text-xs leading-relaxed text-on-surface-variant">
+                  {stderrTail || '暂无 stderr 输出摘要。'}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loadState === 'empty') {
     return (
       <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-10 text-center">
         <h2 className="text-2xl font-bold text-on-surface">暂无运行中的实验任务</h2>
         <p className="mt-3 text-sm text-on-surface-variant">
-          请先在“实验配置”页启动训练任务，再回到这里查看运行监控信息。
+          当前暂无真实启动记录。请先在“实验配置”页提交实验；若真实接口不可用，页面会回退到 mock 监控示例。
         </p>
       </div>
     );
@@ -175,6 +402,10 @@ export const Monitoring: React.FC<MonitoringProps> = ({activeTaskId, onOpenAnaly
       {errorMessage ? (
         <div className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">{errorMessage}</div>
       ) : null}
+
+      <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low px-5 py-4 text-sm text-on-surface-variant">
+        当前暂无真实启动记录，以下内容来自 mock 任务快照，仅作为运行监控页示例展示。
+      </div>
 
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 flex flex-col justify-between rounded-xl border border-outline-variant/10 bg-surface-container-low p-6 shadow-xl lg:col-span-4">

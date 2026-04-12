@@ -16,6 +16,7 @@ const createInitialSession = (): ConsoleSessionState => ({
   draftTrainConfig: cloneConfig(mockConfigurationData.defaultConfig),
   comparisonSelectionIds: [],
   analysisTaskId: null,
+  lastLaunchRecord: null,
 });
 
 const App: React.FC = () => {
@@ -35,14 +36,27 @@ const App: React.FC = () => {
     source?: ExperimentConfigurationSource,
   ): Promise<StartTrainResponse> => {
     const response = await startTrain(config, options, source);
+    const launchRecord = response.launchResult
+      ? {
+          taskId: response.taskId,
+          config: cloneConfig(config),
+          options: {...(options ?? {})},
+          response: response.launchResult,
+          submittedAt: new Date().toISOString(),
+          dataSource: response.dataSource ?? 'api',
+          dataSourceLabel: source?.dataSourceLabel,
+          message: response.message,
+        }
+      : null;
 
     setConsoleSession((prev) => ({
       ...prev,
       activeTaskId: response.status === 'failed' ? prev.activeTaskId : response.taskId,
       analysisTaskId: response.status === 'failed' ? prev.analysisTaskId : response.taskId,
       draftTrainConfig: cloneConfig(config),
+      lastLaunchRecord: launchRecord,
     }));
-    if (response.status === 'running') {
+    if (response.status !== 'failed') {
       setCurrentPage('monitoring');
     }
 

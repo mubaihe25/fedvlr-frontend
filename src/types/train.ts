@@ -222,3 +222,14 @@ export interface LaunchExperimentResponse {
   stderr_tail?: string | null;
   launcher_payload?: Record<string, unknown>;
 }
+
+export interface LaunchExperimentRecord {
+  taskId: string;
+  config: TrainConfig;
+  options: LaunchExperimentOptions;
+  response: LaunchExperimentResponse;
+  submittedAt: string;
+  dataSource: 'api' | 'mock';
+  dataSourceLabel?: string;
+  message?: string;
+}
