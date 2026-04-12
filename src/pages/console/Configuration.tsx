@@ -2,25 +2,64 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {ChevronDown, Cpu, Info, Settings, ShieldAlert} from 'lucide-react';
 import {mockConfigurationData} from '../../mock/configuration';
 import type {AsyncState} from '../../types/common';
-import type {TrainConfig} from '../../types/train';
+import type {LaunchExperimentOptions, TrainConfig} from '../../types/train';
 import {cn} from '../../lib/utils';
 import type {StartTrainResponse} from '../../services/train';
+import {
+  createFallbackExperimentConfigurationSource,
+  findValidatedCombination,
+  getExperimentConfigurationSource,
+  getSelectedAttacks,
+  getSelectedDefenses,
+  getSelectedPrivacyMetrics,
+  modeToScenario,
+  type ExperimentConfigurationSource,
+} from '../../services/experiment';
 
 interface ConfigurationProps {
   draftConfig: TrainConfig;
   onDraftConfigChange: (config: TrainConfig) => void;
-  onStartTrain: (config: TrainConfig) => Promise<StartTrainResponse>;
+  onStartTrain: (
+    config: TrainConfig,
+    options?: LaunchExperimentOptions,
+    source?: ExperimentConfigurationSource,
+  ) => Promise<StartTrainResponse>;
 }
 
 const cloneConfig = (config: TrainConfig) => structuredClone(config);
+
+const deriveModeFromModules = (attacks: string[], defenses: string[]): TrainConfig['mode'] => {
+  if (attacks.length && defenses.length) {
+    return 'comparison';
+  }
+
+  if (attacks.length) {
+    return 'attack';
+  }
+
+  if (defenses.length) {
+    return 'defense';
+  }
+
+  return 'baseline';
+};
 
 const createResetConfig = (): TrainConfig => ({
   ...cloneConfig(mockConfigurationData.defaultConfig),
   mode: 'baseline',
   attackEnabled: false,
   attackType: 'none',
+  enabledAttacks: [],
   defenseEnabled: false,
   defenseType: 'none',
+  enabledDefenses: [],
+  enabledPrivacyMetrics: [],
+  maliciousClientConfig: {
+    enabled: false,
+    mode: 'none',
+    ratio: 0,
+    clientIds: [],
+  },
 });
 
 export const Configuration: React.FC<ConfigurationProps> = ({
@@ -31,13 +70,64 @@ export const Configuration: React.FC<ConfigurationProps> = ({
   const [formConfig, setFormConfig] = useState<TrainConfig>(() => cloneConfig(draftConfig));
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitState, setSubmitState] = useState<AsyncState>('idle');
+  const [sourceState, setSourceState] = useState<AsyncState>('loading');
+  const [configurationSource, setConfigurationSource] = useState<ExperimentConfigurationSource>(() =>
+    createFallbackExperimentConfigurationSource(),
+  );
+  const [validateOnly, setValidateOnly] = useState(true);
+  const [strictValidation, setStrictValidation] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     setFormConfig(cloneConfig(draftConfig));
   }, [draftConfig]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadConfigurationSource = async () => {
+      setSourceState('loading');
+      const nextSource = await getExperimentConfigurationSource();
+      if (cancelled) {
+        return;
+      }
+
+      setConfigurationSource(nextSource);
+      setSourceState(nextSource.dataSource === 'api' ? 'success' : 'error');
+      setFormConfig((current) => {
+        const dataset = nextSource.datasetOptions.some((option) => option.value === current.dataset)
+          ? current.dataset
+          : (nextSource.datasetOptions[0]?.value ?? current.dataset);
+        const model = nextSource.modelOptions.some((option) => option.value === current.model)
+          ? current.model
+          : (nextSource.capabilities?.models.find((modelItem) => modelItem.compatibility_status === 'showcase_ready')?.name ??
+            nextSource.modelOptions.find((option) => !option.disabled)?.value ??
+            nextSource.modelOptions[0]?.value ??
+            current.model);
+        const next = {...current, dataset, model, scenario: current.scenario ?? modeToScenario(current.mode)};
+        if (dataset !== current.dataset || model !== current.model || next.scenario !== current.scenario) {
+          onDraftConfigChange(next);
+        }
+        return next;
+      });
+    };
+
+    void loadConfigurationSource();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const summary = useMemo(() => mockConfigurationData.buildSummary(formConfig), [formConfig]);
+  const selectedAttacks = useMemo(() => getSelectedAttacks(formConfig), [formConfig]);
+  const selectedDefenses = useMemo(() => getSelectedDefenses(formConfig), [formConfig]);
+  const selectedPrivacyMetrics = useMemo(() => getSelectedPrivacyMetrics(formConfig), [formConfig]);
+  const validatedCombination = useMemo(
+    () => findValidatedCombination(configurationSource, formConfig),
+    [configurationSource, formConfig],
+  );
+  const isValidatedCombination =
+    configurationSource.dataSource === 'api' && Boolean(validatedCombination);
 
   const updateConfig = (updater: (current: TrainConfig) => TrainConfig) => {
     setFormConfig((current) => {
@@ -47,43 +137,228 @@ export const Configuration: React.FC<ConfigurationProps> = ({
     });
   };
 
+  const createDefaultConfigFromSource = (): TrainConfig => {
+    const dataset = configurationSource.datasetOptions[0]?.value ?? mockConfigurationData.defaultConfig.dataset;
+    const model =
+      configurationSource.capabilities?.models.find((modelItem) => modelItem.compatibility_status === 'showcase_ready')?.name ??
+      configurationSource.modelOptions.find((option) => !option.disabled)?.value ??
+      configurationSource.modelOptions[0]?.value ??
+      mockConfigurationData.defaultConfig.model;
+    const preferredCombination =
+      configurationSource.capabilities?.validated_combinations.find(
+        (combination) => combination.name === 'model_replacement_trimmed_mean' && combination.validated_models.includes(model),
+      ) ?? configurationSource.capabilities?.validated_combinations.find((combination) => combination.validated_models.includes(model));
+    const enabledAttacks = preferredCombination?.attacks ?? ['model_replacement'];
+    const enabledDefenses = preferredCombination?.defenses ?? ['trimmed_mean'];
+    const enabledPrivacyMetrics = preferredCombination?.privacy_metrics ?? [];
+    const mode = deriveModeFromModules(enabledAttacks, enabledDefenses);
+
+    return {
+      ...cloneConfig(mockConfigurationData.defaultConfig),
+      dataset,
+      model,
+      mode,
+      scenario: preferredCombination?.scenario ?? modeToScenario(mode),
+      attackEnabled: Boolean(enabledAttacks.length),
+      attackType: (enabledAttacks[0] ?? 'none') as TrainConfig['attackType'],
+      enabledAttacks,
+      defenseEnabled: Boolean(enabledDefenses.length),
+      defenseType: (enabledDefenses[0] ?? 'none') as TrainConfig['defenseType'],
+      enabledDefenses,
+      enabledPrivacyMetrics,
+      maliciousClientConfig: {
+        enabled: Boolean(enabledAttacks.length),
+        mode: enabledAttacks.length ? 'ratio' : 'none',
+        ratio: enabledAttacks.length ? mockConfigurationData.defaultConfig.poisoningRatio : 0,
+        clientIds: [],
+      },
+    };
+  };
+
   const handleModeChange = (mode: TrainConfig['mode']) => {
     updateConfig((current) => {
       if (mode === 'baseline') {
-        return {...current, mode, attackEnabled: false, attackType: 'none', defenseEnabled: false, defenseType: 'none'};
-      }
-
-      if (mode === 'attack') {
         return {
           ...current,
           mode,
-          attackEnabled: true,
-          attackType: current.attackType === 'none' ? 'label-flipping' : current.attackType,
+          scenario: modeToScenario(mode),
+          attackEnabled: false,
+          attackType: 'none',
+          enabledAttacks: [],
           defenseEnabled: false,
           defenseType: 'none',
+          enabledDefenses: [],
+          maliciousClientConfig: {
+            ...(current.maliciousClientConfig ?? {clientIds: []}),
+            enabled: false,
+            mode: 'none',
+            ratio: 0,
+            clientIds: current.maliciousClientConfig?.clientIds ?? [],
+          },
         };
+      }
+
+      if (mode === 'attack') {
+        const nextAttack = getSelectedAttacks(current)[0] ?? configurationSource.attackOptions[0]?.value ?? 'model_replacement';
+        return {
+          ...current,
+          mode,
+          scenario: modeToScenario(mode),
+          attackEnabled: true,
+          attackType: nextAttack as TrainConfig['attackType'],
+          enabledAttacks: [nextAttack],
+          defenseEnabled: false,
+          defenseType: 'none',
+          enabledDefenses: [],
+          maliciousClientConfig: {
+            ...(current.maliciousClientConfig ?? {clientIds: []}),
+            enabled: true,
+            mode: 'ratio',
+            ratio: current.poisoningRatio,
+            clientIds: current.maliciousClientConfig?.clientIds ?? [],
+          },
+        };
+      }
+
+      if (mode === 'defense') {
+        const nextDefense = getSelectedDefenses(current)[0] ?? configurationSource.defenseOptions[0]?.value ?? 'trimmed_mean';
+        return {
+          ...current,
+          mode,
+          scenario: modeToScenario(mode),
+          attackEnabled: false,
+          attackType: 'none',
+          enabledAttacks: [],
+          defenseEnabled: true,
+          defenseType: nextDefense as TrainConfig['defenseType'],
+          enabledDefenses: [nextDefense],
+          maliciousClientConfig: {
+            ...(current.maliciousClientConfig ?? {clientIds: []}),
+            enabled: false,
+            mode: 'none',
+            ratio: 0,
+            clientIds: current.maliciousClientConfig?.clientIds ?? [],
+          },
+        };
+      }
+
+      const nextAttack = getSelectedAttacks(current)[0] ?? configurationSource.attackOptions[0]?.value ?? 'model_replacement';
+      const nextDefense = getSelectedDefenses(current)[0] ?? configurationSource.defenseOptions[0]?.value ?? 'trimmed_mean';
+      return {
+        ...current,
+        mode,
+        scenario: modeToScenario(mode),
+        attackEnabled: true,
+        attackType: nextAttack as TrainConfig['attackType'],
+        enabledAttacks: [nextAttack],
+        defenseEnabled: true,
+        defenseType: nextDefense as TrainConfig['defenseType'],
+        enabledDefenses: [nextDefense],
+        maliciousClientConfig: {
+          ...(current.maliciousClientConfig ?? {clientIds: []}),
+          enabled: true,
+          mode: 'ratio',
+          ratio: current.poisoningRatio,
+          clientIds: current.maliciousClientConfig?.clientIds ?? [],
+        },
+      };
+    });
+  };
+
+  const toggleAttack = (attackName: string) => {
+    updateConfig((current) => {
+      const currentAttacks = getSelectedAttacks(current);
+      const nextAttacks = currentAttacks.includes(attackName)
+        ? currentAttacks.filter((name) => name !== attackName)
+        : [...currentAttacks, attackName];
+      if (nextAttacks.length > configurationSource.maxEnabledAttacks) {
+        setMessage(`当前最多选择 ${configurationSource.maxEnabledAttacks} 个攻击模块。`);
+        return current;
+      }
+
+      const defenses = getSelectedDefenses(current);
+      const mode = deriveModeFromModules(nextAttacks, defenses);
+      return {
+        ...current,
+        mode,
+        scenario: modeToScenario(mode),
+        attackEnabled: Boolean(nextAttacks.length),
+        attackType: (nextAttacks[0] ?? 'none') as TrainConfig['attackType'],
+        enabledAttacks: nextAttacks,
+        maliciousClientConfig: {
+          ...(current.maliciousClientConfig ?? {clientIds: []}),
+          enabled: Boolean(nextAttacks.length),
+          mode: nextAttacks.length ? 'ratio' : 'none',
+          ratio: nextAttacks.length ? current.poisoningRatio : 0,
+          clientIds: current.maliciousClientConfig?.clientIds ?? [],
+        },
+      };
+    });
+  };
+
+  const toggleDefense = (defenseName: string) => {
+    updateConfig((current) => {
+      const attacks = getSelectedAttacks(current);
+      const currentDefenses = getSelectedDefenses(current);
+      const nextDefenses = currentDefenses.includes(defenseName)
+        ? currentDefenses.filter((name) => name !== defenseName)
+        : [...currentDefenses, defenseName];
+      if (nextDefenses.length > configurationSource.maxEnabledDefenses) {
+        setMessage(`当前最多选择 ${configurationSource.maxEnabledDefenses} 个防御模块。`);
+        return current;
+      }
+
+      const mode = deriveModeFromModules(attacks, nextDefenses);
+      return {
+        ...current,
+        mode,
+        scenario: modeToScenario(mode),
+        defenseEnabled: Boolean(nextDefenses.length),
+        defenseType: (nextDefenses[0] ?? 'none') as TrainConfig['defenseType'],
+        enabledDefenses: nextDefenses,
+      };
+    });
+  };
+
+  const togglePrivacyMetric = (metricName: string) => {
+    updateConfig((current) => {
+      const currentMetrics = getSelectedPrivacyMetrics(current);
+      const nextMetrics = currentMetrics.includes(metricName)
+        ? currentMetrics.filter((name) => name !== metricName)
+        : [...currentMetrics, metricName];
+      if (nextMetrics.length > configurationSource.maxEnabledPrivacyMetrics) {
+        setMessage(`当前最多选择 ${configurationSource.maxEnabledPrivacyMetrics} 个观测模块。`);
+        return current;
       }
 
       return {
         ...current,
-        mode,
-        attackEnabled: true,
-        attackType: current.attackType === 'none' ? 'label-flipping' : current.attackType,
-        defenseEnabled: true,
-        defenseType: current.defenseType === 'none' ? 'cyber-shield' : current.defenseType,
+        enabledPrivacyMetrics: nextMetrics,
       };
     });
   };
 
   const handleDefault = () => {
-    const next = cloneConfig(mockConfigurationData.defaultConfig);
+    const next = createDefaultConfigFromSource();
     setFormConfig(next);
     onDraftConfigChange(next);
-    setMessage('已加载推荐默认配置。');
+    setMessage(
+      configurationSource.dataSource === 'api'
+        ? '已加载真实能力矩阵推荐配置。'
+        : '已加载 mock 推荐默认配置。',
+    );
   };
 
   const handleReset = () => {
-    const next = createResetConfig();
+    const next = {
+      ...createResetConfig(),
+      dataset: configurationSource.datasetOptions[0]?.value ?? mockConfigurationData.defaultConfig.dataset,
+      model:
+        configurationSource.capabilities?.models.find((model) => model.compatibility_status === 'showcase_ready')?.name ??
+        configurationSource.modelOptions.find((option) => !option.disabled)?.value ??
+        configurationSource.modelOptions[0]?.value ??
+        mockConfigurationData.defaultConfig.model,
+    };
     setFormConfig(next);
     onDraftConfigChange(next);
     setMessage('已重置为基线实验配置。');
@@ -92,8 +367,8 @@ export const Configuration: React.FC<ConfigurationProps> = ({
   const handleStart = async () => {
     try {
       setSubmitState('loading');
-      const response = await onStartTrain(formConfig);
-      setSubmitState('success');
+      const response = await onStartTrain(formConfig, {validateOnly, strictValidation}, configurationSource);
+      setSubmitState(response.status === 'failed' ? 'error' : 'success');
       setMessage(response.message);
     } catch (error) {
       setSubmitState('error');
@@ -108,8 +383,34 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <span className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-primary">Environment Setup</span>
           <h3 className="text-4xl font-bold tracking-tight text-on-background">训练实验配置</h3>
           <p className="mt-3 text-sm text-on-surface-variant">
-            本页使用 mock 数据与统一类型定义驱动，后续可直接替换为真实后端接口。
+            优先读取真实能力矩阵与统一实验 schema，支持多攻击、多防御与观测模块组合配置。
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+            <span
+              className={cn(
+                'rounded-full px-3 py-1',
+                sourceState === 'loading'
+                  ? 'bg-surface-container-high text-on-surface-variant'
+                  : configurationSource.dataSource === 'api'
+                    ? 'bg-tertiary/15 text-tertiary'
+                    : 'bg-error/10 text-error',
+              )}
+            >
+              {sourceState === 'loading'
+                ? '正在加载能力矩阵'
+                : configurationSource.dataSource === 'api'
+                  ? '真实能力矩阵'
+                  : 'Mock 兜底'}
+            </span>
+            <span className="rounded-full bg-surface-container-high px-3 py-1 text-on-surface-variant">
+              Schema {configurationSource.schemaVersion ?? 'local'}
+            </span>
+            {configurationSource.fallbackReason ? (
+              <span className="rounded-full bg-error/10 px-3 py-1 text-error">
+                已回退：{configurationSource.fallbackReason}
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -129,7 +430,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             disabled={submitState === 'loading'}
             className="rounded-lg bg-gradient-to-br from-primary to-secondary px-8 py-2.5 text-sm font-bold text-surface shadow-[0_0_20px_rgba(129,236,255,0.3)] transition-all hover:shadow-[0_0_30px_rgba(129,236,255,0.5)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {submitState === 'loading' ? '正在启动...' : '开始训练'}
+            {submitState === 'loading' ? '正在提交...' : validateOnly ? '校验配置' : '开始训练'}
           </button>
         </div>
       </div>
@@ -163,7 +464,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                     onChange={(event) => updateConfig((current) => ({...current, dataset: event.target.value}))}
                     className="w-full appearance-none rounded-lg border-none bg-surface-container-highest px-4 py-3 text-on-surface transition-all focus:ring-1 focus:ring-primary"
                   >
-                    {mockConfigurationData.datasetOptions.map((option) => (
+                    {configurationSource.datasetOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -181,8 +482,8 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                     onChange={(event) => updateConfig((current) => ({...current, model: event.target.value}))}
                     className="w-full appearance-none rounded-lg border-none bg-surface-container-highest px-4 py-3 text-on-surface transition-all focus:ring-1 focus:ring-primary"
                   >
-                    {mockConfigurationData.modelOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
+                    {configurationSource.modelOptions.map((option) => (
+                      <option key={option.value} value={option.value} disabled={option.disabled}>
                         {option.label}
                       </option>
                     ))}
@@ -402,33 +703,31 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             </div>
             <div className="space-y-4 p-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">攻击类型</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">攻击链</label>
+                  <span className="text-[10px] text-on-surface-variant">
+                    {selectedAttacks.length}/{configurationSource.maxEnabledAttacks}
+                  </span>
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  {mockConfigurationData.attackOptions
-                    .filter((option) => option.value !== 'none')
-                    .map((option) => {
-                      const isActive = formConfig.attackEnabled && formConfig.attackType === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          onClick={() =>
-                            updateConfig((current) => ({
-                              ...current,
-                              attackEnabled: true,
-                              attackType: option.value,
-                            }))
-                          }
-                          className={cn(
-                            'rounded px-3 py-1 text-[11px] font-bold transition-all',
-                            isActive
-                              ? 'border border-error/20 bg-error/10 text-error'
-                              : 'bg-surface-container-highest text-on-surface-variant',
-                          )}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
+                  {configurationSource.attackOptions.map((option) => {
+                    const isActive = selectedAttacks.includes(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        title={option.description}
+                        onClick={() => toggleAttack(option.value)}
+                        className={cn(
+                          'rounded px-3 py-1 text-[11px] font-bold transition-all',
+                          isActive
+                            ? 'border border-error/20 bg-error/10 text-error'
+                            : 'bg-surface-container-highest text-on-surface-variant hover:text-on-surface',
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <div className="space-y-2 pt-4">
@@ -439,37 +738,106 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   </div>
                   <span className="font-mono text-sm text-error">{Math.round(formConfig.poisoningRatio * 100)}%</span>
                 </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="0.5"
+                  step="0.05"
+                  value={formConfig.poisoningRatio}
+                  onChange={(event) =>
+                    updateConfig((current) => {
+                      const poisoningRatio = Number(event.target.value);
+                      return {
+                        ...current,
+                        poisoningRatio,
+                        maliciousClientConfig: {
+                          ...(current.maliciousClientConfig ?? {clientIds: []}),
+                          enabled: Boolean(getSelectedAttacks(current).length),
+                          mode: getSelectedAttacks(current).length ? 'ratio' : 'none',
+                          ratio: getSelectedAttacks(current).length ? poisoningRatio : 0,
+                          clientIds: current.maliciousClientConfig?.clientIds ?? [],
+                        },
+                      };
+                    })
+                  }
+                  className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-error"
+                />
               </div>
               <div className="space-y-2 pt-4">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">防御机制</label>
-                <div className="flex flex-wrap gap-2">
-                  {mockConfigurationData.defenseOptions
-                    .filter((option) => option.value !== 'none')
-                    .slice(0, 4)
-                    .map((option) => {
-                      const isActive = formConfig.defenseEnabled && formConfig.defenseType === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          onClick={() =>
-                            updateConfig((current) => ({
-                              ...current,
-                              defenseEnabled: true,
-                              defenseType: option.value,
-                            }))
-                          }
-                          className={cn(
-                            'rounded px-3 py-1 text-[11px] font-bold transition-all',
-                            isActive
-                              ? 'border border-tertiary/20 bg-tertiary/10 text-tertiary'
-                              : 'bg-surface-container-highest text-on-surface-variant',
-                          )}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">防御链</label>
+                  <span className="text-[10px] text-on-surface-variant">
+                    {selectedDefenses.length}/{configurationSource.maxEnabledDefenses}
+                  </span>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  {configurationSource.defenseOptions.map((option) => {
+                    const isActive = selectedDefenses.includes(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        title={option.description}
+                        onClick={() => toggleDefense(option.value)}
+                        className={cn(
+                          'rounded px-3 py-1 text-[11px] font-bold transition-all',
+                          isActive
+                            ? 'border border-tertiary/20 bg-tertiary/10 text-tertiary'
+                            : 'bg-surface-container-highest text-on-surface-variant hover:text-on-surface',
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="space-y-2 pt-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">观测模块</label>
+                  <span className="text-[10px] text-on-surface-variant">
+                    {selectedPrivacyMetrics.length}/{configurationSource.maxEnabledPrivacyMetrics}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {configurationSource.privacyMetricOptions.map((option) => {
+                    const isActive = selectedPrivacyMetrics.includes(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        title={option.description}
+                        onClick={() => togglePrivacyMetric(option.value)}
+                        className={cn(
+                          'rounded px-3 py-1 text-[11px] font-bold transition-all',
+                          isActive
+                            ? 'border border-primary/20 bg-primary/10 text-primary'
+                            : 'bg-surface-container-highest text-on-surface-variant hover:text-on-surface',
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="space-y-2 pt-4">
+                <button
+                  onClick={() => setValidateOnly((current) => !current)}
+                  className={cn(
+                    'w-full rounded-lg px-4 py-3 text-left text-xs font-semibold transition-all',
+                    validateOnly ? 'bg-primary/10 text-primary' : 'bg-surface-container-highest text-on-surface-variant',
+                  )}
+                >
+                  {validateOnly ? '当前为仅校验配置，不启动训练' : '当前会同步调用后端启动实验'}
+                </button>
+                <button
+                  onClick={() => setStrictValidation((current) => !current)}
+                  className={cn(
+                    'w-full rounded-lg px-4 py-3 text-left text-xs font-semibold transition-all',
+                    strictValidation ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant',
+                  )}
+                >
+                  {strictValidation ? '严格校验已启用：未验证组合会被后端拒绝' : '严格校验未启用：未验证组合仅提示'}
+                </button>
               </div>
             </div>
           </div>
@@ -493,6 +861,39 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <span className="text-on-surface-variant">隐私保护强度</span>
                 <span className="rounded bg-tertiary/20 px-2 py-0.5 text-[10px] font-bold text-tertiary">{summary.privacyLevel.toUpperCase()}</span>
               </div>
+              <div className="flex items-start justify-between gap-4 text-sm">
+                <span className="text-on-surface-variant">攻击链</span>
+                <span className="max-w-[65%] text-right font-mono text-on-surface">
+                  {selectedAttacks.length ? selectedAttacks.join(' -> ') : '未启用'}
+                </span>
+              </div>
+              <div className="flex items-start justify-between gap-4 text-sm">
+                <span className="text-on-surface-variant">防御链</span>
+                <span className="max-w-[65%] text-right font-mono text-on-surface">
+                  {selectedDefenses.length ? selectedDefenses.join(' -> ') : '未启用'}
+                </span>
+              </div>
+              <div className="flex items-start justify-between gap-4 text-sm">
+                <span className="text-on-surface-variant">观测链</span>
+                <span className="max-w-[65%] text-right font-mono text-on-surface">
+                  {selectedPrivacyMetrics.length ? selectedPrivacyMetrics.join(' -> ') : '未启用'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-on-surface-variant">组合状态</span>
+                <span
+                  className={cn(
+                    'rounded px-2 py-0.5 text-[10px] font-bold',
+                    isValidatedCombination
+                      ? 'bg-tertiary/20 text-tertiary'
+                      : configurationSource.dataSource === 'api'
+                        ? 'bg-error/10 text-error'
+                        : 'bg-surface-container-high text-on-surface-variant',
+                  )}
+                >
+                  {isValidatedCombination ? '已验证' : configurationSource.dataSource === 'api' ? '未验证' : 'Mock'}
+                </span>
+              </div>
             </div>
             <div className="relative mt-8 overflow-hidden rounded-lg border border-primary/10 aspect-video">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,236,255,0.18),_transparent_45%),linear-gradient(135deg,#0c141b,#172129)]" />
@@ -504,7 +905,14 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             <div className="mt-6 rounded-lg bg-surface-container-low p-4 text-xs text-on-surface-variant">
               <div className="flex items-start gap-2">
                 <Info className="mt-0.5 h-4 w-4 text-primary" />
-                <span>{formConfig.advanced.notes}</span>
+                <span>
+                  {isValidatedCombination
+                    ? `已匹配验证组合：${validatedCombination?.name}。`
+                    : configurationSource.dataSource === 'api'
+                      ? `当前组合尚未在能力矩阵中标记为已验证；后端执行顺序：${configurationSource.executionOrder}。`
+                      : formConfig.advanced.notes}
+                  {' '}必填字段：{configurationSource.requiredFields.join(' / ') || 'model / dataset / scenario'}。
+                </span>
               </div>
             </div>
           </div>

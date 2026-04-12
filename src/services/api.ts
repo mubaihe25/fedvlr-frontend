@@ -45,3 +45,21 @@ export const apiGet = async <T>(path: string): Promise<T> => {
 
   return response.json() as Promise<T>;
 };
+
+export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const response = await fetch(`${getApiBaseUrl()}${normalizedPath}`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json() as Promise<T>;
+};

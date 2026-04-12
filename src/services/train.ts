@@ -3,15 +3,25 @@ import {createTaskStatusSnapshot} from '../mock/monitoring';
 import {createMockId, simulateRequest} from './mockAdapter';
 import {mockStore} from './mockStore';
 import type {TaskLifecycleStatus} from '../types/task';
-import type {TrainConfig} from '../types/train';
+import type {LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../types/train';
+import {launchExperiment, type ExperimentConfigurationSource} from './experiment';
 
 export interface StartTrainResponse {
   taskId: string;
   status: TaskLifecycleStatus;
   message: string;
+  dataSource?: 'api' | 'mock';
+  launchMode?: string;
+  resultDir?: string | null;
+  summaryPath?: string | null;
+  resultPath?: string | null;
+  csvPath?: string | null;
+  validationWarnings?: string[];
+  errors?: string[];
+  launchResult?: LaunchExperimentResponse;
 }
 
-export const startTrain = async (config: TrainConfig): Promise<StartTrainResponse> => {
+const startMockTrain = async (config: TrainConfig, fallbackReason?: string): Promise<StartTrainResponse> => {
   return simulateRequest(() => {
     const taskId = createMockId('task');
     const normalizedConfig = {
@@ -35,7 +45,49 @@ export const startTrain = async (config: TrainConfig): Promise<StartTrainRespons
     return {
       taskId,
       status: 'running',
-      message: '训练任务已创建，可前往运行监控查看状态。',
+      dataSource: 'mock',
+      message: fallbackReason
+        ? `真实启动接口不可用，已回退 mock 任务：${fallbackReason}`
+        : '训练任务已创建，可前往运行监控查看状态。',
     };
   });
+};
+
+export const startTrain = async (
+  config: TrainConfig,
+  options: LaunchExperimentOptions = {},
+  source?: ExperimentConfigurationSource,
+): Promise<StartTrainResponse> => {
+  try {
+    const response = await launchExperiment(config, source, options);
+    const errors = response.errors ?? [];
+    const warnings = response.validation_warnings ?? [];
+    const taskId = response.experiment_id ?? `launch-${Date.now()}`;
+
+    return {
+      taskId,
+      status: response.success ? 'completed' : 'failed',
+      dataSource: 'api',
+      launchMode: response.launch_mode,
+      resultDir: response.result_dir,
+      summaryPath: response.summary_path,
+      resultPath: response.result_path,
+      csvPath: response.csv_path,
+      validationWarnings: warnings,
+      errors,
+      launchResult: response,
+      message: response.success
+        ? [
+            response.launch_mode === 'validate_only' ? '实验配置校验通过。' : '实验已由真实后端启动并返回结果。',
+            response.experiment_id ? `实验 ID：${response.experiment_id}` : null,
+            response.summary_path ? `摘要：${response.summary_path}` : null,
+            warnings.length ? `提示：${warnings.join('；')}` : null,
+          ]
+            .filter(Boolean)
+            .join(' ')
+        : `实验启动失败：${errors.join('；') || response.stderr_tail || '请检查后端 launcher 输出。'}`,
+    };
+  } catch (error) {
+    return startMockTrain(config, error instanceof Error ? error.message : 'API request failed');
+  }
 };

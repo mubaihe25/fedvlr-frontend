@@ -4,9 +4,10 @@ import {mockConfigurationData} from './mock/configuration';
 import {Architecture} from './pages/Architecture';
 import {Home} from './pages/Home';
 import {Console} from './pages/console/Console';
+import type {ExperimentConfigurationSource} from './services/experiment';
 import {startTrain, type StartTrainResponse} from './services/train';
 import type {ConsoleSessionState, PageType} from './types/common';
-import type {TrainConfig} from './types/train';
+import type {LaunchExperimentOptions, TrainConfig} from './types/train';
 
 const cloneConfig = (config: TrainConfig) => structuredClone(config);
 
@@ -28,16 +29,22 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleStartTrain = async (config: TrainConfig): Promise<StartTrainResponse> => {
-    const response = await startTrain(config);
+  const handleStartTrain = async (
+    config: TrainConfig,
+    options?: LaunchExperimentOptions,
+    source?: ExperimentConfigurationSource,
+  ): Promise<StartTrainResponse> => {
+    const response = await startTrain(config, options, source);
 
     setConsoleSession((prev) => ({
       ...prev,
-      activeTaskId: response.taskId,
-      analysisTaskId: response.taskId,
+      activeTaskId: response.status === 'failed' ? prev.activeTaskId : response.taskId,
+      analysisTaskId: response.status === 'failed' ? prev.analysisTaskId : response.taskId,
       draftTrainConfig: cloneConfig(config),
     }));
-    setCurrentPage('monitoring');
+    if (response.status === 'running') {
+      setCurrentPage('monitoring');
+    }
 
     return response;
   };

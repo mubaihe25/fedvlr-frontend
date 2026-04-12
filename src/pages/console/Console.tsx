@@ -1,7 +1,8 @@
 import React from 'react';
+import type {ExperimentConfigurationSource} from '../../services/experiment';
 import type {StartTrainResponse} from '../../services/train';
 import type {ConsoleSessionState, PageType} from '../../types/common';
-import type {TrainConfig} from '../../types/train';
+import type {LaunchExperimentOptions, TrainConfig} from '../../types/train';
 import {Analysis} from './Analysis';
 import {Comparison} from './Comparison';
 import {Configuration} from './Configuration';
@@ -13,7 +14,11 @@ interface ConsoleProps {
   onPageChange: (page: PageType) => void;
   session: ConsoleSessionState;
   onDraftConfigChange: (config: TrainConfig) => void;
-  onStartTrain: (config: TrainConfig) => Promise<StartTrainResponse>;
+  onStartTrain: (
+    config: TrainConfig,
+    options?: LaunchExperimentOptions,
+    source?: ExperimentConfigurationSource,
+  ) => Promise<StartTrainResponse>;
   onOpenAnalysis: (taskId: string | null) => void;
   onAddComparisonSelection: (taskId: string) => void;
   onReuseConfig: (config: TrainConfig, taskId: string | null) => void;

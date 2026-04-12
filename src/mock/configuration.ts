@@ -35,6 +35,10 @@ export const attackOptions: SelectOption<AttackType>[] = [
   {value: 'backdoor', label: '后门注入'},
   {value: 'gradient-noise', label: '梯度噪声'},
   {value: 'sybil', label: 'Sybil 多身份攻击'},
+  {value: 'client_update_scale', label: 'ClientUpdateScaleAttack'},
+  {value: 'sign_flip', label: 'SignFlipAttack'},
+  {value: 'model_replacement', label: 'ModelReplacementAttack'},
+  {value: 'client_preference_leakage_probe', label: 'ClientPreferenceLeakageProbe'},
 ];
 
 export const defenseOptions: SelectOption<DefenseType>[] = [
@@ -45,6 +49,10 @@ export const defenseOptions: SelectOption<DefenseType>[] = [
   {value: 'secure-aggregation', label: '安全聚合'},
   {value: 'differential-privacy', label: '差分隐私'},
   {value: 'cyber-shield', label: 'Cyber-Shield 防御'},
+  {value: 'norm_clip', label: 'NormClipDefense'},
+  {value: 'update_filter', label: 'UpdateFilterDefense'},
+  {value: 'trimmed_mean', label: 'TrimmedMeanDefense'},
+  {value: 'client_update_anomaly', label: 'ClientUpdateAnomalyDetector'},
 ];
 
 export const defaultAdvancedConfig: TrainAdvancedConfig = {
@@ -62,16 +70,42 @@ export const defaultTrainConfig: TrainConfig = {
   dataset: 'movielens-1m',
   model: 'mmfedrap',
   mode: 'comparison',
+  scenario: 'attack_and_defense',
   attackEnabled: true,
   attackType: 'label-flipping',
+  enabledAttacks: ['model_replacement'],
   defenseEnabled: true,
   defenseType: 'cyber-shield',
+  enabledDefenses: ['trimmed_mean'],
+  enabledPrivacyMetrics: [],
+  maliciousClientConfig: {
+    enabled: true,
+    mode: 'ratio',
+    ratio: 0.2,
+    clientIds: [],
+  },
   learningRate: 0.0015,
   totalRounds: 120,
   clientCount: 100,
   clientSamplingRate: 0.25,
   poisoningRatio: 0.2,
   advanced: defaultAdvancedConfig,
+  attackParams: {
+    model_replacement: {
+      replacement_scale: 5,
+      replacement_rule: 'aligned_mean',
+    },
+  },
+  defenseParams: {
+    trimmed_mean: {
+      trim_ratio: 0.2,
+      min_clients_for_trim: 5,
+      trim_rule: 'coordinate_trimmed_mean',
+    },
+  },
+  privacyParams: {},
+  type: 'FrontendLaunch',
+  comment: 'frontend_experiment',
 };
 
 export const formatDatasetLabel = (dataset: string) =>
