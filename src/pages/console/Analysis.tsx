@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   CartesianGrid,
   Line,
@@ -8,14 +8,16 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import {AlertCircle, CheckCircle2, FileText, ShieldCheck, Zap} from 'lucide-react';
-import {getHistoryFallbackResult, getResult} from '../../services/result';
+import {AlertCircle, CheckCircle2, Database, FileText, Info, ShieldCheck, Zap} from 'lucide-react';
+import {getAnalysisResult} from '../../services/result';
 import {cn} from '../../lib/utils';
 import type {AsyncState} from '../../types/common';
-import type {ExperimentResult} from '../../types/result';
+import type {AnalysisResultResponse, CurveSeries, ExperimentResult} from '../../types/result';
+import type {LaunchExperimentRecord} from '../../types/train';
 
 interface AnalysisProps {
   taskId: string | null;
+  lastLaunchRecord: LaunchExperimentRecord | null;
 }
 
 const cardToneClasses = {
@@ -29,18 +31,43 @@ const cardToneClasses = {
   danger: 'bg-error/10 text-error',
 } as const;
 
-export const Analysis: React.FC<AnalysisProps> = ({taskId}) => {
+const sourceBadgeClasses = {
+  'recent-launch': 'border-tertiary/20 bg-tertiary/10 text-tertiary',
+  history: 'border-primary/20 bg-primary/10 text-primary',
+  mock: 'border-error/20 bg-error/10 text-error',
+  'validate-only': 'border-primary/20 bg-primary/10 text-primary',
+} as const;
+
+const formatMetricValue = (value?: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '暂无';
+
+const buildChartData = (seriesList: CurveSeries[]) => {
+  const rows = new Map<number | string, Record<string, string | number>>();
+
+  for (const series of seriesList) {
+    for (const point of series.points) {
+      const epoch = point.epoch ?? point.round ?? point.label ?? series.key;
+      const current = rows.get(epoch) ?? {epoch};
+      current[series.key] = Number(point.value ?? 0);
+      rows.set(epoch, current);
+    }
+  }
+
+  return Array.from(rows.values());
+};
+
+export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord}) => {
   const [loadState, setLoadState] = useState<AsyncState>('idle');
+  const [analysisState, setAnalysisState] = useState<AnalysisResultResponse | null>(null);
   const [result, setResult] = useState<ExperimentResult | null>(null);
-  const [showingFallback, setShowingFallback] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     let cancelled = false;
 
-    if (!taskId) {
+    if (!taskId && !lastLaunchRecord) {
       setResult(null);
-      setShowingFallback(false);
+      setAnalysisState(null);
       setLoadState('empty');
       return () => {
         cancelled = true;
@@ -52,44 +79,61 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId}) => {
         setLoadState('loading');
         setErrorMessage('');
 
-        const currentResult = await getResult(taskId);
+        const nextState = await getAnalysisResult({taskId, lastLaunchRecord});
         if (cancelled) {
           return;
         }
 
-        if (currentResult) {
-          setResult(currentResult);
-          setShowingFallback(false);
-          setLoadState('success');
-          return;
-        }
-
-        const fallbackResult = await getHistoryFallbackResult();
-        if (!cancelled) {
-          setResult(fallbackResult);
-          setShowingFallback(true);
-          setLoadState('success');
-        }
+        setAnalysisState(nextState);
+        setResult(nextState.result);
+        setLoadState(nextState.status === 'empty' ? 'empty' : 'success');
       } catch (error) {
         if (!cancelled) {
           setResult(null);
+          setAnalysisState(null);
           setLoadState('error');
           setErrorMessage(error instanceof Error ? error.message : '结果加载失败。');
         }
       }
     };
 
-    loadResult();
+    void loadResult();
 
     return () => {
       cancelled = true;
     };
-  }, [taskId]);
+  }, [taskId, lastLaunchRecord]);
+
+  const chartSeries = useMemo(() => {
+    if (!result) {
+      return [];
+    }
+
+    const utilitySeries = result.curves.utility.filter((series) => series.points.length);
+    if (utilitySeries.length) {
+      return utilitySeries;
+    }
+
+    return result.curves.loss.points.length ? [result.curves.loss] : [];
+  }, [result]);
+
+  const chartData = useMemo(() => buildChartData(chartSeries), [chartSeries]);
 
   if (loadState === 'loading') {
     return (
       <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-10 text-center text-on-surface-variant">
-        正在加载实验结果...
+        正在加载真实实验结果...
+      </div>
+    );
+  }
+
+  if (analysisState?.status === 'validate-only') {
+    return (
+      <div className="rounded-2xl border border-primary/20 bg-primary/10 p-10 text-center">
+        <h2 className="text-2xl font-bold text-primary">当前仅完成配置校验</h2>
+        <p className="mt-3 text-sm text-on-surface-variant">
+          最近一次提交是 validateOnly / dryRun 模式，尚未启动训练，也没有生成可分析的 summary/result 文件。
+        </p>
       </div>
     );
   }
@@ -98,7 +142,9 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId}) => {
     return (
       <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-10 text-center">
         <h2 className="text-2xl font-bold text-on-surface">暂无可分析的实验结果</h2>
-        <p className="mt-3 text-sm text-on-surface-variant">请先运行实验，或从历史实验中选择一条已完成记录。</p>
+        <p className="mt-3 text-sm text-on-surface-variant">
+          请先启动实验，或从历史实验中选择一条已完成记录。
+        </p>
       </div>
     );
   }
@@ -112,37 +158,50 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId}) => {
     );
   }
 
+  const analysisSource =
+    result.source === 'recent-launch'
+      ? 'recent-launch'
+      : result.source === 'history'
+        ? 'history'
+        : result.dataSource === 'mock'
+          ? 'mock'
+          : 'history';
+  const isMockReport = analysisSource === 'mock' || result.dataSource === 'mock';
+
   return (
     <div className="space-y-8 pb-12">
       <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
         <div className="space-y-1">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="rounded-lg bg-primary/10 p-2">
               <FileText className="h-6 w-6 text-primary" />
             </div>
             <h2 className="text-3xl font-bold text-on-surface">单次实验分析报告</h2>
+            <span className={cn('rounded-full border px-3 py-1 text-xs font-bold', sourceBadgeClasses[analysisSource])}>
+              {analysisSource === 'recent-launch'
+                ? '最近一次真实实验结果'
+                : analysisSource === 'history'
+                  ? '历史实验真实结果'
+                  : '示例报告'}
+            </span>
           </div>
           <p className="text-sm text-on-surface-variant">
-            实验任务：<span className="font-mono text-primary">{result.taskId}</span> | 生成时间：{result.timestamp}
+            实验标识：<span className="font-mono text-primary">{result.experimentId ?? result.taskId}</span> | 数据来源：
+            {result.dataSourceLabel ?? analysisState?.dataSourceLabel ?? '未知'}
           </p>
-        </div>
-        <div className="flex gap-3">
-          <button className="rounded-lg bg-surface-container-highest px-6 py-2.5 text-sm font-semibold text-on-surface transition-all hover:bg-surface-container-high">
-            导出 PDF
-          </button>
-          <button className="rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-surface shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40">
-            分享报告
-          </button>
         </div>
       </div>
 
-      {showingFallback ? (
-        <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-on-surface">
-          当前任务尚未生成完整结果，页面已自动回退到最近一条历史实验结果用于展示。
+      {isMockReport || result.fallbackReason || analysisState?.fallbackReason ? (
+        <div className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-on-surface">
+          {isMockReport
+            ? '当前显示的是示例报告，不是真实实验结果。'
+            : '当前已回退到可用的真实摘要级结果。'}
+          {result.fallbackReason ?? analysisState?.fallbackReason ? `原因：${result.fallbackReason ?? analysisState?.fallbackReason}` : null}
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-5">
         {result.metricCards.map((metric) => (
           <div key={metric.label} className="glass-panel rounded-2xl border-l-4 border-primary p-6">
             <div className="mb-4 flex items-start justify-between">
@@ -151,11 +210,15 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId}) => {
                   <ShieldCheck className="h-5 w-5" />
                 ) : metric.label.includes('NDCG') ? (
                   <Zap className="h-5 w-5" />
-                ) : (
+                ) : metric.label.includes('Loss') ? (
                   <FileText className="h-5 w-5" />
+                ) : (
+                  <Database className="h-5 w-5" />
                 )}
               </div>
-              <span className="rounded bg-tertiary/10 px-2 py-0.5 text-[10px] font-bold text-tertiary">{metric.change}</span>
+              <span className="rounded bg-surface-container-highest px-2 py-0.5 text-[10px] font-bold text-on-surface-variant">
+                {metric.change}
+              </span>
             </div>
             <p className="mb-1 text-xs font-bold uppercase tracking-widest text-on-surface-variant">{metric.label}</p>
             <p className="text-2xl font-bold text-on-surface">{metric.value}</p>
@@ -164,40 +227,16 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId}) => {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <div className="glass-panel relative overflow-hidden rounded-2xl p-8 text-center lg:col-span-4">
-          <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-tertiary to-primary" />
-          <h3 className="mb-8 text-sm font-bold uppercase tracking-[0.2em] text-on-surface-variant">防御效能评分</h3>
-          <div className="relative mx-auto mb-8 h-48 w-48">
-            <svg className="h-48 w-48 -rotate-90 transform">
-              <circle cx="96" cy="96" r="88" fill="transparent" stroke="currentColor" strokeWidth="4" className="text-surface-container-highest" />
-              <circle
-                cx="96"
-                cy="96"
-                r="88"
-                fill="transparent"
-                stroke="currentColor"
-                strokeWidth="12"
-                strokeDasharray={552}
-                strokeDashoffset={552 * (1 - result.defenseEfficiencyScore / 100)}
-                className="text-tertiary drop-shadow-[0_0_15px_rgba(175,255,209,0.4)]"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-5xl font-bold text-on-surface">{result.defenseEfficiencyScore.toFixed(1)}</span>
-              <span className="text-xs font-bold text-on-surface-variant">/ 100</span>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <p className="text-lg font-bold text-tertiary">{result.defenseEfficiencyLabel}</p>
-            <p className="text-xs leading-relaxed text-on-surface-variant">{result.summaryText.headline}</p>
-          </div>
-        </div>
-
         <div className="glass-panel rounded-2xl p-8 lg:col-span-8">
-          <div className="mb-12 flex items-center justify-between">
-            <h3 className="text-lg font-bold">效能演进曲线</h3>
-            <div className="flex gap-4">
-              {result.curves.utility.map((series) => (
+          <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div>
+              <h3 className="text-lg font-bold">真实轮次曲线</h3>
+              <p className="mt-1 text-xs text-on-surface-variant">
+                优先使用 round_summaries / round_metrics 中可用的 loss、valid_score、test_score 字段。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              {chartSeries.map((series) => (
                 <div key={series.key} className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full" style={{backgroundColor: series.color}} />
                   <span className="text-xs text-on-surface-variant">{series.label}</span>
@@ -205,39 +244,71 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId}) => {
               ))}
             </div>
           </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={result.curves.utility[0]?.points.map((point, index) => ({
-                  epoch: point.epoch,
-                  [result.curves.utility[0].key]: point.value,
-                  [result.curves.utility[1]?.key ?? 'baseline']:
-                    result.curves.utility[1]?.points[index]?.value ?? point.value,
-                }))}
-              >
-                <CartesianGrid stroke="#1d2730" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="epoch" stroke="#a5acb4" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#a5acb4" fontSize={10} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{backgroundColor: '#121a22', border: '1px solid #1d2730', borderRadius: '8px'}} />
-                {result.curves.utility.map((series, index) => (
-                  <Line
-                    key={series.key}
-                    type="monotone"
-                    dataKey={series.key}
-                    stroke={series.color}
-                    strokeWidth={index === 0 ? 4 : 2}
-                    strokeDasharray={index === 0 ? undefined : '5 5'}
-                    dot={false}
-                    activeDot={{r: 6, strokeWidth: 0}}
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
+          {chartData.length ? (
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid stroke="#1d2730" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="epoch" stroke="#a5acb4" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#a5acb4" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{backgroundColor: '#121a22', border: '1px solid #1d2730', borderRadius: '8px'}} />
+                  {chartSeries.map((series, index) => (
+                    <Line
+                      key={series.key}
+                      type="monotone"
+                      dataKey={series.key}
+                      stroke={series.color}
+                      strokeWidth={index === 0 ? 4 : 2}
+                      strokeDasharray={index === 0 ? undefined : '5 5'}
+                      dot={false}
+                      activeDot={{r: 6, strokeWidth: 0}}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex h-72 items-center justify-center rounded-xl border border-outline-variant/10 bg-surface-container-low text-sm text-on-surface-variant">
+              当前结果文件没有可绘制的轮次曲线字段。
+            </div>
+          )}
+        </div>
+
+        <div className="glass-panel rounded-2xl p-8 lg:col-span-4">
+          <h3 className="mb-6 flex items-center gap-2 text-lg font-bold">
+            <Info className="h-5 w-5 text-primary" />
+            实验概述
+          </h3>
+          <div className="space-y-4 text-sm">
+            <div className="flex items-center justify-between border-b border-outline-variant/10 pb-3">
+              <span className="text-on-surface-variant">模型</span>
+              <span className="font-semibold text-on-surface">{result.model}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-outline-variant/10 pb-3">
+              <span className="text-on-surface-variant">数据集</span>
+              <span className="font-semibold text-on-surface">{result.dataset}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-outline-variant/10 pb-3">
+              <span className="text-on-surface-variant">场景</span>
+              <span className="font-semibold text-on-surface">{result.configSummary.modeLabel}</span>
+            </div>
+            <div className="border-b border-outline-variant/10 pb-3">
+              <span className="text-on-surface-variant">攻击链</span>
+              <p className="mt-1 font-semibold text-on-surface">{result.configSummary.attackLabel}</p>
+            </div>
+            <div className="border-b border-outline-variant/10 pb-3">
+              <span className="text-on-surface-variant">防御链</span>
+              <p className="mt-1 font-semibold text-on-surface">{result.configSummary.defenseLabel}</p>
+            </div>
+            <div>
+              <span className="text-on-surface-variant">观测链</span>
+              <p className="mt-1 font-semibold text-on-surface">{result.configSummary.privacyLevel}</p>
+            </div>
           </div>
         </div>
 
         <div className="glass-panel rounded-2xl p-8 lg:col-span-12">
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-primary">
                 <CheckCircle2 className="h-5 w-5" />
@@ -248,36 +319,28 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId}) => {
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-tertiary">
                 <ShieldCheck className="h-5 w-5" />
-                <h4 className="font-bold">安全评估</h4>
+                <h4 className="font-bold">安全观察</h4>
               </div>
               <p className="text-sm leading-relaxed text-on-surface-variant">{result.summaryText.securityAssessment}</p>
             </div>
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-secondary">
                 <AlertCircle className="h-5 w-5" />
-                <h4 className="font-bold">优化建议</h4>
+                <h4 className="font-bold">说明</h4>
               </div>
               <p className="text-sm leading-relaxed text-on-surface-variant">{result.summaryText.recommendation}</p>
             </div>
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-primary">
-                <FileText className="h-5 w-5" />
-                <h4 className="font-bold">配置摘要</h4>
-              </div>
-              <div className="space-y-2 text-sm text-on-surface-variant">
-                <p>数据集：{result.configSummary.datasetLabel}</p>
-                <p>模型：{result.configSummary.modelLabel}</p>
-                <p>实验模式：{result.configSummary.modeLabel}</p>
-                <p>攻击策略：{result.configSummary.attackLabel}</p>
-                <p>防御机制：{result.configSummary.defenseLabel}</p>
-              </div>
-            </div>
           </div>
 
-          {result.referenceComparison ? (
-            <div className="mt-8 rounded-xl border border-primary/10 bg-surface-container-low p-5">
-              <h4 className="font-bold text-primary">{result.referenceComparison.title}</h4>
-              <p className="mt-2 text-sm text-on-surface-variant">{result.referenceComparison.description}</p>
+          {result.securityObservations?.length ? (
+            <div className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-5">
+              {result.securityObservations.map((item) => (
+                <div key={item.label} className="rounded-xl bg-surface-container-low p-4">
+                  <p className="text-xs font-bold text-on-surface-variant">{item.label}</p>
+                  <p className="mt-2 text-xl font-bold text-on-surface">{item.value}</p>
+                  <p className="mt-1 text-[10px] text-on-surface-variant">{item.change}</p>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>

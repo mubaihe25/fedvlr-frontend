@@ -51,7 +51,7 @@ export const Console: React.FC<ConsoleProps> = ({
         />
       );
     case 'analysis':
-      return <Analysis taskId={session.analysisTaskId ?? session.activeTaskId} />;
+      return <Analysis taskId={session.analysisTaskId ?? session.activeTaskId} lastLaunchRecord={session.lastLaunchRecord} />;
     case 'comparison':
       return <Comparison comparisonSelectionIds={session.comparisonSelectionIds} />;
     case 'history':

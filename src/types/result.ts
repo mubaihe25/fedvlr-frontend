@@ -1,7 +1,10 @@
 import type {ChartPoint, StatusBadgeType} from './common';
-import type {AttackType, DefenseType, ExperimentMode, TrainConfigSummary} from './train';
+import type {ExperimentMaliciousClientSummary} from './history';
+import type {AttackType, DefenseType, ExperimentMode, LaunchExperimentRecord, TrainConfigSummary} from './train';
 
-export type ResultSource = 'current-task' | 'history' | 'example';
+export type ResultSource = 'current-task' | 'history' | 'example' | 'recent-launch';
+
+export type AnalysisDataSource = 'recent-launch' | 'history' | 'mock' | 'validate-only';
 
 export interface ExperimentMetrics {
   recall10: number;
@@ -55,12 +58,24 @@ export interface ResultReferenceComparison {
 }
 
 export interface ExperimentResult {
+  experimentId?: string | null;
   taskId: string;
   source: ResultSource;
+  dataSource?: 'api' | 'mock';
+  dataSourceLabel?: string;
+  fallbackReason?: string;
   timestamp: string;
   dataset: string;
   model: string;
   mode: ExperimentMode;
+  experimentMode?: string | null;
+  scenarioTags?: string[];
+  activeAttacks?: string[];
+  activeDefenses?: string[];
+  activePrivacyMetrics?: string[];
+  maliciousClientSummary?: ExperimentMaliciousClientSummary;
+  securityObservations?: ResultMetricCard[];
+  analysisNotes?: string[];
   attackType: AttackType;
   defenseType: DefenseType;
   metrics: ExperimentMetrics;
@@ -74,6 +89,18 @@ export interface ExperimentResult {
   defenseEfficiencyScore: number;
   defenseEfficiencyLabel: string;
   referenceComparison?: ResultReferenceComparison;
+}
+
+export interface AnalysisResultResponse {
+  status: 'success' | 'validate-only' | 'mock' | 'empty';
+  result: ExperimentResult | null;
+  dataSourceLabel: string;
+  fallbackReason?: string;
+}
+
+export interface AnalysisResultRequest {
+  taskId: string | null;
+  lastLaunchRecord?: LaunchExperimentRecord | null;
 }
 
 export interface ComparisonGroup {
