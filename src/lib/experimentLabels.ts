@@ -4,6 +4,24 @@ export interface ExperimentDisplayLabel {
   description?: string;
 }
 
+export type AttackSemanticKind = 'poisoning' | 'privacy_probe' | 'other';
+
+export interface ModuleTaxonomyLike {
+  name?: string;
+  family?: string;
+  category?: string;
+  strategy?: string;
+  display_category?: string;
+  attack_family?: string;
+  attack_category?: string;
+  attack_strategy?: string;
+  attack_display_category?: string;
+  is_read_only?: boolean;
+  mutates_participant_params?: boolean;
+}
+
+export type AttackTaxonomyMap = Record<string, ModuleTaxonomyLike | undefined>;
+
 const humanizeCode = (value: string) =>
   value
     .split(/[_-]/)
@@ -12,30 +30,30 @@ const humanizeCode = (value: string) =>
     .join(' ');
 
 const createFallbackLabel = (code: string): ExperimentDisplayLabel => ({
-  title: humanizeCode(code) ? '未命名项' : '未知项',
+  title: humanizeCode(code) || '未知项',
   code,
 });
 
 const moduleLabels: Record<string, ExperimentDisplayLabel> = {
   client_update_scale: {
-    title: '更新缩放攻击',
+    title: '更新缩放投毒',
     code: 'client_update_scale',
-    description: '按比例放大恶意客户端上传更新。',
+    description: '主动放大恶意客户端上传更新，属于投毒攻击家族。',
   },
   sign_flip: {
-    title: '符号翻转攻击',
+    title: '符号翻转投毒',
     code: 'sign_flip',
-    description: '对恶意客户端更新执行符号翻转。',
+    description: '主动翻转恶意客户端上传更新方向，属于投毒攻击家族。',
   },
   model_replacement: {
-    title: '模型替换攻击',
+    title: '模型替换投毒',
     code: 'model_replacement',
-    description: '以更强缩放方式模拟 replacement-like 恶意更新。',
+    description: '以 replacement-like 方式强化恶意更新影响，属于投毒攻击家族。',
   },
   client_preference_leakage_probe: {
     title: '偏好泄露探针',
     code: 'client_preference_leakage_probe',
-    description: '只读分析客户端更新中的潜在偏好泄露风险。',
+    description: '只读分析联邦更新中的潜在偏好泄露风险，不直接修改聚合输入。',
   },
   norm_clip: {
     title: '范数裁剪防御',
@@ -76,18 +94,18 @@ const moduleLabels: Record<string, ExperimentDisplayLabel> = {
 
 const parameterLabels: Record<string, ExperimentDisplayLabel> = {
   replacement_scale: {title: '替换缩放系数', code: 'replacement_scale'},
-  replacement_rule: {title: '模型替换规则', code: 'replacement_rule'},
+  replacement_rule: {title: '替换规则', code: 'replacement_rule'},
   attack_scale: {title: '攻击缩放系数', code: 'attack_scale'},
-  sign_flip_scale: {title: '符号翻转缩放系数', code: 'sign_flip_scale'},
-  defense_clip_norm: {title: '防御裁剪阈值', code: 'defense_clip_norm'},
+  sign_flip_scale: {title: '符号翻转系数', code: 'sign_flip_scale'},
+  defense_clip_norm: {title: '裁剪阈值', code: 'defense_clip_norm'},
   filter_rule: {title: '过滤规则', code: 'filter_rule'},
   filter_std_factor: {title: '过滤标准差系数', code: 'filter_std_factor'},
   max_filtered_ratio: {title: '最大过滤比例', code: 'max_filtered_ratio'},
   trim_ratio: {title: '截尾比例', code: 'trim_ratio'},
   min_clients_for_trim: {title: '最小截尾客户端数', code: 'min_clients_for_trim'},
   trim_rule: {title: '截尾规则', code: 'trim_rule'},
-  attack_probe_topk_ratio: {title: 'Top-K 强更新比例', code: 'attack_probe_topk_ratio'},
-  attack_probe_std_factor: {title: '攻击探针标准差系数', code: 'attack_probe_std_factor'},
+  attack_probe_topk_ratio: {title: '探针 Top-K 比例', code: 'attack_probe_topk_ratio'},
+  attack_probe_std_factor: {title: '探针标准差系数', code: 'attack_probe_std_factor'},
   defense_anomaly_std_factor: {title: '异常检测标准差系数', code: 'defense_anomaly_std_factor'},
   std_factor: {title: '标准差系数', code: 'std_factor'},
   epochs: {title: '总训练轮数', code: 'epochs'},
@@ -105,7 +123,7 @@ const parameterValueLabels: Record<string, string> = {
 
 const scenarioLabels: Record<string, ExperimentDisplayLabel> = {
   baseline: {title: '基线实验', code: 'baseline'},
-  attack_only: {title: '攻击实验', code: 'attack_only'},
+  attack_only: {title: '投毒攻击实验', code: 'attack_only'},
   defense_only: {title: '防御实验', code: 'defense_only'},
   attack_and_defense: {title: '攻防对比实验', code: 'attack_and_defense'},
   privacy_observation: {title: '隐私观测实验', code: 'privacy_observation'},
@@ -130,8 +148,105 @@ const statusLabels: Record<string, ExperimentDisplayLabel> = {
   planned: {title: '规划中', code: 'planned'},
   verified: {title: '已验证', code: 'verified'},
   unverified: {title: '未验证', code: 'unverified'},
-  validate_only: {title: '只校验', code: 'validate_only'},
+  validate_only: {title: '仅校验', code: 'validate_only'},
   launch_train: {title: '启动训练', code: 'launch_train'},
+};
+
+const poisoningAttackNames = new Set(['client_update_scale', 'sign_flip', 'model_replacement']);
+const privacyProbeNames = new Set(['client_preference_leakage_probe']);
+
+const getTaxonomyValue = (taxonomy: ModuleTaxonomyLike | undefined, ...keys: Array<keyof ModuleTaxonomyLike>) => {
+  for (const key of keys) {
+    const value = taxonomy?.[key];
+    if (typeof value === 'string' && value) {
+      return value;
+    }
+  }
+
+  return '';
+};
+
+export const getAttackSemanticKind = (
+  moduleName: string,
+  taxonomy?: ModuleTaxonomyLike | AttackTaxonomyMap,
+): AttackSemanticKind => {
+  const moduleTaxonomy =
+    taxonomy && 'name' in taxonomy
+      ? taxonomy
+      : (taxonomy as AttackTaxonomyMap | undefined)?.[moduleName];
+  const family = getTaxonomyValue(moduleTaxonomy, 'attack_family', 'family');
+  const category = getTaxonomyValue(moduleTaxonomy, 'attack_category', 'category');
+  const displayCategory = getTaxonomyValue(moduleTaxonomy, 'attack_display_category', 'display_category');
+  const normalized = [family, category, displayCategory].join(' ').toLowerCase();
+
+  if (
+    family === 'privacy_probe' ||
+    category === 'privacy_probe' ||
+    category === 'privacy_observation' ||
+    normalized.includes('privacy') ||
+    privacyProbeNames.has(moduleName) ||
+    (moduleTaxonomy?.is_read_only === true && !moduleTaxonomy?.mutates_participant_params)
+  ) {
+    return 'privacy_probe';
+  }
+
+  if (
+    family === 'poisoning' ||
+    category === 'poisoning' ||
+    displayCategory === 'poisoning' ||
+    normalized.includes('poison') ||
+    poisoningAttackNames.has(moduleName) ||
+    moduleTaxonomy?.mutates_participant_params === true
+  ) {
+    return 'poisoning';
+  }
+
+  return 'other';
+};
+
+export const isPoisoningAttackModule = (moduleName: string, taxonomy?: ModuleTaxonomyLike | AttackTaxonomyMap) =>
+  getAttackSemanticKind(moduleName, taxonomy) === 'poisoning';
+
+export const isPrivacyProbeModule = (moduleName: string, taxonomy?: ModuleTaxonomyLike | AttackTaxonomyMap) =>
+  getAttackSemanticKind(moduleName, taxonomy) === 'privacy_probe';
+
+export const buildAttackTaxonomyMap = (modules?: ModuleTaxonomyLike[]): AttackTaxonomyMap =>
+  (modules ?? []).reduce<AttackTaxonomyMap>((map, module) => {
+    if (module.name) {
+      map[module.name] = module;
+    }
+    return map;
+  }, {});
+
+export const splitAttackModules = (values: string[] = [], taxonomy?: AttackTaxonomyMap) => {
+  const groups = {
+    poisoning: [] as string[],
+    privacyProbe: [] as string[],
+    other: [] as string[],
+  };
+
+  values.forEach((value) => {
+    const kind = getAttackSemanticKind(value, taxonomy);
+    if (kind === 'poisoning') {
+      groups.poisoning.push(value);
+    } else if (kind === 'privacy_probe') {
+      groups.privacyProbe.push(value);
+    } else {
+      groups.other.push(value);
+    }
+  });
+
+  return groups;
+};
+
+export const formatAttackSemanticGroups = (values: string[] = [], taxonomy?: AttackTaxonomyMap) => {
+  const groups = splitAttackModules(values, taxonomy);
+  return {
+    ...groups,
+    poisoningLabel: formatModuleChain(groups.poisoning),
+    privacyProbeLabel: formatModuleChain(groups.privacyProbe),
+    otherLabel: formatModuleChain(groups.other),
+  };
 };
 
 export const getModuleLabel = (code: string) => moduleLabels[code] ?? createFallbackLabel(code);
@@ -148,5 +263,5 @@ export const getFamilyLabel = (code: string) => familyLabels[code] ?? createFall
 
 export const getStatusLabel = (code: string) => statusLabels[code] ?? createFallbackLabel(code);
 
-export const formatModuleChain = (values: string[]) =>
+export const formatModuleChain = (values: string[] = []) =>
   values.length ? values.map((value) => getModuleLabel(value).title).join(' → ') : '未启用';

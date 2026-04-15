@@ -1,5 +1,5 @@
 import {mockConfigurationData} from '../mock/configuration';
-import {getModuleLabel} from '../lib/experimentLabels';
+import {getModuleLabel, isPoisoningAttackModule, isPrivacyProbeModule} from '../lib/experimentLabels';
 import type {SelectOption} from '../types/common';
 import type {
   CapabilitiesResponse,
@@ -22,6 +22,8 @@ export interface ExperimentConfigurationSource {
   datasetOptions: SelectOption[];
   modelOptions: SelectOption[];
   attackOptions: SelectOption[];
+  poisoningAttackOptions: SelectOption[];
+  privacyProbeOptions: SelectOption[];
   defenseOptions: SelectOption[];
   privacyMetricOptions: SelectOption[];
   requiredFields: string[];
@@ -48,7 +50,8 @@ export const modeToScenario = (mode: TrainConfig['mode']): UnifiedExperimentScen
   }
 };
 
-const compact = (values?: string[]) => Array.from(new Set((values ?? []).filter(Boolean).filter((value) => value !== 'none')));
+const compact = (values?: string[]) =>
+  Array.from(new Set((values ?? []).filter(Boolean).filter((value) => value !== 'none')));
 
 export const getSelectedAttacks = (config: TrainConfig) =>
   compact(config.enabledAttacks ?? (config.attackEnabled ? [config.attackType] : []));
@@ -63,7 +66,16 @@ const mapModuleToOption = (module: CapabilityModule): SelectOption => {
   return {
     value: module.name,
     label: display.title,
-    description: [display.code, module.notes ?? display.description].filter(Boolean).join(' · '),
+    description: module.notes ?? display.description,
+  };
+};
+
+const fallbackModuleOption = (name: string): SelectOption => {
+  const display = getModuleLabel(name);
+  return {
+    value: name,
+    label: display.title,
+    description: display.description,
   };
 };
 
@@ -73,8 +85,14 @@ const mapCapabilitiesToSource = (
 ): ExperimentConfigurationSource => {
   const capabilities = capabilitiesResponse.data;
   const schema = schemaResponse.data;
+  const poisoningAttacks = capabilities.attacks.filter((module) => isPoisoningAttackModule(module.name, module));
+  const privacyProbes = capabilities.attacks.filter((module) => isPrivacyProbeModule(module.name, module));
   const supportedDatasets = Array.from(
-    new Set(capabilities.models.flatMap((model) => model.supported_datasets?.length ? model.supported_datasets : [model.recommended_dataset])),
+    new Set(
+      capabilities.models.flatMap((model) =>
+        model.supported_datasets?.length ? model.supported_datasets : [model.recommended_dataset],
+      ),
+    ),
   ).filter(Boolean);
   const policy = schema.multi_module_policy;
 
@@ -85,10 +103,12 @@ const mapCapabilitiesToSource = (
     modelOptions: capabilities.models.map((model) => ({
       value: model.name,
       label: model.name,
-      description: `${model.family} / ${model.compatibility_status ?? 'unknown'}${model.notes ? `：${model.notes}` : ''}`,
+      description: `${model.family} / ${model.compatibility_status ?? 'unknown'}${model.notes ? `，${model.notes}` : ''}`,
       disabled: model.compatibility_status === 'blocked',
     })),
-    attackOptions: capabilities.attacks.map(mapModuleToOption),
+    attackOptions: poisoningAttacks.map(mapModuleToOption),
+    poisoningAttackOptions: poisoningAttacks.map(mapModuleToOption),
+    privacyProbeOptions: privacyProbes.map(mapModuleToOption),
     defenseOptions: capabilities.defenses.map(mapModuleToOption),
     privacyMetricOptions: capabilities.privacy_metrics.map(mapModuleToOption),
     requiredFields: schemaResponse.required_fields,
@@ -108,15 +128,11 @@ export const createFallbackExperimentConfigurationSource = (fallbackReason?: str
   fallbackReason,
   datasetOptions: mockConfigurationData.datasetOptions,
   modelOptions: mockConfigurationData.modelOptions,
-  attackOptions: mockConfigurationData.attackOptions.filter((option) => option.value !== 'none'),
+  attackOptions: ['client_update_scale', 'sign_flip', 'model_replacement'].map(fallbackModuleOption),
+  poisoningAttackOptions: ['client_update_scale', 'sign_flip', 'model_replacement'].map(fallbackModuleOption),
+  privacyProbeOptions: ['client_preference_leakage_probe'].map(fallbackModuleOption),
   defenseOptions: mockConfigurationData.defenseOptions.filter((option) => option.value !== 'none'),
-  privacyMetricOptions: [
-    {
-      value: 'client_update_norm',
-      label: getModuleLabel('client_update_norm').title,
-      description: 'client_update_norm · Mock 兜底观测模块',
-    },
-  ],
+  privacyMetricOptions: ['client_update_norm'].map(fallbackModuleOption),
   requiredFields: ['model', 'dataset', 'scenario'],
   maxEnabledAttacks: 2,
   maxEnabledDefenses: 2,
@@ -132,7 +148,9 @@ export const getExperimentConfigurationSource = async (): Promise<ExperimentConf
     ]);
     return mapCapabilitiesToSource(capabilities, schema);
   } catch (error) {
-    return createFallbackExperimentConfigurationSource(error instanceof Error ? error.message : '能力矩阵或实验 schema 加载失败。');
+    return createFallbackExperimentConfigurationSource(
+      error instanceof Error ? error.message : '能力矩阵或实验 schema 加载失败。',
+    );
   }
 };
 

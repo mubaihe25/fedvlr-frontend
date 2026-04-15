@@ -4,6 +4,7 @@ import {mockConfigurationData} from '../../mock/configuration';
 import type {AsyncState} from '../../types/common';
 import type {CapabilityModule, LaunchExperimentOptions, TrainConfig} from '../../types/train';
 import {
+  buildAttackTaxonomyMap,
   formatModuleChain,
   getFamilyLabel,
   getModuleLabel,
@@ -12,6 +13,7 @@ import {
   getScenarioLabel,
   getStatusLabel,
   hasParameterValueLabel,
+  splitAttackModules,
 } from '../../lib/experimentLabels';
 import {cn} from '../../lib/utils';
 import type {StartTrainResponse} from '../../services/train';
@@ -148,6 +150,16 @@ export const Configuration: React.FC<ConfigurationProps> = ({
   const selectedAttacks = useMemo(() => getSelectedAttacks(formConfig), [formConfig]);
   const selectedDefenses = useMemo(() => getSelectedDefenses(formConfig), [formConfig]);
   const selectedPrivacyMetrics = useMemo(() => getSelectedPrivacyMetrics(formConfig), [formConfig]);
+  const attackTaxonomy = useMemo(
+    () => buildAttackTaxonomyMap(configurationSource.capabilities?.attacks),
+    [configurationSource.capabilities?.attacks],
+  );
+  const attackSemanticGroups = useMemo(
+    () => splitAttackModules(selectedAttacks, attackTaxonomy),
+    [attackTaxonomy, selectedAttacks],
+  );
+  const selectedPoisoningAttacks = attackSemanticGroups.poisoning;
+  const selectedPrivacyProbes = attackSemanticGroups.privacyProbe;
   const validatedCombination = useMemo(
     () => findValidatedCombination(configurationSource, formConfig),
     [configurationSource, formConfig],
@@ -253,7 +265,10 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       }
 
       if (mode === 'attack') {
-        const nextAttack = getSelectedAttacks(current)[0] ?? configurationSource.attackOptions[0]?.value ?? 'model_replacement';
+        const nextAttack =
+          getSelectedAttacks(current).find((attack) => configurationSource.poisoningAttackOptions.some((option) => option.value === attack)) ??
+          configurationSource.poisoningAttackOptions[0]?.value ??
+          'model_replacement';
         return {
           ...current,
           mode,
@@ -296,7 +311,10 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         };
       }
 
-      const nextAttack = getSelectedAttacks(current)[0] ?? configurationSource.attackOptions[0]?.value ?? 'model_replacement';
+      const nextAttack =
+        getSelectedAttacks(current).find((attack) => configurationSource.poisoningAttackOptions.some((option) => option.value === attack)) ??
+        configurationSource.poisoningAttackOptions[0]?.value ??
+        'model_replacement';
       const nextDefense = getSelectedDefenses(current)[0] ?? configurationSource.defenseOptions[0]?.value ?? 'trimmed_mean';
       return {
         ...current,
@@ -326,7 +344,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         ? currentAttacks.filter((name) => name !== attackName)
         : [...currentAttacks, attackName];
       if (nextAttacks.length > configurationSource.maxEnabledAttacks) {
-        setMessage(`当前最多选择 ${configurationSource.maxEnabledAttacks} 个攻击模块。`);
+        setMessage(`当前最多选择 ${configurationSource.maxEnabledAttacks} 个投毒攻击或隐私探针模块。`);
         return current;
       }
 
@@ -574,21 +592,36 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <div>
             <h4 className="font-bold text-error">模块链选择</h4>
             <p className="mt-1 text-xs text-on-surface-variant">
-              按攻击链、防御链、观测模块的顺序提交，多模块数量限制来自后端配置。
+              按投毒攻击、隐私泄露观测、防御链、观测模块的语义提交；多模块数量限制来自后端配置。
             </p>
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-5 p-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 p-6 xl:grid-cols-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">攻击链</label>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">投毒攻击</label>
             <span className="text-[10px] text-on-surface-variant">
-              {selectedAttacks.length}/{configurationSource.maxEnabledAttacks}
+              {selectedPoisoningAttacks.length}/{configurationSource.maxEnabledAttacks}
             </span>
           </div>
+          <p className="text-[11px] leading-relaxed text-on-surface-variant">主动修改恶意客户端上传更新，影响聚合结果。</p>
           <div className="flex flex-wrap gap-2">
-            {configurationSource.attackOptions.map((option) =>
+            {configurationSource.poisoningAttackOptions.map((option) =>
+              renderModuleOption(option, selectedAttacks.includes(option.value), () => toggleAttack(option.value), 'error'),
+            )}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">隐私泄露观测</label>
+            <span className="text-[10px] text-on-surface-variant">
+              {selectedPrivacyProbes.length}/{configurationSource.maxEnabledAttacks}
+            </span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-on-surface-variant">只读探针，用于分析联邦更新中的隐私风险，不直接改变聚合输入。</p>
+          <div className="flex flex-wrap gap-2">
+            {configurationSource.privacyProbeOptions.map((option) =>
               renderModuleOption(option, selectedAttacks.includes(option.value), () => toggleAttack(option.value), 'error'),
             )}
           </div>
@@ -958,8 +991,12 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 </span>
               </div>
               <div className="flex items-start justify-between gap-4 text-sm">
-                <span className="text-on-surface-variant">攻击链</span>
-                {renderChainSummary(selectedAttacks)}
+                <span className="text-on-surface-variant">投毒攻击</span>
+                {renderChainSummary(selectedPoisoningAttacks)}
+              </div>
+              <div className="flex items-start justify-between gap-4 text-sm">
+                <span className="text-on-surface-variant">隐私泄露观测</span>
+                {renderChainSummary(selectedPrivacyProbes)}
               </div>
               <div className="flex items-start justify-between gap-4 text-sm">
                 <span className="text-on-surface-variant">防御链</span>
@@ -1025,7 +1062,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   {formConfig.model} / {formConfig.dataset} / {getScenarioLabel(scenario).title}
                 </p>
                 <p className="mt-1 text-xs text-on-surface/60">
-                  执行顺序：攻击链 → 防御链 → 观测模块
+                  执行顺序：投毒攻击/隐私探针 → 防御链 → 观测模块
                 </p>
               </div>
             </div>

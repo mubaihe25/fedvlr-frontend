@@ -59,6 +59,7 @@ export interface ExperimentSummaryListItem {
   experiment_mode?: string | null;
   scenario_tags?: string[];
   active_attacks?: string[];
+  attack_taxonomy?: Record<string, unknown>;
   active_defenses?: string[];
   active_privacy_metrics?: string[];
   final_eval?: {
@@ -78,6 +79,7 @@ export interface ExperimentRoundPipelineInfo {
   active_attacks?: string[];
   active_defenses?: string[];
   active_privacy_metrics?: string[];
+  attack_taxonomy?: Record<string, unknown>;
   experiment_mode?: string | null;
   scenario_tags?: string[];
   malicious_client_count?: number | null;
@@ -115,6 +117,7 @@ export interface ExperimentSummaryDetail {
   active_attacks?: string[];
   active_defenses?: string[];
   active_privacy_metrics?: string[];
+  attack_taxonomy?: Record<string, unknown>;
   malicious_client_summary?: ExperimentMaliciousClientSummary;
   final_eval?: {
     recall20?: number | null;
@@ -165,6 +168,7 @@ export interface ExperimentResultMetadata {
   active_attacks?: string[];
   active_defenses?: string[];
   active_privacy_metrics?: string[];
+  attack_taxonomy?: Record<string, unknown>;
   scenario_tags?: string[];
   malicious_client_summary?: ExperimentMaliciousClientSummary;
   attack_summaries?: Record<string, unknown>;

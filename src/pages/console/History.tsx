@@ -57,7 +57,7 @@ const detailLevelLabels = {
 
 const modeLabels = {
   baseline: '基线实验',
-  attack: '攻击实验',
+  attack: '投毒攻击实验',
   defense: '防御实验',
   comparison: '攻防对照',
 } as const;

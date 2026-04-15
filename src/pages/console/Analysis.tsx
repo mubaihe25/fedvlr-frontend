@@ -298,16 +298,26 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
               <span className="font-semibold text-on-surface">{result.configSummary.modeLabel}</span>
             </div>
             <div className="border-b border-outline-variant/10 pb-3">
-              <span className="text-on-surface-variant">攻击链</span>
-              <p className="mt-1 font-semibold text-on-surface">{result.configSummary.attackLabel}</p>
+              <span className="text-on-surface-variant">投毒攻击</span>
+              <p className="mt-1 font-semibold text-on-surface">
+                {result.configSummary.poisoningAttackLabel ?? result.configSummary.attackLabel}
+              </p>
+            </div>
+            <div className="border-b border-outline-variant/10 pb-3">
+              <span className="text-on-surface-variant">隐私泄露观测</span>
+              <p className="mt-1 font-semibold text-on-surface">
+                {result.configSummary.privacyProbeLabel ?? '未启用'}
+              </p>
             </div>
             <div className="border-b border-outline-variant/10 pb-3">
               <span className="text-on-surface-variant">防御链</span>
               <p className="mt-1 font-semibold text-on-surface">{result.configSummary.defenseLabel}</p>
             </div>
             <div>
-              <span className="text-on-surface-variant">观测链</span>
-              <p className="mt-1 font-semibold text-on-surface">{result.configSummary.privacyLevel}</p>
+              <span className="text-on-surface-variant">观测模块</span>
+              <p className="mt-1 font-semibold text-on-surface">
+                {result.configSummary.observationLabel ?? result.configSummary.privacyLevel}
+              </p>
             </div>
           </div>
         </div>

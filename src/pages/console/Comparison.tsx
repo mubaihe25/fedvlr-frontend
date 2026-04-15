@@ -176,7 +176,7 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
                 <span className="text-[10px] font-bold uppercase text-on-surface-variant">Recall@20</span>
               </div>
               <p className="mt-3 text-xs text-on-surface-variant">
-                攻击：{group.attackLabel} | 防御：{group.defenseLabel}
+                投毒攻击：{group.attackLabel} | 防御：{group.defenseLabel}
               </p>
             </div>
           );

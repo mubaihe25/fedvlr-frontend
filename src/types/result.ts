@@ -31,6 +31,9 @@ export interface CurveSeries {
 export interface ResultConfigSummary extends TrainConfigSummary {
   dataset: string;
   model: string;
+  poisoningAttackLabel?: string;
+  privacyProbeLabel?: string;
+  observationLabel?: string;
   clientCount: number;
   clientSamplingRate: number;
   totalRounds: number;
@@ -151,6 +154,7 @@ export interface ShowcaseComparisonItem {
   scenario: string;
   experiment_mode?: string;
   active_attacks?: string[];
+  attack_taxonomy?: Record<string, unknown>;
   active_defenses?: string[];
   active_privacy_metrics?: string[];
   recall20?: number | null;

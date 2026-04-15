@@ -106,6 +106,16 @@ export interface CapabilityModel {
 export interface CapabilityModule {
   name: string;
   type: string;
+  family?: string;
+  category?: string;
+  strategy?: string;
+  display_category?: string;
+  attack_family?: string;
+  attack_category?: string;
+  attack_strategy?: string;
+  attack_display_category?: string;
+  is_read_only?: boolean;
+  mutates_participant_params?: boolean;
   config_schema?: Record<string, string>;
   default_values?: Record<string, unknown>;
   recommended_models?: string[];

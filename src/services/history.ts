@@ -1,4 +1,6 @@
 import {buildTrainConfigSummary, defaultTrainConfig} from '../mock/configuration';
+import {formatAttackSemanticGroups} from '../lib/experimentLabels';
+import type {AttackTaxonomyMap} from '../lib/experimentLabels';
 import type {
   ExperimentResultDetail,
   ExperimentResultResponse,
@@ -85,7 +87,12 @@ const mapAttackType = (activeAttacks?: string[]): AttackType => {
     return 'none';
   }
 
-  if (attackName === 'client_update_scale' || attackName === 'client_preference_leakage_probe') {
+  if (
+    attackName === 'client_update_scale' ||
+    attackName === 'sign_flip' ||
+    attackName === 'model_replacement' ||
+    attackName === 'client_preference_leakage_probe'
+  ) {
     return attackName;
   }
 
@@ -184,7 +191,7 @@ const countPrivacyObservationRounds = (rounds: ExperimentResultRoundMetric[]) =>
 const buildSummaryText = (summary: ApiSummaryShape) => {
   const mode = summary.experiment_mode || 'baseline';
   const scenarioTags = summary.scenario_tags?.length ? summary.scenario_tags.join(' / ') : '未标注';
-  const attackCount = summary.active_attacks?.length ?? 0;
+  const attackGroups = formatAttackSemanticGroups(summary.active_attacks, summary.attack_taxonomy as AttackTaxonomyMap | undefined);
   const defenseCount = summary.active_defenses?.length ?? 0;
   const privacyCount = summary.active_privacy_metrics?.length ?? 0;
   const maliciousCount = summary.malicious_client_summary?.unique_malicious_client_count ?? 0;
@@ -192,14 +199,14 @@ const buildSummaryText = (summary: ApiSummaryShape) => {
   const ndcg20 = summary.final_eval?.ndcg20;
   const roundCount = getSummaryRounds(summary).length;
 
-  return `实验场景：${mode}；场景标签：${scenarioTags}；攻击模块 ${attackCount} 个，防御模块 ${defenseCount} 个，隐私观测 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
+  return `实验场景：${mode}；场景标签：${scenarioTags}；投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；防御模块 ${defenseCount} 个，观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
 };
 
 const buildResultText = (result: ApiResultShape) => {
   const mode = result.experiment_mode || 'baseline';
   const scenarioTags = result.scenario_tags?.length ? result.scenario_tags.join(' / ') : '未标注';
   const roundCount = getResultRounds(result).length;
-  const attackCount = result.active_attacks?.length ?? 0;
+  const attackGroups = formatAttackSemanticGroups(result.active_attacks, result.metadata?.attack_taxonomy as AttackTaxonomyMap | undefined);
   const defenseCount = result.active_defenses?.length ?? 0;
   const privacyCount = result.active_privacy_metrics?.length ?? 0;
   const maliciousSummary = result.metadata?.malicious_client_summary;
@@ -210,7 +217,7 @@ const buildResultText = (result: ApiResultShape) => {
   const recall20 = result.final_eval?.recall20;
   const ndcg20 = result.final_eval?.ndcg20;
 
-  return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。攻击模块 ${attackCount} 个，防御模块 ${defenseCount} 个，隐私观测 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，隐私观测命中 ${privacyRounds} 轮。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
+  return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；防御模块 ${defenseCount} 个，观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，隐私观测命中 ${privacyRounds} 轮。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
 };
 
 const buildApiConfigFromSummary = (summary: ApiSummaryShape): TrainConfig => {

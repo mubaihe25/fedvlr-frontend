@@ -1,6 +1,7 @@
 import {mockAnalysisData} from '../mock/analysis';
 import {buildTrainConfigSummary, defaultTrainConfig} from '../mock/configuration';
-import {formatModuleChain, getModuleLabel, getScenarioLabel} from '../lib/experimentLabels';
+import {formatAttackSemanticGroups, formatModuleChain, getModuleLabel, getScenarioLabel} from '../lib/experimentLabels';
+import type {AttackTaxonomyMap} from '../lib/experimentLabels';
 import {apiGet} from './api';
 import {simulateRequest} from './mockAdapter';
 import {mockStore} from './mockStore';
@@ -160,6 +161,7 @@ const buildConfigSummary = (
   activeDefenses: string[],
   activePrivacyMetrics: string[],
   totalRounds: number,
+  attackTaxonomy?: AttackTaxonomyMap,
 ) => {
   const mode = mapExperimentMode(experimentMode);
   const config: TrainConfig = {
@@ -174,14 +176,19 @@ const buildConfigSummary = (
     totalRounds: totalRounds || defaultTrainConfig.totalRounds,
   };
 
+  const attackGroups = formatAttackSemanticGroups(activeAttacks, attackTaxonomy);
+
   return {
     ...buildTrainConfigSummary(config),
     datasetLabel: dataset,
     modelLabel: model,
     modeLabel: getScenarioLabel(experimentMode ?? mode).title,
-    attackLabel: listLabel(activeAttacks),
+    attackLabel: attackGroups.poisoningLabel,
+    poisoningAttackLabel: attackGroups.poisoningLabel,
+    privacyProbeLabel: attackGroups.privacyProbeLabel,
     defenseLabel: listLabel(activeDefenses),
     privacyLevel: listLabel(activePrivacyMetrics),
+    observationLabel: listLabel(activePrivacyMetrics),
     estimatedDuration: '后端未返回',
     resourceEstimate: '后端未返回',
     topologyPreview: '后端结果文件记录',
@@ -205,6 +212,7 @@ const buildRealResult = (
     experimentMode?: string | null;
     scenarioTags?: string[];
     activeAttacks?: string[];
+    attackTaxonomy?: AttackTaxonomyMap;
     activeDefenses?: string[];
     activePrivacyMetrics?: string[];
     finalEval?: ExperimentSummaryDetail['final_eval'];
@@ -250,7 +258,17 @@ const buildRealResult = (
   const lossCurve = buildCurve('loss', '训练 Loss', '#81ecff', allRounds, 'avg_train_loss');
   const validCurve = buildCurve('valid_score', '验证指标', '#afffd1', allRounds, 'valid_score');
   const testCurve = buildCurve('test_score', '测试指标', '#ffb86b', allRounds, 'test_score');
-  const configSummary = buildConfigSummary(model, dataset, experimentMode, activeAttacks, activeDefenses, activePrivacyMetrics, totalRounds);
+  const attackGroups = formatAttackSemanticGroups(activeAttacks, base.attackTaxonomy);
+  const configSummary = buildConfigSummary(
+    model,
+    dataset,
+    experimentMode,
+    activeAttacks,
+    activeDefenses,
+    activePrivacyMetrics,
+    totalRounds,
+    base.attackTaxonomy,
+  );
   const scenarioLabel = getScenarioLabel(experimentMode).title;
   const defenseObservation = filteredCount
     ? `最大过滤客户端数 ${filteredCount}`
@@ -314,7 +332,7 @@ const buildRealResult = (
     summaryText: {
       headline: '基于当前实验结果自动生成。',
       conclusion: `当前实验为${scenarioLabel}，模型 ${model}，数据集 ${dataset}。最终 Recall@20=${formatMetric(recall20)}，NDCG@20=${formatMetric(ndcg20)}，Loss=${formatMetric(loss)}。`,
-      securityAssessment: `攻击链：${formatModuleChain(activeAttacks)}；防御链：${formatModuleChain(activeDefenses)}；观测链：${formatModuleChain(activePrivacyMetrics)}。恶意客户端统计 ${maliciousCount}，最大攻击命中 ${attackedCount}。`,
+      securityAssessment: `投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；防御链：${formatModuleChain(activeDefenses)}；观测模块：${formatModuleChain(activePrivacyMetrics)}。恶意客户端统计 ${maliciousCount}，最大攻击命中 ${attackedCount}。`,
       recommendation: `${defenseObservation}。以上结论仅基于当前 summary/result 中可验证字段生成，未补造额外评分。`,
     },
     defenseEfficiencyScore: 0,
@@ -347,6 +365,7 @@ const loadResultByExperimentKey = async (experimentKey: string, source: Experime
     experimentMode: result.experiment_mode,
     scenarioTags: result.scenario_tags,
     activeAttacks: result.active_attacks,
+    attackTaxonomy: result.metadata?.attack_taxonomy as AttackTaxonomyMap | undefined,
     activeDefenses: result.active_defenses,
     activePrivacyMetrics: result.active_privacy_metrics,
     finalEval: result.final_eval,
@@ -370,6 +389,7 @@ const loadSummaryByExperimentKey = async (experimentKey: string, source: Experim
     experimentMode: summary.experiment_mode,
     scenarioTags: summary.scenario_tags,
     activeAttacks: summary.active_attacks,
+    attackTaxonomy: summary.attack_taxonomy as AttackTaxonomyMap | undefined,
     activeDefenses: summary.active_defenses,
     activePrivacyMetrics: summary.active_privacy_metrics,
     finalEval: summary.final_eval,
@@ -562,19 +582,19 @@ const scenarioMeta: Record<
     stageStatus: '正常基线',
   },
   attack_only_sign_flip: {
-    name: '攻击组',
+    name: '投毒攻击组',
     status: 'Attacked',
     accent: 'danger',
-    attackLabel: 'SignFlipAttack',
+    attackLabel: '符号翻转投毒',
     defenseLabel: '未启用',
-    stageStatus: '符号翻转攻击',
+    stageStatus: '符号翻转投毒',
   },
   attack_and_defense_clip: {
     name: '攻防对照组',
     status: 'Clipped',
     accent: 'tertiary',
-    attackLabel: 'ClientUpdateScaleAttack',
-    defenseLabel: 'NormClipDefense',
+    attackLabel: '更新缩放投毒',
+    defenseLabel: '范数裁剪防御',
     stageStatus: '范数裁剪防御',
   },
 };
@@ -605,6 +625,7 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
     const recall20 = asMetric(item.recall20);
     const ndcg20 = asMetric(item.ndcg20);
     const loss = asMetric(item.loss);
+    const attackGroups = formatAttackSemanticGroups(item.active_attacks, item.attack_taxonomy as AttackTaxonomyMap | undefined);
 
     return {
       id: item.scenario || `showcase-${index + 1}`,
@@ -612,7 +633,7 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
       name: meta.name,
       status: meta.status,
       accent: meta.accent,
-      attackLabel: listLabel(item.active_attacks) || meta.attackLabel,
+      attackLabel: attackGroups.poisoning.length ? attackGroups.poisoningLabel : meta.attackLabel,
       defenseLabel: listLabel(item.active_defenses) || meta.defenseLabel,
       metrics: {
         recall10: recall20,
@@ -653,10 +674,16 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
         defense: defense?.scenario ?? '-',
       },
       {
-        label: '攻击模块',
-        baseline: listLabel(baseline?.active_attacks),
-        attack: listLabel(attack?.active_attacks),
-        defense: listLabel(defense?.active_attacks),
+        label: '投毒攻击策略',
+        baseline: formatAttackSemanticGroups(baseline?.active_attacks, baseline?.attack_taxonomy as AttackTaxonomyMap | undefined).poisoningLabel,
+        attack: formatAttackSemanticGroups(attack?.active_attacks, attack?.attack_taxonomy as AttackTaxonomyMap | undefined).poisoningLabel,
+        defense: formatAttackSemanticGroups(defense?.active_attacks, defense?.attack_taxonomy as AttackTaxonomyMap | undefined).poisoningLabel,
+      },
+      {
+        label: '隐私泄露观测',
+        baseline: formatAttackSemanticGroups(baseline?.active_attacks, baseline?.attack_taxonomy as AttackTaxonomyMap | undefined).privacyProbeLabel,
+        attack: formatAttackSemanticGroups(attack?.active_attacks, attack?.attack_taxonomy as AttackTaxonomyMap | undefined).privacyProbeLabel,
+        defense: formatAttackSemanticGroups(defense?.active_attacks, defense?.attack_taxonomy as AttackTaxonomyMap | undefined).privacyProbeLabel,
       },
       {
         label: '防御模块',
