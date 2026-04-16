@@ -1,4 +1,4 @@
-import React, {useCallback, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {MainLayout} from './layouts/MainLayout';
 import {mockConfigurationData} from './mock/configuration';
 import {Architecture} from './pages/Architecture';
@@ -7,9 +7,11 @@ import {Console} from './pages/console/Console';
 import type {ExperimentConfigurationSource} from './services/experiment';
 import {startTrain, type StartTrainResponse} from './services/train';
 import type {ConsoleExperimentContext, ConsoleSessionState, PageType} from './types/common';
-import type {LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from './types/train';
+import type {LaunchExperimentOptions, LaunchExperimentRecord, LaunchExperimentResponse, TrainConfig} from './types/train';
 
 const cloneConfig = (config: TrainConfig) => structuredClone(config);
+const CONSOLE_SESSION_STORAGE_KEY = 'fedvlr.console.session.v1';
+const RESTORABLE_PAGES: PageType[] = ['home', 'console', 'monitoring', 'analysis', 'comparison', 'history', 'architecture'];
 
 const createMockContext = (): ConsoleExperimentContext => ({
   source: 'mock',
@@ -47,6 +49,25 @@ const createLaunchContext = (response: StartTrainResponse): ConsoleExperimentCon
   updatedAt: new Date().toISOString(),
 });
 
+const isValidationLaunchRecord = (record: LaunchExperimentRecord) =>
+  Boolean(
+    record.options.validateOnly ||
+      record.options.dryRun ||
+      record.response.launch_mode === 'validate_only' ||
+      record.response.launch_mode === 'dry_run',
+  );
+
+const createLaunchContextFromRecord = (record: LaunchExperimentRecord): ConsoleExperimentContext => ({
+  source: isValidationLaunchRecord(record) ? 'validate_only' : 'recent_launch',
+  taskId: record.taskId,
+  experimentKey: null,
+  launchId: record.response.launch_id ?? record.response.experiment_id ?? record.taskId,
+  dataSourceLabel: isValidationLaunchRecord(record) ? '最近一次配置校验' : '最近一次真实启动',
+  analysisLockedToHistory: false,
+  monitoringLockedToRecentLaunch: true,
+  updatedAt: new Date().toISOString(),
+});
+
 const createHistoryContext = (taskId: string): ConsoleExperimentContext => ({
   source: 'history_record',
   taskId,
@@ -69,9 +90,104 @@ const createMockTaskContext = (taskId: string | null): ConsoleExperimentContext 
   updatedAt: new Date().toISOString(),
 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const isPageType = (value: unknown): value is PageType =>
+  typeof value === 'string' && RESTORABLE_PAGES.includes(value as PageType);
+
+const normalizeRestoredSession = (value: unknown): ConsoleSessionState | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const fallback = createInitialSession();
+  const lastLaunchRecord = isRecord(value.lastLaunchRecord)
+    ? (value.lastLaunchRecord as unknown as LaunchExperimentRecord)
+    : null;
+  const restoredContext = isRecord(value.currentExperimentContext)
+    ? (value.currentExperimentContext as unknown as ConsoleExperimentContext)
+    : null;
+  const currentExperimentContext = lastLaunchRecord && (!restoredContext || restoredContext.source === 'mock')
+    ? createLaunchContextFromRecord(lastLaunchRecord)
+    : restoredContext ?? fallback.currentExperimentContext;
+  const activeTaskId =
+    typeof value.activeTaskId === 'string'
+      ? value.activeTaskId
+      : lastLaunchRecord?.response.launch_id ?? lastLaunchRecord?.taskId ?? fallback.activeTaskId;
+
+  return {
+    activeTaskId,
+    draftTrainConfig: isRecord(value.draftTrainConfig)
+      ? (value.draftTrainConfig as unknown as TrainConfig)
+      : fallback.draftTrainConfig,
+    comparisonSelectionIds: Array.isArray(value.comparisonSelectionIds)
+      ? value.comparisonSelectionIds.filter((item): item is string => typeof item === 'string')
+      : fallback.comparisonSelectionIds,
+    analysisTaskId: typeof value.analysisTaskId === 'string' ? value.analysisTaskId : fallback.analysisTaskId,
+    lastLaunchRecord,
+    currentExperimentContext,
+  };
+};
+
+const restoreConsoleState = (): {currentPage: PageType; consoleSession: ConsoleSessionState} => {
+  const fallback = {
+    currentPage: 'home' as PageType,
+    consoleSession: createInitialSession(),
+  };
+
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(CONSOLE_SESSION_STORAGE_KEY);
+    if (!rawValue) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!isRecord(parsed) || parsed.version !== 1) {
+      return fallback;
+    }
+
+    const restoredSession = normalizeRestoredSession(parsed.consoleSession);
+    if (!restoredSession) {
+      return fallback;
+    }
+
+    return {
+      currentPage: isPageType(parsed.currentPage) ? parsed.currentPage : fallback.currentPage,
+      consoleSession: restoredSession,
+    };
+  } catch {
+    return fallback;
+  }
+};
+
 const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<PageType>('home');
-  const [consoleSession, setConsoleSession] = useState<ConsoleSessionState>(createInitialSession);
+  const [initialState] = useState(restoreConsoleState);
+  const [currentPage, setCurrentPage] = useState<PageType>(initialState.currentPage);
+  const [consoleSession, setConsoleSession] = useState<ConsoleSessionState>(initialState.consoleSession);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(
+        CONSOLE_SESSION_STORAGE_KEY,
+        JSON.stringify({
+          version: 1,
+          currentPage,
+          consoleSession,
+        }),
+      );
+    } catch {
+      // sessionStorage is a convenience cache; failures should not affect the app.
+    }
+  }, [currentPage, consoleSession]);
 
   const handleDraftConfigChange = (config: TrainConfig) => {
     setConsoleSession((prev) => ({
