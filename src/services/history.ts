@@ -88,6 +88,9 @@ const mapAttackType = (activeAttacks?: string[]): AttackType => {
   }
 
   if (
+    attackName === 'poisoning_attack' ||
+    attackName === 'poisoning' ||
+    attackName === 'nondirected_poisoning' ||
     attackName === 'client_update_scale' ||
     attackName === 'sign_flip' ||
     attackName === 'model_replacement' ||

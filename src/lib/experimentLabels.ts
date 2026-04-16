@@ -35,6 +35,21 @@ const createFallbackLabel = (code: string): ExperimentDisplayLabel => ({
 });
 
 const moduleLabels: Record<string, ExperimentDisplayLabel> = {
+  poisoning_attack: {
+    title: '投毒攻击',
+    code: 'poisoning_attack',
+    description: '统一的非定向投毒入口，内部组合更新缩放、符号翻转和模型替换三种子策略。',
+  },
+  poisoning: {
+    title: '投毒攻击',
+    code: 'poisoning',
+    description: '统一的非定向投毒入口。',
+  },
+  nondirected_poisoning: {
+    title: '投毒攻击',
+    code: 'nondirected_poisoning',
+    description: '统一的非定向投毒入口。',
+  },
   client_update_scale: {
     title: '更新缩放投毒',
     code: 'client_update_scale',
@@ -93,6 +108,15 @@ const moduleLabels: Record<string, ExperimentDisplayLabel> = {
 };
 
 const parameterLabels: Record<string, ExperimentDisplayLabel> = {
+  poisoning_mix_rule: {title: '投毒混合规则', code: 'poisoning_mix_rule'},
+  poisoning_scale_ratio: {title: '更新缩放占比', code: 'poisoning_scale_ratio'},
+  poisoning_sign_flip_ratio: {title: '符号翻转占比', code: 'poisoning_sign_flip_ratio'},
+  poisoning_model_replacement_ratio: {title: '模型替换占比', code: 'poisoning_model_replacement_ratio'},
+  poisoning_attack_scale: {title: '更新缩放系数', code: 'poisoning_attack_scale'},
+  poisoning_sign_flip_scale: {title: '符号翻转系数', code: 'poisoning_sign_flip_scale'},
+  poisoning_replacement_scale: {title: '模型替换缩放系数', code: 'poisoning_replacement_scale'},
+  poisoning_replacement_rule: {title: '模型替换规则', code: 'poisoning_replacement_rule'},
+  poisoning_strategy_weights: {title: '子策略分配权重', code: 'poisoning_strategy_weights'},
   replacement_scale: {title: '替换缩放系数', code: 'replacement_scale'},
   replacement_rule: {title: '替换规则', code: 'replacement_rule'},
   attack_scale: {title: '攻击缩放系数', code: 'attack_scale'},
@@ -116,6 +140,9 @@ const parameterLabels: Record<string, ExperimentDisplayLabel> = {
 };
 
 const parameterValueLabels: Record<string, string> = {
+  round_robin: '轮询分流',
+  by_ratio: '按比例分流',
+  weighted_partition: '按权重分流',
   aligned_mean: '对齐均值',
   coordinate_trimmed_mean: '逐坐标截尾均值',
   'update_norm > mean + filter_std_factor * std': '更新范数高于均值阈值',
@@ -152,7 +179,14 @@ const statusLabels: Record<string, ExperimentDisplayLabel> = {
   launch_train: {title: '启动训练', code: 'launch_train'},
 };
 
-const poisoningAttackNames = new Set(['client_update_scale', 'sign_flip', 'model_replacement']);
+const poisoningAttackNames = new Set([
+  'poisoning_attack',
+  'poisoning',
+  'nondirected_poisoning',
+  'client_update_scale',
+  'sign_flip',
+  'model_replacement',
+]);
 const privacyProbeNames = new Set(['client_preference_leakage_probe']);
 
 const getTaxonomyValue = (taxonomy: ModuleTaxonomyLike | undefined, ...keys: Array<keyof ModuleTaxonomyLike>) => {

@@ -73,6 +73,9 @@ const mapAttackType = (activeAttacks?: string[]): AttackType => {
   }
 
   if (
+    attackName === 'poisoning_attack' ||
+    attackName === 'poisoning' ||
+    attackName === 'nondirected_poisoning' ||
     attackName === 'client_update_scale' ||
     attackName === 'sign_flip' ||
     attackName === 'model_replacement' ||
@@ -560,7 +563,14 @@ export const getComparisonResult = async (taskIds?: string[]): Promise<Compariso
   }
 };
 
-const scenarioOrder = ['baseline', 'attack_only_sign_flip', 'attack_and_defense_clip'];
+const scenarioOrder = [
+  'baseline',
+  'attack_only_poisoning',
+  'attack_only_sign_flip',
+  'attack_and_defense_poisoning_trimmed_mean',
+  'attack_and_defense_poisoning_norm_clip',
+  'attack_and_defense_clip',
+];
 
 const scenarioMeta: Record<
   string,
@@ -589,11 +599,35 @@ const scenarioMeta: Record<
     defenseLabel: '未启用',
     stageStatus: '符号翻转投毒',
   },
+  attack_only_poisoning: {
+    name: '投毒攻击组',
+    status: 'Attacked',
+    accent: 'danger',
+    attackLabel: '投毒攻击',
+    defenseLabel: '未启用',
+    stageStatus: '投毒攻击',
+  },
   attack_and_defense_clip: {
     name: '攻防对照组',
     status: 'Clipped',
     accent: 'tertiary',
     attackLabel: '更新缩放投毒',
+    defenseLabel: '范数裁剪防御',
+    stageStatus: '范数裁剪防御',
+  },
+  attack_and_defense_poisoning_trimmed_mean: {
+    name: '攻防对照组',
+    status: 'Defended',
+    accent: 'tertiary',
+    attackLabel: '投毒攻击',
+    defenseLabel: '截尾均值防御',
+    stageStatus: '截尾均值防御',
+  },
+  attack_and_defense_poisoning_norm_clip: {
+    name: '攻防对照组',
+    status: 'Clipped',
+    accent: 'tertiary',
+    attackLabel: '投毒攻击',
     defenseLabel: '范数裁剪防御',
     stageStatus: '范数裁剪防御',
   },
@@ -649,8 +683,11 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
 
   const findItem = (scenario: string) => items.find((item) => item.scenario === scenario);
   const baseline = findItem('baseline');
-  const attack = findItem('attack_only_sign_flip');
-  const defense = findItem('attack_and_defense_clip');
+  const attack = findItem('attack_only_poisoning') ?? findItem('attack_only_sign_flip');
+  const defense =
+    findItem('attack_and_defense_poisoning_trimmed_mean') ??
+    findItem('attack_and_defense_poisoning_norm_clip') ??
+    findItem('attack_and_defense_clip');
 
   return {
     groups,

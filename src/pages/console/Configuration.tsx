@@ -25,6 +25,7 @@ import {
   getSelectedDefenses,
   getSelectedPrivacyMetrics,
   modeToScenario,
+  UNIFIED_POISONING_ATTACK,
   type ExperimentConfigurationSource,
 } from '../../services/experiment';
 
@@ -71,6 +72,26 @@ const deriveModeFromModules = (attacks: string[], defenses: string[]): TrainConf
     return 'defense';
   }
 
+  return 'baseline';
+};
+
+const deriveScenarioFromGroups = (
+  poisoningAttacks: string[],
+  privacyProbes: string[],
+  defenses: string[],
+): TrainConfig['scenario'] => {
+  if (poisoningAttacks.length && defenses.length) {
+    return 'attack_and_defense';
+  }
+  if (poisoningAttacks.length) {
+    return 'attack_only';
+  }
+  if (defenses.length) {
+    return 'defense_only';
+  }
+  if (privacyProbes.length) {
+    return 'privacy_observation';
+  }
   return 'baseline';
 };
 
@@ -160,6 +181,14 @@ export const Configuration: React.FC<ConfigurationProps> = ({
   );
   const selectedPoisoningAttacks = attackSemanticGroups.poisoning;
   const selectedPrivacyProbes = attackSemanticGroups.privacyProbe;
+  const poisoningParams = formConfig.attackParams?.[UNIFIED_POISONING_ATTACK] ?? {};
+  const poisoningScaleRatio = Number(poisoningParams.poisoning_scale_ratio ?? 0.34);
+  const poisoningSignFlipRatio = Number(poisoningParams.poisoning_sign_flip_ratio ?? 0.33);
+  const poisoningModelReplacementRatio = Number(poisoningParams.poisoning_model_replacement_ratio ?? 0.33);
+  const poisoningStrategyRatioTotal = [poisoningScaleRatio, poisoningSignFlipRatio, poisoningModelReplacementRatio].reduce(
+    (sum, value) => sum + (Number.isFinite(value) ? value : 0),
+    0,
+  );
   const validatedCombination = useMemo(
     () => findValidatedCombination(configurationSource, formConfig),
     [configurationSource, formConfig],
@@ -212,19 +241,27 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       mockConfigurationData.defaultConfig.model;
     const preferredCombination =
       configurationSource.capabilities?.validated_combinations.find(
-        (combination) => combination.name === 'model_replacement_trimmed_mean' && combination.validated_models.includes(model),
+        (combination) => combination.name === 'poisoning_trimmed_mean' && combination.validated_models.includes(model),
       ) ?? configurationSource.capabilities?.validated_combinations.find((combination) => combination.validated_models.includes(model));
-    const enabledAttacks = preferredCombination?.attacks ?? ['model_replacement'];
+    const rawEnabledAttacks = preferredCombination?.attacks ?? [UNIFIED_POISONING_ATTACK];
+    const enabledAttacks = getSelectedAttacks({
+      ...mockConfigurationData.defaultConfig,
+      attackEnabled: Boolean(rawEnabledAttacks.length),
+      attackType: (rawEnabledAttacks[0] ?? 'none') as TrainConfig['attackType'],
+      enabledAttacks: rawEnabledAttacks,
+    });
     const enabledDefenses = preferredCombination?.defenses ?? ['trimmed_mean'];
     const enabledPrivacyMetrics = preferredCombination?.privacy_metrics ?? [];
     const mode = deriveModeFromModules(enabledAttacks, enabledDefenses);
+    const attackGroups = splitAttackModules(enabledAttacks, attackTaxonomy);
+    const hasPoisoningAttack = Boolean(attackGroups.poisoning.length);
 
     return {
       ...cloneConfig(mockConfigurationData.defaultConfig),
       dataset,
       model,
       mode,
-      scenario: preferredCombination?.scenario ?? modeToScenario(mode),
+      scenario: preferredCombination?.scenario ?? deriveScenarioFromGroups(attackGroups.poisoning, attackGroups.privacyProbe, enabledDefenses),
       attackEnabled: Boolean(enabledAttacks.length),
       attackType: (enabledAttacks[0] ?? 'none') as TrainConfig['attackType'],
       enabledAttacks,
@@ -233,9 +270,9 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       enabledDefenses,
       enabledPrivacyMetrics,
       maliciousClientConfig: {
-        enabled: Boolean(enabledAttacks.length),
-        mode: enabledAttacks.length ? 'ratio' : 'none',
-        ratio: enabledAttacks.length ? mockConfigurationData.defaultConfig.poisoningRatio : 0,
+        enabled: hasPoisoningAttack,
+        mode: hasPoisoningAttack ? 'ratio' : 'none',
+        ratio: hasPoisoningAttack ? mockConfigurationData.defaultConfig.poisoningRatio : 0,
         clientIds: [],
       },
     };
@@ -268,7 +305,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         const nextAttack =
           getSelectedAttacks(current).find((attack) => configurationSource.poisoningAttackOptions.some((option) => option.value === attack)) ??
           configurationSource.poisoningAttackOptions[0]?.value ??
-          'model_replacement';
+          UNIFIED_POISONING_ATTACK;
         return {
           ...current,
           mode,
@@ -314,7 +351,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       const nextAttack =
         getSelectedAttacks(current).find((attack) => configurationSource.poisoningAttackOptions.some((option) => option.value === attack)) ??
         configurationSource.poisoningAttackOptions[0]?.value ??
-        'model_replacement';
+        UNIFIED_POISONING_ATTACK;
       const nextDefense = getSelectedDefenses(current)[0] ?? configurationSource.defenseOptions[0]?.value ?? 'trimmed_mean';
       return {
         ...current,
@@ -343,25 +380,31 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       const nextAttacks = currentAttacks.includes(attackName)
         ? currentAttacks.filter((name) => name !== attackName)
         : [...currentAttacks, attackName];
-      if (nextAttacks.length > configurationSource.maxEnabledAttacks) {
-        setMessage(`当前最多选择 ${configurationSource.maxEnabledAttacks} 个投毒攻击或隐私探针模块。`);
+      const nextGroups = splitAttackModules(nextAttacks, attackTaxonomy);
+      if (nextGroups.poisoning.length > configurationSource.maxEnabledPoisoningAttacks) {
+        setMessage('当前最多启用 1 个投毒攻击入口。');
+        return current;
+      }
+      if (nextGroups.privacyProbe.length > configurationSource.maxEnabledPrivacyProbes) {
+        setMessage('当前最多额外启用 1 个隐私泄露观测。');
         return current;
       }
 
       const defenses = getSelectedDefenses(current);
       const mode = deriveModeFromModules(nextAttacks, defenses);
+      const scenario = deriveScenarioFromGroups(nextGroups.poisoning, nextGroups.privacyProbe, defenses);
       return {
         ...current,
         mode,
-        scenario: modeToScenario(mode),
+        scenario,
         attackEnabled: Boolean(nextAttacks.length),
         attackType: (nextAttacks[0] ?? 'none') as TrainConfig['attackType'],
         enabledAttacks: nextAttacks,
         maliciousClientConfig: {
           ...(current.maliciousClientConfig ?? {clientIds: []}),
-          enabled: Boolean(nextAttacks.length),
-          mode: nextAttacks.length ? 'ratio' : 'none',
-          ratio: nextAttacks.length ? current.poisoningRatio : 0,
+          enabled: Boolean(nextGroups.poisoning.length),
+          mode: nextGroups.poisoning.length ? 'ratio' : 'none',
+          ratio: nextGroups.poisoning.length ? current.poisoningRatio : 0,
           clientIds: current.maliciousClientConfig?.clientIds ?? [],
         },
       };
@@ -380,11 +423,12 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         return current;
       }
 
+      const attackGroups = splitAttackModules(attacks, attackTaxonomy);
       const mode = deriveModeFromModules(attacks, nextDefenses);
       return {
         ...current,
         mode,
-        scenario: modeToScenario(mode),
+        scenario: deriveScenarioFromGroups(attackGroups.poisoning, attackGroups.privacyProbe, nextDefenses),
         defenseEnabled: Boolean(nextDefenses.length),
         defenseType: (nextDefenses[0] ?? 'none') as TrainConfig['defenseType'],
         enabledDefenses: nextDefenses,
@@ -473,10 +517,16 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             {moduleLabel.description || moduleMeta?.notes ? (
               <p className="mt-2 text-xs text-on-surface-variant">{moduleLabel.description ?? moduleMeta?.notes}</p>
             ) : null}
+            {moduleName === UNIFIED_POISONING_ATTACK ? (
+              <p className="mt-2 text-xs text-on-surface-variant">
+                恶意客户端总量由全局“恶意客户端比例”决定；这里仅配置这批恶意客户端在三种非定向投毒子策略之间的分配比例。
+              </p>
+            ) : null}
           </div>
           <span className={cn('shrink-0 rounded px-2 py-0.5 text-[10px] font-bold', toneClass)}>已选择</span>
         </div>
         {entries.length ? (
+          <>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {entries.map(([paramName, schemaType]) => {
               const defaultValue = moduleMeta?.default_values?.[paramName];
@@ -545,6 +595,19 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               );
             })}
           </div>
+          {moduleName === UNIFIED_POISONING_ATTACK ? (
+            <div
+              className={cn(
+                'mt-3 rounded-lg px-3 py-2 text-xs',
+                Math.abs(poisoningStrategyRatioTotal - 1) <= 0.05
+                  ? 'bg-tertiary/10 text-tertiary'
+                  : 'bg-error/10 text-error',
+              )}
+            >
+              当前三种子策略占比合计 {(poisoningStrategyRatioTotal * 100).toFixed(0)}%。建议接近 100%，比例只决定恶意客户端内部分流，不改变全局恶意客户端总量。
+            </div>
+          ) : null}
+          </>
         ) : (
           <p className="text-xs text-on-surface-variant">该模块当前无显式可配置参数，会按后端默认行为执行。</p>
         )}
@@ -592,7 +655,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <div>
             <h4 className="font-bold text-error">模块链选择</h4>
             <p className="mt-1 text-xs text-on-surface-variant">
-              按投毒攻击、隐私泄露观测、防御链、观测模块的语义提交；多模块数量限制来自后端配置。
+              按投毒攻击、隐私泄露观测、防御链、观测模块的语义提交；当前最多启用 1 个投毒攻击，可额外启用 1 个隐私泄露观测。
             </p>
           </div>
         </div>
@@ -602,10 +665,12 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">投毒攻击</label>
             <span className="text-[10px] text-on-surface-variant">
-              {selectedPoisoningAttacks.length}/{configurationSource.maxEnabledAttacks}
+              {selectedPoisoningAttacks.length}/{configurationSource.maxEnabledPoisoningAttacks}
             </span>
           </div>
-          <p className="text-[11px] leading-relaxed text-on-surface-variant">主动修改恶意客户端上传更新，影响聚合结果。</p>
+          <p className="text-[11px] leading-relaxed text-on-surface-variant">
+            当前为统一的非定向投毒入口；后端会在恶意客户端中分流执行更新缩放、符号翻转和模型替换三种子策略。
+          </p>
           <div className="flex flex-wrap gap-2">
             {configurationSource.poisoningAttackOptions.map((option) =>
               renderModuleOption(option, selectedAttacks.includes(option.value), () => toggleAttack(option.value), 'error'),
@@ -616,7 +681,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">隐私泄露观测</label>
             <span className="text-[10px] text-on-surface-variant">
-              {selectedPrivacyProbes.length}/{configurationSource.maxEnabledAttacks}
+              {selectedPrivacyProbes.length}/{configurationSource.maxEnabledPrivacyProbes}
             </span>
           </div>
           <p className="text-[11px] leading-relaxed text-on-surface-variant">只读探针，用于分析联邦更新中的隐私风险，不直接改变聚合输入。</p>
@@ -927,14 +992,15 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                     updateConfig((current) => {
                       const poisoningRatio = Number(event.target.value);
                       const attacks = getSelectedAttacks(current);
+                      const groups = splitAttackModules(attacks, attackTaxonomy);
                       return {
                         ...current,
                         poisoningRatio,
                         maliciousClientConfig: {
                           ...(current.maliciousClientConfig ?? {clientIds: []}),
-                          enabled: Boolean(attacks.length),
-                          mode: attacks.length ? 'ratio' : 'none',
-                          ratio: attacks.length ? poisoningRatio : 0,
+                          enabled: Boolean(groups.poisoning.length),
+                          mode: groups.poisoning.length ? 'ratio' : 'none',
+                          ratio: groups.poisoning.length ? poisoningRatio : 0,
                           clientIds: current.maliciousClientConfig?.clientIds ?? [],
                         },
                       };

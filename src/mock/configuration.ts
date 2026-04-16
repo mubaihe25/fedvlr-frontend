@@ -35,9 +35,7 @@ export const attackOptions: SelectOption<AttackType>[] = [
   {value: 'backdoor', label: '后门注入'},
   {value: 'gradient-noise', label: '梯度噪声'},
   {value: 'sybil', label: 'Sybil 多身份攻击'},
-  {value: 'client_update_scale', label: 'ClientUpdateScaleAttack'},
-  {value: 'sign_flip', label: 'SignFlipAttack'},
-  {value: 'model_replacement', label: 'ModelReplacementAttack'},
+  {value: 'poisoning_attack', label: '投毒攻击'},
   {value: 'client_preference_leakage_probe', label: 'ClientPreferenceLeakageProbe'},
 ];
 
@@ -72,8 +70,8 @@ export const defaultTrainConfig: TrainConfig = {
   mode: 'comparison',
   scenario: 'attack_and_defense',
   attackEnabled: true,
-  attackType: 'label-flipping',
-  enabledAttacks: ['model_replacement'],
+  attackType: 'poisoning_attack',
+  enabledAttacks: ['poisoning_attack'],
   defenseEnabled: true,
   defenseType: 'cyber-shield',
   enabledDefenses: ['trimmed_mean'],
@@ -91,9 +89,15 @@ export const defaultTrainConfig: TrainConfig = {
   poisoningRatio: 0.2,
   advanced: defaultAdvancedConfig,
   attackParams: {
-    model_replacement: {
-      replacement_scale: 5,
-      replacement_rule: 'aligned_mean',
+    poisoning_attack: {
+      poisoning_mix_rule: 'round_robin',
+      poisoning_scale_ratio: 0.34,
+      poisoning_sign_flip_ratio: 0.33,
+      poisoning_model_replacement_ratio: 0.33,
+      poisoning_attack_scale: 2,
+      poisoning_sign_flip_scale: 1,
+      poisoning_replacement_scale: 5,
+      poisoning_replacement_rule: 'aligned_mean',
     },
   },
   defenseParams: {

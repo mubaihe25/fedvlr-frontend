@@ -6,6 +6,9 @@ export type AttackType =
   | 'backdoor'
   | 'gradient-noise'
   | 'sybil'
+  | 'poisoning_attack'
+  | 'poisoning'
+  | 'nondirected_poisoning'
   | 'client_update_scale'
   | 'sign_flip'
   | 'model_replacement'
@@ -105,6 +108,7 @@ export interface CapabilityModel {
 
 export interface CapabilityModule {
   name: string;
+  aliases?: string[];
   type: string;
   family?: string;
   category?: string;
