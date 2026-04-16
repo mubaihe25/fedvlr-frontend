@@ -10,12 +10,10 @@ import {
   Cpu,
   Database,
   Download,
-  ExternalLink,
   FilterX,
   Search,
   Shield,
   Trash2,
-  X,
 } from 'lucide-react';
 import {cn} from '../../lib/utils';
 import {deleteHistory, getHistoryList, getHistoryResultPreview, getHistorySummaryPreview, reuseHistoryConfig} from '../../services/history';
@@ -28,8 +26,11 @@ interface HistoryProps {
   comparisonSelectionIds: string[];
   onOpenAnalysis: (taskId: string | null) => void;
   onAddComparisonSelection: (taskId: string) => void;
+  onOpenComparison: () => void;
   onReuseConfig: (config: TrainConfig, taskId: string | null) => void;
 }
+
+const PAGE_SIZE = 9;
 
 const initialFilters: HistoryFilters = {
   period: '7d',
@@ -66,6 +67,7 @@ export const History: React.FC<HistoryProps> = ({
   comparisonSelectionIds,
   onOpenAnalysis,
   onAddComparisonSelection,
+  onOpenComparison,
   onReuseConfig,
 }) => {
   const [loadState, setLoadState] = useState<AsyncState>('loading');
@@ -81,6 +83,7 @@ export const History: React.FC<HistoryProps> = ({
   const [requestedDetailLevel, setRequestedDetailLevel] = useState<'summary' | 'result'>('summary');
   const [listSource, setListSource] = useState<'api' | 'mock'>('mock');
   const [listFallbackReason, setListFallbackReason] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +129,21 @@ export const History: React.FC<HistoryProps> = ({
       return matchesKeyword && matchesModel && matchesMode;
     });
   }, [records, filters]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / PAGE_SIZE));
+  const pageStartIndex = (currentPage - 1) * PAGE_SIZE;
+  const paginatedRecords = filteredRecords.slice(pageStartIndex, pageStartIndex + PAGE_SIZE);
+  const selectedComparisonRecords = comparisonSelectionIds
+    .map((taskId) => records.find((record) => record.taskId === taskId))
+    .filter((record): record is HistoryRecord => Boolean(record));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   useEffect(() => {
     if (!filteredRecords.length) {
@@ -254,6 +272,23 @@ export const History: React.FC<HistoryProps> = ({
 
   const handleResetFilters = () => {
     setFilters(initialFilters);
+    setCurrentPage(1);
+  };
+
+  const updateFilters = (patch: Partial<HistoryFilters>) => {
+    setFilters((current) => ({...current, ...patch}));
+    setCurrentPage(1);
+  };
+
+  const handleToggleComparison = (record: HistoryRecord) => {
+    const isAlreadySelected = comparisonSelectionIds.includes(record.taskId);
+    if (!isAlreadySelected && comparisonSelectionIds.length >= 3) {
+      setErrorMessage('最多选择 3 条实验记录加入对比，请先取消一条已选记录。');
+      return;
+    }
+
+    setErrorMessage('');
+    onAddComparisonSelection(record.taskId);
   };
 
   const handleViewDetail = async (record: HistoryRecord) => {
@@ -374,6 +409,40 @@ export const History: React.FC<HistoryProps> = ({
           : `当前已回退到 mock 历史实验列表${listFallbackReason ? `：${listFallbackReason}` : '。'}`}
       </div>
 
+      <div className="mb-6 rounded-xl border border-primary/10 bg-surface-container-low p-4">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">已选对比</p>
+            <p className="mt-1 text-sm text-on-surface">
+              已选择 <span className="font-bold text-primary">{comparisonSelectionIds.length}/3</span> 条实验记录。
+            </p>
+          </div>
+          <button
+            onClick={onOpenComparison}
+            disabled={!comparisonSelectionIds.length}
+            className="rounded-lg bg-primary px-5 py-2 text-sm font-bold text-surface transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+          >
+            前往对比分析
+          </button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {selectedComparisonRecords.length ? (
+            selectedComparisonRecords.map((record) => (
+              <button
+                key={record.taskId}
+                onClick={() => handleToggleComparison(record)}
+                className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary transition hover:bg-primary/20"
+                title="点击取消加入对比"
+              >
+                {record.name}
+              </button>
+            ))
+          ) : (
+            <span className="text-xs text-on-surface-variant">可从下方实验卡片选择 2~3 条记录进行横向比较。</span>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         <div className="space-y-6 lg:col-span-9">
           <section className="flex flex-wrap items-center gap-4 rounded-xl bg-surface-container-low p-4">
@@ -381,11 +450,11 @@ export const History: React.FC<HistoryProps> = ({
               <Calendar className="h-4 w-4 text-primary" />
               <select
                 value={filters.period}
-                onChange={(event) => setFilters((current) => ({...current, period: event.target.value}))}
-                className="cursor-pointer bg-transparent text-xs text-on-surface outline-none"
+                onChange={(event) => updateFilters({period: event.target.value})}
+                className="cursor-pointer bg-surface-container-highest text-xs text-on-surface outline-none [color-scheme:dark]"
               >
                 {mockHistoryData.filterOptions.periods.map((option) => (
-                  <option key={option.value} value={option.value}>
+                  <option key={option.value} value={option.value} className="bg-surface-container-highest text-on-surface">
                     {option.label}
                   </option>
                 ))}
@@ -395,11 +464,11 @@ export const History: React.FC<HistoryProps> = ({
               <Cpu className="h-4 w-4 text-primary" />
               <select
                 value={filters.model}
-                onChange={(event) => setFilters((current) => ({...current, model: event.target.value}))}
-                className="cursor-pointer bg-transparent text-xs text-on-surface outline-none"
+                onChange={(event) => updateFilters({model: event.target.value})}
+                className="cursor-pointer bg-surface-container-highest text-xs text-on-surface outline-none [color-scheme:dark]"
               >
                 {modelFilterOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
+                  <option key={option.value} value={option.value} className="bg-surface-container-highest text-on-surface">
                     {option.label}
                   </option>
                 ))}
@@ -409,11 +478,11 @@ export const History: React.FC<HistoryProps> = ({
               <Shield className="h-4 w-4 text-primary" />
               <select
                 value={filters.mode}
-                onChange={(event) => setFilters((current) => ({...current, mode: event.target.value}))}
-                className="cursor-pointer bg-transparent text-xs text-on-surface outline-none"
+                onChange={(event) => updateFilters({mode: event.target.value as HistoryFilters['mode']})}
+                className="cursor-pointer bg-surface-container-highest text-xs text-on-surface outline-none [color-scheme:dark]"
               >
                 {modeFilterOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
+                  <option key={option.value} value={option.value} className="bg-surface-container-highest text-on-surface">
                     {option.label}
                   </option>
                 ))}
@@ -423,7 +492,7 @@ export const History: React.FC<HistoryProps> = ({
               <Search className="h-4 w-4 text-on-surface-variant" />
               <input
                 value={filters.keyword}
-                onChange={(event) => setFilters((current) => ({...current, keyword: event.target.value}))}
+                onChange={(event) => updateFilters({keyword: event.target.value})}
                 placeholder="搜索实验名称、模型或数据集"
                 className="w-full bg-transparent text-xs text-on-surface outline-none"
               />
@@ -435,10 +504,11 @@ export const History: React.FC<HistoryProps> = ({
           </section>
 
           <div className="space-y-4">
-            {filteredRecords.map((record) => {
+            {paginatedRecords.map((record) => {
               const isSelected = record.id === selectedRecord?.id;
               const isCompleted = record.status === 'completed';
               const isApiRecord = record.id.startsWith('api::');
+              const isCompared = comparisonSelectionIds.includes(record.taskId);
               const primaryMetricLabel =
                 record.metrics.recall20 !== undefined
                   ? 'Recall@20'
@@ -476,17 +546,6 @@ export const History: React.FC<HistoryProps> = ({
                         : 'border-transparent hover:border-primary/30 hover:bg-surface-container',
                   )}
                 >
-                  <div className="absolute right-0 top-0 p-2 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button
-                      onClick={() => {
-                        setRequestedDetailLevel('summary');
-                        setSelectedId(record.id);
-                      }}
-                      className="p-1 text-on-surface-variant transition-colors hover:text-primary"
-                    >
-                      <ExternalLink className="h-5 w-5" />
-                    </button>
-                  </div>
                   <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
                     <div className="flex gap-4">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-outline-variant/20 bg-surface-container-highest">
@@ -513,7 +572,7 @@ export const History: React.FC<HistoryProps> = ({
                           <span className="rounded border border-outline-variant/10 bg-surface-container-highest px-2 py-0.5 text-[10px] font-bold text-on-surface-variant">
                             {modeLabels[record.mode]}
                           </span>
-                          {comparisonSelectionIds.includes(record.taskId) ? (
+                          {isCompared ? (
                             <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">已加入对比</span>
                           ) : null}
                         </div>
@@ -558,11 +617,15 @@ export const History: React.FC<HistoryProps> = ({
                       {isApiRecord ? '查看详情' : isCompleted ? '查看详情' : '查看记录'}
                     </button>
                     <button
-                      onClick={() => onAddComparisonSelection(record.taskId)}
-                      disabled={isApiRecord}
-                      className="flex-1 rounded bg-surface-container-highest py-2 text-[11px] font-bold transition-all hover:bg-secondary hover:text-surface disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => handleToggleComparison(record)}
+                      className={cn(
+                        'flex-1 rounded py-2 text-[11px] font-bold transition-all',
+                        isCompared
+                          ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                          : 'bg-surface-container-highest hover:bg-secondary hover:text-surface',
+                      )}
                     >
-                      加入对比
+                      {isCompared ? '取消对比' : '加入对比'}
                     </button>
                     <button
                       onClick={() => handleReuse(record.id)}
@@ -577,13 +640,25 @@ export const History: React.FC<HistoryProps> = ({
             })}
           </div>
 
-          <div className="flex items-center justify-center gap-2 pt-4">
-            <button className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-container text-on-surface-variant transition-colors hover:text-primary">
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-4">
+            <button
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage <= 1}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-container text-on-surface-variant transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            >
               <ChevronLeft className="h-5 w-5" />
             </button>
-            <button className="h-8 w-8 rounded-lg bg-primary text-xs font-bold text-surface">1</button>
-            <span className="mx-2 text-xs text-on-surface-variant">共 {filteredRecords.length} 条结果</span>
-            <button className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-container text-on-surface-variant transition-colors hover:text-primary">
+            <span className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-surface">
+              {currentPage} / {totalPages}
+            </span>
+            <span className="mx-2 text-xs text-on-surface-variant">
+              共 {filteredRecords.length} 条结果，每页 {PAGE_SIZE} 条
+            </span>
+            <button
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={currentPage >= totalPages}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-container text-on-surface-variant transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            >
               <ChevronRight className="h-5 w-5" />
             </button>
           </div>
@@ -593,9 +668,6 @@ export const History: React.FC<HistoryProps> = ({
           <div className="sticky top-24 rounded-2xl border border-outline-variant/10 bg-surface-container p-6 shadow-2xl">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="text-lg font-bold text-on-background">详情预览</h2>
-              <button className="cursor-pointer text-on-surface-variant transition-colors hover:text-primary">
-                <X className="h-5 w-5" />
-              </button>
             </div>
 
             {previewTarget ? (

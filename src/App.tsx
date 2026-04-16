@@ -170,9 +170,12 @@ const App: React.FC = () => {
   const handleAddComparisonSelection = (taskId: string) => {
     setConsoleSession((prev) => ({
       ...prev,
-      comparisonSelectionIds: Array.from(new Set([...prev.comparisonSelectionIds, taskId])).slice(-3),
+      comparisonSelectionIds: prev.comparisonSelectionIds.includes(taskId)
+        ? prev.comparisonSelectionIds.filter((id) => id !== taskId)
+        : prev.comparisonSelectionIds.length >= 3
+          ? prev.comparisonSelectionIds
+          : [...prev.comparisonSelectionIds, taskId],
     }));
-    setCurrentPage('comparison');
   };
 
   const handleReuseConfig = (config: TrainConfig, taskId: string | null) => {
@@ -206,6 +209,7 @@ const App: React.FC = () => {
             onLaunchStatusChange={handleLaunchStatusChange}
             onOpenAnalysis={handleOpenAnalysis}
             onAddComparisonSelection={handleAddComparisonSelection}
+            onOpenComparison={() => setCurrentPage('comparison')}
             onReuseConfig={handleReuseConfig}
           />
         );

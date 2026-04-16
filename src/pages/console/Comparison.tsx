@@ -67,6 +67,10 @@ const sourceBadgeClasses = {
   mock: 'bg-error/10 text-error',
 } as const;
 
+const formatMetric = (value?: number) => (typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '--');
+const formatRatio = (value?: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : '--';
+
 export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) => {
   const [loadState, setLoadState] = useState<AsyncState>('loading');
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
@@ -76,6 +80,18 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
     let cancelled = false;
 
     const loadComparison = async () => {
+      if (!comparisonSelectionIds.length) {
+        setComparison(null);
+        setLoadState('empty');
+        return;
+      }
+
+      if (comparisonSelectionIds.length < 2) {
+        setComparison(null);
+        setLoadState('idle');
+        return;
+      }
+
       try {
         setLoadState('loading');
         setErrorMessage('');
@@ -99,6 +115,26 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
       cancelled = true;
     };
   }, [comparisonSelectionIds]);
+
+  if (loadState === 'empty') {
+    return (
+      <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-10 text-center">
+        <h2 className="text-2xl font-bold text-on-surface">暂无对比实验</h2>
+        <p className="mt-3 text-sm text-on-surface-variant">请先在历史实验页选择 2~3 条实验记录加入对比。</p>
+      </div>
+    );
+  }
+
+  if (loadState === 'idle') {
+    return (
+      <div className="rounded-2xl border border-primary/20 bg-primary/10 p-10 text-center">
+        <h2 className="text-2xl font-bold text-primary">至少选择 2 个实验才适合对比</h2>
+        <p className="mt-3 text-sm text-on-surface-variant">
+          当前已选择 {comparisonSelectionIds.length}/3 条，请回到历史实验页继续添加。
+        </p>
+      </div>
+    );
+  }
 
   if (loadState === 'loading') {
     return (
@@ -153,7 +189,7 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div className={cn('grid grid-cols-1 gap-6', comparison.groups.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3')}>
         {comparison.groups.slice(0, 3).map((group, index) => {
           const accent = accentClasses[group.accent] ?? accentClasses.neutral;
 
@@ -171,13 +207,33 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
                 </span>
               </div>
               <h4 className="mb-1 text-sm font-bold text-on-surface-variant">{group.name}</h4>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-on-surface">{(group.metrics.recall20 * 100).toFixed(1)}%</span>
-                <span className="text-[10px] font-bold uppercase text-on-surface-variant">Recall@20</span>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-lg bg-surface-container-low p-3">
+                  <p className="text-[10px] font-bold text-on-surface-variant">Recall@20</p>
+                  <p className="mt-1 text-xl font-bold text-primary">{formatMetric(group.metrics.recall20)}</p>
+                </div>
+                <div className="rounded-lg bg-surface-container-low p-3">
+                  <p className="text-[10px] font-bold text-on-surface-variant">NDCG@20</p>
+                  <p className="mt-1 text-xl font-bold text-secondary">{formatMetric(group.metrics.ndcg20)}</p>
+                </div>
+                <div className="rounded-lg bg-surface-container-low p-3">
+                  <p className="text-[10px] font-bold text-on-surface-variant">Loss</p>
+                  <p className="mt-1 text-xl font-bold text-on-surface">{formatMetric(group.metrics.loss)}</p>
+                </div>
               </div>
-              <p className="mt-3 text-xs text-on-surface-variant">
-                投毒攻击：{group.attackLabel} | 鲁棒防御：{group.defenseLabel}
-              </p>
+              <div className="mt-4 space-y-2 text-xs text-on-surface-variant">
+                <p>模型：<span className="font-semibold text-on-surface">{group.model ?? '--'}</span></p>
+                <p>数据集：<span className="font-semibold text-on-surface">{group.dataset ?? '--'}</span></p>
+                <p>场景：<span className="font-semibold text-on-surface">{group.scenarioLabel ?? group.status}</span></p>
+                <p>投毒攻击：<span className="font-semibold text-on-surface">{group.attackLabel}</span></p>
+                <p>鲁棒防御：<span className="font-semibold text-on-surface">{group.defenseLabel}</span></p>
+                <p>隐私泄露观测：<span className="font-semibold text-on-surface">{group.privacyProbeLabel ?? '未启用'}</span></p>
+                <p>观测模块：<span className="font-semibold text-on-surface">{group.observationLabel ?? '未启用'}</span></p>
+                <p>
+                  参数：学习率 {group.learningRate ?? '--'} / 总轮数 {group.totalRounds ?? '--'} / 本地轮数{' '}
+                  {group.localEpochs ?? '--'} / 采样率 {formatRatio(group.clientSamplingRate)}
+                </p>
+              </div>
             </div>
           );
         })}
@@ -249,20 +305,25 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
               <thead>
                 <tr className="bg-surface-container-highest/50 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
                   <th className="px-8 py-4">字段</th>
-                  <th className="px-8 py-4">基线</th>
-                  <th className="px-8 py-4">攻击</th>
-                  <th className="px-8 py-4">攻防</th>
+                  {comparison.groups.slice(0, 3).map((group) => (
+                    <th key={group.id} className="px-8 py-4">{group.name}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/10">
-                {comparison.configDiff.map((row) => (
-                  <tr key={row.label} className="transition-colors hover:bg-surface-container-highest/30">
-                    <td className="px-8 py-4 text-primary">{row.label}</td>
-                    <td className="px-8 py-4 text-on-surface">{row.baseline}</td>
-                    <td className="px-8 py-4 text-on-surface-variant">{row.attack}</td>
-                    <td className="px-8 py-4 text-tertiary">{row.defense}</td>
-                  </tr>
-                ))}
+                {comparison.configDiff.map((row) => {
+                  const values = [row.baseline, row.attack, row.defense];
+                  return (
+                    <tr key={row.label} className="transition-colors hover:bg-surface-container-highest/30">
+                      <td className="px-8 py-4 text-primary">{row.label}</td>
+                      {comparison.groups.slice(0, 3).map((group, index) => (
+                        <td key={`${row.label}-${group.id}`} className="px-8 py-4 text-on-surface">
+                          {values[index] ?? '-'}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

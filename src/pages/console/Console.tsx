@@ -22,6 +22,7 @@ interface ConsoleProps {
   onLaunchStatusChange: (status: LaunchExperimentResponse) => void;
   onOpenAnalysis: (taskId: string | null) => void;
   onAddComparisonSelection: (taskId: string) => void;
+  onOpenComparison: () => void;
   onReuseConfig: (config: TrainConfig, taskId: string | null) => void;
 }
 
@@ -33,6 +34,7 @@ export const Console: React.FC<ConsoleProps> = ({
   onLaunchStatusChange,
   onOpenAnalysis,
   onAddComparisonSelection,
+  onOpenComparison,
   onReuseConfig,
 }) => {
   switch (currentPage) {
@@ -70,6 +72,7 @@ export const Console: React.FC<ConsoleProps> = ({
           comparisonSelectionIds={session.comparisonSelectionIds}
           onOpenAnalysis={onOpenAnalysis}
           onAddComparisonSelection={onAddComparisonSelection}
+          onOpenComparison={onOpenComparison}
           onReuseConfig={onReuseConfig}
         />
       );

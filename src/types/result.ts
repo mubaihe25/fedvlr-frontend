@@ -114,6 +114,15 @@ export interface ComparisonGroup {
   accent: StatusBadgeType;
   attackLabel: string;
   defenseLabel: string;
+  model?: string;
+  dataset?: string;
+  scenarioLabel?: string;
+  privacyProbeLabel?: string;
+  observationLabel?: string;
+  learningRate?: number;
+  totalRounds?: number;
+  localEpochs?: number;
+  clientSamplingRate?: number;
   metrics: ExperimentMetrics;
 }
 

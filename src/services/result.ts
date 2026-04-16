@@ -3,6 +3,7 @@ import {buildTrainConfigSummary, defaultTrainConfig} from '../mock/configuration
 import {formatAttackSemanticGroups, formatDefenseSemanticGroups, formatModuleChain, getModuleLabel, getScenarioLabel} from '../lib/experimentLabels';
 import type {AttackTaxonomyMap} from '../lib/experimentLabels';
 import {apiGet} from './api';
+import {getHistoryResultPreview, getHistorySummaryPreview} from './history';
 import {simulateRequest} from './mockAdapter';
 import {mockStore} from './mockStore';
 import type {
@@ -24,6 +25,7 @@ import type {
   ShowcaseComparisonItem,
   ShowcaseComparisonResponse,
 } from '../types/result';
+import type {HistoryRecord} from '../types/history';
 import type {AttackType, DefenseType, ExperimentMode, LaunchExperimentRecord, TrainConfig} from '../types/train';
 
 export const getResult = async (taskId: string): Promise<ExperimentResult | null> => {
@@ -563,11 +565,8 @@ export const getAnalysisResult = async ({
 
 export const getComparisonResult = async (taskIds?: string[]): Promise<ComparisonResult> => {
   if (taskIds && taskIds.length >= 2) {
-    return simulateRequest(() => ({
-      ...mockStore.buildComparisonFromTaskIds(taskIds),
-      dataSource: 'history',
-      dataSourceLabel: '历史实验组合',
-    }));
+    const records = await loadHistoryRecordsForComparison(taskIds);
+    return mapHistoryRecordsToComparison(records);
   }
 
   try {
@@ -703,6 +702,124 @@ const getScenarioMeta = (item: ShowcaseComparisonItem, index: number) =>
     defenseLabel: formatDefenseSemanticGroups(item.active_defenses).robustLabel,
     stageStatus: item.experiment_mode ?? '已加载',
   };
+
+const getHistoryGroupAccent = (record: HistoryRecord, index: number): ComparisonResult['groups'][number]['accent'] => {
+  if (record.mode === 'baseline') {
+    return 'neutral';
+  }
+  if (record.mode === 'attack') {
+    return 'danger';
+  }
+  if (record.mode === 'comparison' || record.mode === 'defense') {
+    return 'tertiary';
+  }
+  return index === 0 ? 'neutral' : index === 1 ? 'danger' : 'primary';
+};
+
+const mapHistoryRecordToComparisonGroup = (record: HistoryRecord, index: number): ComparisonResult['groups'][number] => {
+  const configSummary = record.configSummary;
+  const recall20 = asMetric(record.metrics.recall20);
+  const ndcg20 = asMetric(record.metrics.ndcg20);
+  const loss = asMetric(record.metrics.loss);
+
+  return {
+    id: record.id,
+    taskId: record.taskId,
+    name: record.name,
+    status: record.status === 'completed' ? (record.mode === 'baseline' ? 'Baseline' : 'Compared') : record.status,
+    accent: getHistoryGroupAccent(record, index),
+    attackLabel: configSummary.poisoningAttackLabel ?? configSummary.attackLabel,
+    defenseLabel: configSummary.defenseLabel,
+    model: record.model,
+    dataset: record.dataset,
+    scenarioLabel: configSummary.modeLabel,
+    privacyProbeLabel: configSummary.privacyProbeLabel ?? '未启用',
+    observationLabel: configSummary.observationLabel ?? configSummary.privacyLevel,
+    learningRate: record.keyParams.learningRate,
+    totalRounds: record.keyParams.totalRounds,
+    localEpochs: record.keyParams.localEpochs,
+    clientSamplingRate: record.keyParams.clientSamplingRate,
+    metrics: {
+      recall10: recall20,
+      recall20,
+      recall50: recall20,
+      ndcg10: ndcg20,
+      ndcg20,
+      ndcg50: ndcg20,
+      loss,
+    },
+  };
+};
+
+const mapHistoryRecordsToComparison = (records: HistoryRecord[]): ComparisonResult => {
+  const groups = records.slice(0, 3).map(mapHistoryRecordToComparisonGroup);
+
+  return {
+    groups,
+    summary: `当前对比来自历史实验页手动选择的 ${groups.length} 条实验记录，优先使用真实 summary/result 字段生成。`,
+    findings: groups.map(
+      (group) =>
+        `${group.name}：Recall@20 ${(group.metrics.recall20 * 100).toFixed(2)}%，NDCG@20 ${(group.metrics.ndcg20 * 100).toFixed(2)}%，Loss ${(group.metrics.loss ?? 0).toFixed(4)}。`,
+    ),
+    metricComparison: groups.map((group) => ({
+      name: group.name,
+      recall: group.metrics.recall20,
+      ndcg: group.metrics.ndcg20,
+      loss: group.metrics.loss ?? 0,
+    })),
+    configDiff: [
+      {
+        label: '模型',
+        baseline: groups[0]?.model ?? '-',
+        attack: groups[1]?.model ?? '-',
+        defense: groups[2]?.model ?? '-',
+      },
+      {
+        label: '数据集',
+        baseline: groups[0]?.dataset ?? '-',
+        attack: groups[1]?.dataset ?? '-',
+        defense: groups[2]?.dataset ?? '-',
+      },
+      {
+        label: '投毒攻击',
+        baseline: groups[0]?.attackLabel ?? '-',
+        attack: groups[1]?.attackLabel ?? '-',
+        defense: groups[2]?.attackLabel ?? '-',
+      },
+      {
+        label: '鲁棒防御',
+        baseline: groups[0]?.defenseLabel ?? '-',
+        attack: groups[1]?.defenseLabel ?? '-',
+        defense: groups[2]?.defenseLabel ?? '-',
+      },
+      {
+        label: '学习率 / 总轮数',
+        baseline: `${groups[0]?.learningRate ?? '-'} / ${groups[0]?.totalRounds ?? '-'}`,
+        attack: `${groups[1]?.learningRate ?? '-'} / ${groups[1]?.totalRounds ?? '-'}`,
+        defense: `${groups[2]?.learningRate ?? '-'} / ${groups[2]?.totalRounds ?? '-'}`,
+      },
+    ],
+    stages: groups.map((group, index) => ({
+      stage: `${index + 1}. ${group.name}`,
+      status: group.scenarioLabel ?? group.status,
+      tone: group.accent,
+    })),
+    dataSource: 'history',
+    dataSourceLabel: '历史实验手动选择',
+  };
+};
+
+const loadHistoryRecordsForComparison = async (taskIds: string[]) => {
+  return Promise.all(
+    taskIds.slice(0, 3).map(async (taskId) => {
+      try {
+        return await getHistoryResultPreview(taskId);
+      } catch {
+        return getHistorySummaryPreview(taskId);
+      }
+    }),
+  );
+};
 
 const mapShowcaseComparison = (response: ShowcaseComparisonResponse): ComparisonResult => {
   const items = orderedShowcaseItems(response.items).slice(0, 3);
