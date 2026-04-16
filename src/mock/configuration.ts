@@ -57,6 +57,7 @@ export const defenseOptions: SelectOption<DefenseType>[] = [
 export const defaultAdvancedConfig: TrainAdvancedConfig = {
   batchSize: 128,
   optimizer: 'adamw',
+  useGpu: true,
   weightDecay: 0.01,
   localEpochs: 5,
   gradientClip: 1.0,

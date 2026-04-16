@@ -82,6 +82,14 @@ const normalizeDefenseSelection = (values?: string[]) => {
 
 export const getSelectedPrivacyMetrics = (config: TrainConfig) => compact(config.enabledPrivacyMetrics);
 
+const mapOptimizerToLearner = (optimizer: TrainConfig['advanced']['optimizer'] | undefined) => {
+  if (optimizer === 'sgd') {
+    return 'sgd';
+  }
+
+  return 'adam';
+};
+
 const mapModuleToOption = (module: CapabilityModule): SelectOption => {
   const display = getModuleLabel(module.name);
   return {
@@ -384,6 +392,7 @@ export const buildUnifiedExperimentConfig = (
   const privacyMetrics = getSelectedPrivacyMetrics(config);
   const capabilities = source?.capabilities;
   const hasPoisoningAttack = attacks.includes(UNIFIED_POISONING_ATTACK);
+  const learner = mapOptimizerToLearner(config.advanced.optimizer);
   const maliciousClientConfig = config.maliciousClientConfig ?? {
     enabled: hasPoisoningAttack,
     mode: hasPoisoningAttack ? 'ratio' : 'none',
@@ -414,10 +423,12 @@ export const buildUnifiedExperimentConfig = (
       local_epochs: config.advanced.localEpochs,
       clients_sample_ratio: config.clientSamplingRate,
       eval_step: 1,
-      use_gpu: false,
+      use_gpu: config.advanced.useGpu ?? true,
       collect_round_metrics: true,
       lr: config.learningRate,
       l2_reg: config.advanced.weightDecay,
+      learner,
+      optimizer: learner,
     },
     attack_params: attackParams,
     defense_params: mergeModuleParams(defenses, capabilities?.defenses, config.defenseParams),

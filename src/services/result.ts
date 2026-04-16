@@ -282,9 +282,9 @@ const buildRealResult = (
         valid_score: round.valid_score,
         test_score: round.test_score,
       }));
-  const lossCurve = buildCurve('loss', '训练 Loss', '#81ecff', allRounds, 'avg_train_loss');
-  const validCurve = buildCurve('valid_score', '验证指标', '#afffd1', allRounds, 'valid_score');
-  const testCurve = buildCurve('test_score', '测试指标', '#ffb86b', allRounds, 'test_score');
+  const lossCurve = buildCurve('loss', '训练损失', '#81ecff', allRounds, 'avg_train_loss');
+  const validCurve = buildCurve('valid_score', '验证主指标', '#afffd1', allRounds, 'valid_score');
+  const testCurve = buildCurve('test_score', '测试主指标', '#ffb86b', allRounds, 'test_score');
   const attackGroups = formatAttackSemanticGroups(activeAttacks, base.attackTaxonomy);
   const defenseGroups = formatDefenseSemanticGroups(activeDefenses);
   const configSummary = buildConfigSummary(
@@ -353,8 +353,8 @@ const buildRealResult = (
       },
     ],
     curves: {
-      loss: lossCurve ?? {key: 'loss', label: '训练 Loss', color: '#81ecff', points: []},
-      utility: [lossCurve, validCurve, testCurve].filter((series): series is CurveSeries => Boolean(series)),
+      loss: lossCurve ?? {key: 'loss', label: '训练损失', color: '#81ecff', points: []},
+      utility: [validCurve, testCurve].filter((series): series is CurveSeries => Boolean(series)),
     },
     configSummary,
     summaryText: {

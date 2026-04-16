@@ -40,7 +40,33 @@ interface ConfigurationProps {
   ) => Promise<StartTrainResponse>;
 }
 
-const cloneConfig = (config: TrainConfig) => structuredClone(config);
+const TOTAL_ROUNDS_MIN = 1;
+const TOTAL_ROUNDS_MAX = 120;
+
+const optimizerOptions: Array<{value: TrainConfig['advanced']['optimizer']; label: string; backendValue: 'adam' | 'sgd'}> = [
+  {value: 'adam', label: 'Adam', backendValue: 'adam'},
+  {value: 'adamw', label: 'AdamW（按 Adam 提交）', backendValue: 'adam'},
+  {value: 'sgd', label: 'SGD', backendValue: 'sgd'},
+];
+
+const clampNumber = (value: number, min: number, max: number) => {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(max, Math.max(min, value));
+};
+
+const sanitizeConfig = (config: TrainConfig): TrainConfig => {
+  const next = structuredClone(config);
+  next.totalRounds = clampNumber(Math.round(Number(next.totalRounds)), TOTAL_ROUNDS_MIN, TOTAL_ROUNDS_MAX);
+  next.advanced = {
+    ...next.advanced,
+    useGpu: next.advanced.useGpu ?? true,
+  };
+  return next;
+};
+
+const cloneConfig = (config: TrainConfig) => sanitizeConfig(config);
 
 type ModuleParamField = 'attackParams' | 'defenseParams' | 'privacyParams';
 
@@ -167,7 +193,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
             nextSource.modelOptions.find((option) => !option.disabled)?.value ??
             nextSource.modelOptions[0]?.value ??
             current.model);
-        const next = {...current, dataset, model, scenario: current.scenario ?? modeToScenario(current.mode)};
+        const next = sanitizeConfig({...current, dataset, model, scenario: current.scenario ?? modeToScenario(current.mode)});
         if (dataset !== current.dataset || model !== current.model || next.scenario !== current.scenario) {
           onDraftConfigChange(next);
         }
@@ -218,11 +244,13 @@ export const Configuration: React.FC<ConfigurationProps> = ({
     {key: 'clients_sample_ratio', value: formConfig.clientSamplingRate},
     {key: 'lr', value: formConfig.learningRate},
     {key: 'l2_reg', value: formConfig.advanced.weightDecay},
+    {key: 'optimizer', value: getParameterValueLabel(formConfig.advanced.optimizer)},
+    {key: 'use_gpu', value: getParameterValueLabel(String(formConfig.advanced.useGpu ?? true))},
   ];
 
   const updateConfig = (updater: (current: TrainConfig) => TrainConfig) => {
     setFormConfig((current) => {
-      const next = updater(current);
+      const next = sanitizeConfig(updater(current));
       onDraftConfigChange(next);
       return next;
     });
@@ -938,13 +966,23 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <input
                   type="range"
                   min="1"
-                  max="50"
+                  max={TOTAL_ROUNDS_MAX}
                   step="1"
                   value={formConfig.totalRounds}
                   onChange={(event) =>
                     updateConfig((current) => ({...current, totalRounds: Number(event.target.value)}))
                   }
                   className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-primary"
+                />
+                <input
+                  type="number"
+                  min={TOTAL_ROUNDS_MIN}
+                  max={TOTAL_ROUNDS_MAX}
+                  value={formConfig.totalRounds}
+                  onChange={(event) =>
+                    updateConfig((current) => ({...current, totalRounds: Number(event.target.value)}))
+                  }
+                  className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
                 />
               </div>
 
@@ -1004,6 +1042,34 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   }
                   className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-on-surface-variant">
+                  {getParameterLabel('optimizer').title}
+                </label>
+                <select
+                  value={formConfig.advanced.optimizer}
+                  onChange={(event) =>
+                    updateConfig((current) => ({
+                      ...current,
+                      advanced: {
+                        ...current.advanced,
+                        optimizer: event.target.value as TrainConfig['advanced']['optimizer'],
+                      },
+                    }))
+                  }
+                  className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 text-primary focus:ring-1 focus:ring-primary"
+                >
+                  {optimizerOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-on-surface-variant">
+                  提交字段为 learner；AdamW 会按后端兼容值 Adam 执行，GPU 默认启用。
+                </p>
               </div>
 
               <div className="space-y-4">
@@ -1220,10 +1286,6 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">规划中功能</h4>
           <p className="mb-4 text-xs text-on-surface-variant">以下功能保留为路线提示，当前不会随实验启动提交给后端启动器。</p>
           <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
-            <div className="rounded-lg bg-surface-container-low p-3">
-              <p className="font-semibold text-on-surface">优化器选择</p>
-              <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.optimizer}，暂未接入后端启动器。</p>
-            </div>
             <div className="rounded-lg bg-surface-container-low p-3">
               <p className="font-semibold text-on-surface">差分隐私 ε</p>
               <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.differentialPrivacyEpsilon ?? '未设置'}，当前不生效。</p>

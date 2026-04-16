@@ -42,6 +42,9 @@ const sourceBadgeClasses = {
 const formatMetricValue = (value?: number) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '暂无';
 
+const stripAnsiEscapes = (value?: string | null) =>
+  (value ?? '').replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
+
 const buildChartData = (seriesList: CurveSeries[]) => {
   const rows = new Map<number | string, Record<string, string | number>>();
 
@@ -54,7 +57,132 @@ const buildChartData = (seriesList: CurveSeries[]) => {
     }
   }
 
-  return Array.from(rows.values());
+  return Array.from(rows.values()).sort((left, right) => {
+    const leftEpoch = Number(left.epoch);
+    const rightEpoch = Number(right.epoch);
+    if (Number.isFinite(leftEpoch) && Number.isFinite(rightEpoch)) {
+      return leftEpoch - rightEpoch;
+    }
+    return String(left.epoch).localeCompare(String(right.epoch));
+  });
+};
+
+const getChartValues = (data: Array<Record<string, string | number>>, seriesList: CurveSeries[]) =>
+  data.flatMap((row) =>
+    seriesList
+      .map((series) => Number(row[series.key]))
+      .filter((value) => Number.isFinite(value)),
+  );
+
+const getYAxisDomain = (data: Array<Record<string, string | number>>, seriesList: CurveSeries[]) => {
+  const values = getChartValues(data, seriesList);
+  if (!values.length) {
+    return ['auto', 'auto'] as const;
+  }
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const span = maxValue - minValue;
+  const padding = span > 0 ? span * 0.12 : Math.max(Math.abs(maxValue || 1) * 0.08, 0.001);
+
+  return [Number((minValue - padding).toFixed(6)), Number((maxValue + padding).toFixed(6))] as const;
+};
+
+const getXAxisTicks = (data: Array<Record<string, string | number>>) => {
+  const epochs = data.map((row) => row.epoch).filter((epoch) => epoch !== undefined);
+  if (epochs.length <= 16) {
+    return epochs;
+  }
+
+  const step = Math.ceil(epochs.length / 12);
+  return epochs.filter((_, index) => index % step === 0 || index === epochs.length - 1);
+};
+
+const getChartMinWidth = (pointCount: number) => Math.max(680, pointCount * 34);
+
+interface CurveChartProps {
+  title: string;
+  description: string;
+  seriesList: CurveSeries[];
+  data: Array<Record<string, string | number>>;
+  emptyText: string;
+}
+
+const CurveChart: React.FC<CurveChartProps> = ({title, description, seriesList, data, emptyText}) => {
+  const yAxisDomain = getYAxisDomain(data, seriesList);
+  const xAxisTicks = getXAxisTicks(data);
+  const minWidth = getChartMinWidth(data.length);
+
+  return (
+    <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-5">
+      <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-center">
+        <div>
+          <h4 className="font-bold text-on-surface">{title}</h4>
+          <p className="mt-1 text-xs text-on-surface-variant">{description}</p>
+        </div>
+        <div className="flex flex-wrap gap-4">
+          {seriesList.map((series) => (
+            <div key={series.key} className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full" style={{backgroundColor: series.color}} />
+              <span className="text-xs text-on-surface-variant">{series.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {data.length && seriesList.length ? (
+        <div className="overflow-x-auto pb-2">
+          <div className="h-72" style={{minWidth: `${minWidth}px`}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data}>
+                <CartesianGrid stroke="#1d2730" strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="epoch"
+                  stroke="#a5acb4"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  ticks={xAxisTicks}
+                  interval={0}
+                />
+                <YAxis
+                  stroke="#a5acb4"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  domain={yAxisDomain}
+                  tickFormatter={(value) => formatMetricValue(Number(value))}
+                />
+                <Tooltip
+                  contentStyle={{backgroundColor: '#121a22', border: '1px solid #1d2730', borderRadius: '8px'}}
+                  formatter={(value, name) => [
+                    formatMetricValue(Number(value)),
+                    seriesList.find((series) => series.key === name)?.label ?? name,
+                  ]}
+                />
+                {seriesList.map((series, index) => (
+                  <Line
+                    key={series.key}
+                    type="monotone"
+                    dataKey={series.key}
+                    stroke={series.color}
+                    strokeWidth={index === 0 ? 3 : 2}
+                    strokeDasharray={index === 0 ? undefined : '5 5'}
+                    dot={false}
+                    activeDot={{r: 6, strokeWidth: 0}}
+                    isAnimationActive={false}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-48 items-center justify-center rounded-xl border border-outline-variant/10 bg-surface-container text-sm text-on-surface-variant">
+          {emptyText}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, experimentContext}) => {
@@ -105,20 +233,26 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
     };
   }, [taskId, lastLaunchRecord]);
 
-  const chartSeries = useMemo(() => {
+  const lossSeries = useMemo(() => {
     if (!result) {
       return [];
-    }
-
-    const utilitySeries = result.curves.utility.filter((series) => series.points.length);
-    if (utilitySeries.length) {
-      return utilitySeries;
     }
 
     return result.curves.loss.points.length ? [result.curves.loss] : [];
   }, [result]);
 
-  const chartData = useMemo(() => buildChartData(chartSeries), [chartSeries]);
+  const scoreSeries = useMemo(() => {
+    if (!result) {
+      return [];
+    }
+
+    return result.curves.utility.filter((series) => series.points.length);
+  }, [result]);
+
+  const lossChartData = useMemo(() => buildChartData(lossSeries), [lossSeries]);
+  const scoreChartData = useMemo(() => buildChartData(scoreSeries), [scoreSeries]);
+  const validationStdoutTail = stripAnsiEscapes(lastLaunchRecord?.response.stdout_tail);
+  const validationStderrTail = stripAnsiEscapes(lastLaunchRecord?.response.stderr_tail);
 
   if (loadState === 'loading') {
     return (
@@ -135,6 +269,26 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
         <p className="mt-3 text-sm text-on-surface-variant">
           最近一次提交是 validateOnly / dryRun 模式，尚未启动训练，也没有生成可分析的 summary/result 文件。
         </p>
+        {validationStdoutTail || validationStderrTail ? (
+          <div className="mt-6 grid grid-cols-1 gap-4 text-left md:grid-cols-2">
+            {validationStdoutTail ? (
+              <div className="rounded-xl bg-surface-container-low p-4">
+                <p className="mb-2 text-xs font-bold text-on-surface-variant">校验输出</p>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-on-surface">
+                  {validationStdoutTail}
+                </pre>
+              </div>
+            ) : null}
+            {validationStderrTail ? (
+              <div className="rounded-xl bg-error/10 p-4">
+                <p className="mb-2 text-xs font-bold text-error">错误输出</p>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-on-surface">
+                  {validationStderrTail}
+                </pre>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -233,50 +387,28 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="glass-panel rounded-2xl p-8 lg:col-span-8">
-          <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-            <div>
-              <h3 className="text-lg font-bold">真实轮次曲线</h3>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                优先使用 round_summaries / round_metrics 中可用的 loss、valid_score、test_score 字段。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              {chartSeries.map((series) => (
-                <div key={series.key} className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full" style={{backgroundColor: series.color}} />
-                  <span className="text-xs text-on-surface-variant">{series.label}</span>
-                </div>
-              ))}
-            </div>
+          <div className="mb-6">
+            <h3 className="text-lg font-bold">真实轮次曲线</h3>
+            <p className="mt-1 text-xs text-on-surface-variant">
+              训练损失与验证/测试主指标分开展示；长轮次实验支持横向滚动查看完整区间。
+            </p>
           </div>
-          {chartData.length ? (
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid stroke="#1d2730" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="epoch" stroke="#a5acb4" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#a5acb4" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{backgroundColor: '#121a22', border: '1px solid #1d2730', borderRadius: '8px'}} />
-                  {chartSeries.map((series, index) => (
-                    <Line
-                      key={series.key}
-                      type="monotone"
-                      dataKey={series.key}
-                      stroke={series.color}
-                      strokeWidth={index === 0 ? 4 : 2}
-                      strokeDasharray={index === 0 ? undefined : '5 5'}
-                      dot={false}
-                      activeDot={{r: 6, strokeWidth: 0}}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="flex h-72 items-center justify-center rounded-xl border border-outline-variant/10 bg-surface-container-low text-sm text-on-surface-variant">
-              当前结果文件没有可绘制的轮次曲线字段。
-            </div>
-          )}
+          <div className="space-y-6">
+            <CurveChart
+              title="训练损失曲线"
+              description="仅使用 round_summaries / round_metrics 中的训练损失字段。"
+              seriesList={lossSeries}
+              data={lossChartData}
+              emptyText="当前结果文件没有可绘制的训练损失字段。"
+            />
+            <CurveChart
+              title="验证/测试主指标曲线"
+              description="使用真实 valid_score / test_score 字段，按后端主评估指标记录展示。"
+              seriesList={scoreSeries}
+              data={scoreChartData}
+              emptyText="当前结果文件没有可绘制的验证/测试主指标字段。"
+            />
+          </div>
         </div>
 
         <div className="glass-panel rounded-2xl p-8 lg:col-span-4">

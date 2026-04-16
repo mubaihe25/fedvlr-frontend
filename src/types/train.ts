@@ -49,6 +49,7 @@ export interface MaliciousClientConfig {
 export interface TrainAdvancedConfig {
   batchSize: number;
   optimizer: 'adam' | 'adamw' | 'sgd';
+  useGpu?: boolean;
   weightDecay: number;
   localEpochs: number;
   gradientClip: number;

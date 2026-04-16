@@ -165,6 +165,9 @@ const parameterLabels: Record<string, ExperimentDisplayLabel> = {
   clients_sample_ratio: {title: '客户端采样率', code: 'clients_sample_ratio'},
   lr: {title: '学习率', code: 'lr'},
   l2_reg: {title: 'L2 正则', code: 'l2_reg'},
+  optimizer: {title: '优化器', code: 'optimizer'},
+  learner: {title: '优化器', code: 'learner'},
+  use_gpu: {title: 'GPU', code: 'use_gpu'},
 };
 
 const parameterValueLabels: Record<string, string> = {
@@ -180,6 +183,11 @@ const parameterValueLabels: Record<string, string> = {
   filter_then_trimmed_mean: '过滤 + 鲁棒聚合',
   clip_then_filter_then_trimmed_mean: '裁剪 + 过滤 + 鲁棒聚合',
   'update_norm > mean + filter_std_factor * std': '更新范数高于均值阈值',
+  adam: 'Adam',
+  adamw: 'AdamW（按 Adam 提交）',
+  sgd: 'SGD',
+  true: '启用',
+  false: '关闭',
 };
 
 const scenarioLabels: Record<string, ExperimentDisplayLabel> = {
