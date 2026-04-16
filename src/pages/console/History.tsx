@@ -251,14 +251,23 @@ export const History: React.FC<HistoryProps> = ({
   }, [selectedRecord?.id, requestedDetailLevel]);
 
   const modelFilterOptions = useMemo(() => {
-    const existing = new Set(mockHistoryData.filterOptions.models.map((option) => option.value));
-    const dynamicOptions = records
-      .map((record) => record.model)
-      .filter((model): model is string => Boolean(model) && !existing.has(model))
-      .map((model) => ({value: model, label: model}));
+    if (listSource === 'mock') {
+      return mockHistoryData.filterOptions.models;
+    }
 
-    return [...mockHistoryData.filterOptions.models, ...dynamicOptions];
-  }, [records]);
+    const modelNames = Array.from(
+      new Set<string>(
+        records
+          .map((record) => record.model?.trim())
+          .filter((model): model is string => Boolean(model)),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
+
+    return [
+      {value: 'all', label: '全部模型'},
+      ...modelNames.map((model) => ({value: model, label: model})),
+    ];
+  }, [listSource, records]);
 
   const modeFilterOptions = useMemo(() => {
     const existing = new Set(mockHistoryData.filterOptions.modes.map((option) => option.value));
