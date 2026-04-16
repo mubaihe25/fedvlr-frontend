@@ -1,5 +1,5 @@
 import {buildTrainConfigSummary, defaultTrainConfig} from '../mock/configuration';
-import {formatAttackSemanticGroups} from '../lib/experimentLabels';
+import {formatAttackSemanticGroups, formatDefenseSemanticGroups} from '../lib/experimentLabels';
 import type {AttackTaxonomyMap} from '../lib/experimentLabels';
 import type {
   ExperimentResultDetail,
@@ -108,7 +108,16 @@ const mapDefenseType = (activeDefenses?: string[]): DefenseType => {
     return 'none';
   }
 
-  if (defenseName === 'norm_clip' || defenseName === 'client_update_anomaly') {
+  if (
+    defenseName === 'robust_defense' ||
+    defenseName === 'robust' ||
+    defenseName === 'robust_aggregation_defense' ||
+    defenseName === 'norm_clip' ||
+    defenseName === 'update_filter' ||
+    defenseName === 'trimmed_mean' ||
+    defenseName === 'client_update_anomaly' ||
+    defenseName === 'client_update_anomaly_detector'
+  ) {
     return defenseName;
   }
 
@@ -166,10 +175,25 @@ const buildResultPreviewBars = (result: ApiResultShape) => {
   return buildPreviewBarsFromValues([result.final_eval?.recall20 ?? result.final_eval?.ndcg20 ?? 0.1]);
 };
 
+const getNestedMetricCandidate = (value: unknown, fields: string[]): number => {
+  if (!value || typeof value !== 'object') {
+    return 0;
+  }
+
+  const record = value as Record<string, unknown>;
+  const directMax = fields.reduce((fieldMax, field) => Math.max(fieldMax, Number(record[field] ?? 0)), 0);
+  const childMax = Object.values(record).reduce<number>(
+    (maxValue, child) => Math.max(maxValue, getNestedMetricCandidate(child, fields)),
+    0,
+  );
+  const candidate = Math.max(directMax, childMax);
+  return Number.isFinite(candidate) ? candidate : 0;
+};
+
 const getMaxNestedMetricCount = (
   rounds: ExperimentResultRoundMetric[],
   bucket: 'attack_metrics' | 'defense_metrics',
-  field: 'attacked_client_count' | 'clipped_client_count',
+  fields: string[],
 ) =>
   rounds.reduce((maxValue, round) => {
     const metrics = round.extra?.[bucket];
@@ -177,10 +201,10 @@ const getMaxNestedMetricCount = (
       return maxValue;
     }
 
-    const roundMax = Object.values(metrics).reduce((valueMax, value) => {
-      const candidate = Number(value?.[field] ?? 0);
-      return Number.isFinite(candidate) ? Math.max(valueMax, candidate) : valueMax;
-    }, 0);
+    const roundMax = Object.values(metrics).reduce(
+      (valueMax, value) => Math.max(valueMax, getNestedMetricCandidate(value, fields)),
+      0,
+    );
 
     return Math.max(maxValue, roundMax);
   }, 0);
@@ -195,14 +219,14 @@ const buildSummaryText = (summary: ApiSummaryShape) => {
   const mode = summary.experiment_mode || 'baseline';
   const scenarioTags = summary.scenario_tags?.length ? summary.scenario_tags.join(' / ') : '未标注';
   const attackGroups = formatAttackSemanticGroups(summary.active_attacks, summary.attack_taxonomy as AttackTaxonomyMap | undefined);
-  const defenseCount = summary.active_defenses?.length ?? 0;
+  const defenseGroups = formatDefenseSemanticGroups(summary.active_defenses);
   const privacyCount = summary.active_privacy_metrics?.length ?? 0;
   const maliciousCount = summary.malicious_client_summary?.unique_malicious_client_count ?? 0;
   const recall20 = summary.final_eval?.recall20;
   const ndcg20 = summary.final_eval?.ndcg20;
   const roundCount = getSummaryRounds(summary).length;
 
-  return `实验场景：${mode}；场景标签：${scenarioTags}；投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；防御模块 ${defenseCount} 个，观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
+  return `实验场景：${mode}；场景标签：${scenarioTags}；投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
 };
 
 const buildResultText = (result: ApiResultShape) => {
@@ -210,34 +234,54 @@ const buildResultText = (result: ApiResultShape) => {
   const scenarioTags = result.scenario_tags?.length ? result.scenario_tags.join(' / ') : '未标注';
   const roundCount = getResultRounds(result).length;
   const attackGroups = formatAttackSemanticGroups(result.active_attacks, result.metadata?.attack_taxonomy as AttackTaxonomyMap | undefined);
-  const defenseCount = result.active_defenses?.length ?? 0;
+  const defenseGroups = formatDefenseSemanticGroups(result.active_defenses);
   const privacyCount = result.active_privacy_metrics?.length ?? 0;
   const maliciousSummary = result.metadata?.malicious_client_summary;
   const maliciousCount = maliciousSummary?.unique_malicious_client_count ?? result.malicious_clients?.length ?? 0;
-  const attackedCount = getMaxNestedMetricCount(getResultRounds(result), 'attack_metrics', 'attacked_client_count');
-  const clippedCount = getMaxNestedMetricCount(getResultRounds(result), 'defense_metrics', 'clipped_client_count');
+  const attackedCount = getMaxNestedMetricCount(getResultRounds(result), 'attack_metrics', [
+    'attacked_client_count',
+    'poisoned_client_count',
+  ]);
+  const clippedCount = getMaxNestedMetricCount(getResultRounds(result), 'defense_metrics', [
+    'clipped_client_count',
+    'total_clipped_clients',
+  ]);
+  const filteredCount = getMaxNestedMetricCount(getResultRounds(result), 'defense_metrics', [
+    'filtered_client_count',
+    'total_filtered_clients',
+  ]);
+  const trimCount = getMaxNestedMetricCount(getResultRounds(result), 'defense_metrics', [
+    'effective_trim_count',
+    'trimmed_client_count',
+  ]);
   const privacyRounds = countPrivacyObservationRounds(getResultRounds(result));
   const recall20 = result.final_eval?.recall20;
   const ndcg20 = result.final_eval?.ndcg20;
 
-  return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；防御模块 ${defenseCount} 个，观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，隐私观测命中 ${privacyRounds} 轮。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
+  return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，最大过滤客户端 ${filteredCount} 个，截尾处理计数 ${trimCount}，隐私观测命中 ${privacyRounds} 轮。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
 };
 
 const buildApiConfigFromSummary = (summary: ApiSummaryShape): TrainConfig => {
   const rounds = getSummaryRounds(summary);
+  const activeAttacks = summary.active_attacks ?? [];
+  const activeDefenses = summary.active_defenses ?? [];
+  const activePrivacyMetrics = summary.active_privacy_metrics ?? [];
   const mode = mapExperimentMode(summary.experiment_mode);
-  const attackType = mapAttackType(summary.active_attacks);
-  const defenseType = mapDefenseType(summary.active_defenses);
+  const attackType = mapAttackType(activeAttacks);
+  const defenseType = mapDefenseType(activeDefenses);
 
   return {
     ...defaultTrainConfig,
     dataset: summary.dataset || defaultTrainConfig.dataset,
     model: (summary.model || defaultTrainConfig.model).toLowerCase(),
     mode,
-    attackEnabled: attackType !== 'none',
+    attackEnabled: activeAttacks.length > 0,
     attackType,
-    defenseEnabled: defenseType !== 'none',
+    enabledAttacks: activeAttacks,
+    defenseEnabled: activeDefenses.length > 0,
     defenseType,
+    enabledDefenses: activeDefenses,
+    enabledPrivacyMetrics: activePrivacyMetrics,
     clientCount: getParticipantCount(rounds.map((round) => round.num_participants)),
     clientSamplingRate: 1,
     totalRounds: rounds.length || defaultTrainConfig.totalRounds,
@@ -247,19 +291,25 @@ const buildApiConfigFromSummary = (summary: ApiSummaryShape): TrainConfig => {
 
 const buildApiConfigFromResult = (result: ApiResultShape): TrainConfig => {
   const rounds = getResultRounds(result);
+  const activeAttacks = result.active_attacks ?? [];
+  const activeDefenses = result.active_defenses ?? [];
+  const activePrivacyMetrics = result.active_privacy_metrics ?? [];
   const mode = mapExperimentMode(result.experiment_mode);
-  const attackType = mapAttackType(result.active_attacks);
-  const defenseType = mapDefenseType(result.active_defenses);
+  const attackType = mapAttackType(activeAttacks);
+  const defenseType = mapDefenseType(activeDefenses);
 
   return {
     ...defaultTrainConfig,
     dataset: result.dataset || defaultTrainConfig.dataset,
     model: (result.model || defaultTrainConfig.model).toLowerCase(),
     mode,
-    attackEnabled: attackType !== 'none',
+    attackEnabled: activeAttacks.length > 0,
     attackType,
-    defenseEnabled: defenseType !== 'none',
+    enabledAttacks: activeAttacks,
+    defenseEnabled: activeDefenses.length > 0,
     defenseType,
+    enabledDefenses: activeDefenses,
+    enabledPrivacyMetrics: activePrivacyMetrics,
     clientCount: getParticipantCount(rounds.map((round) => round.num_participants)),
     clientSamplingRate: 1,
     totalRounds: rounds.length || defaultTrainConfig.totalRounds,

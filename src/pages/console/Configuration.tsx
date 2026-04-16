@@ -26,6 +26,7 @@ import {
   getSelectedPrivacyMetrics,
   modeToScenario,
   UNIFIED_POISONING_ATTACK,
+  UNIFIED_ROBUST_DEFENSE,
   type ExperimentConfigurationSource,
 } from '../../services/experiment';
 
@@ -57,6 +58,19 @@ const moduleParamInputType = (schemaType: string | undefined, defaultValue: unkn
     return 'number';
   }
   return 'string';
+};
+
+const parameterValueOptions: Record<string, string[]> = {
+  robust_defense_mode: [
+    'clip',
+    'filter',
+    'trimmed_mean',
+    'clip_then_trimmed_mean',
+    'filter_then_trimmed_mean',
+    'clip_then_filter_then_trimmed_mean',
+  ],
+  robust_filter_rule: ['update_norm > mean + filter_std_factor * std'],
+  robust_trim_rule: ['coordinate_trimmed_mean'],
 };
 
 const deriveModeFromModules = (attacks: string[], defenses: string[]): TrainConfig['mode'] => {
@@ -241,7 +255,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       mockConfigurationData.defaultConfig.model;
     const preferredCombination =
       configurationSource.capabilities?.validated_combinations.find(
-        (combination) => combination.name === 'poisoning_trimmed_mean' && combination.validated_models.includes(model),
+        (combination) => combination.name === 'attack_and_robust_defense' && combination.validated_models.includes(model),
+      ) ?? configurationSource.capabilities?.validated_combinations.find(
+        (combination) => combination.name === 'attack_and_robust_defense_trimmed_mean' && combination.validated_models.includes(model),
+      ) ?? configurationSource.capabilities?.validated_combinations.find(
+        (combination) => combination.name === 'attack_and_robust_defense_clip_then_trimmed_mean' && combination.validated_models.includes(model),
       ) ?? configurationSource.capabilities?.validated_combinations.find((combination) => combination.validated_models.includes(model));
     const rawEnabledAttacks = preferredCombination?.attacks ?? [UNIFIED_POISONING_ATTACK];
     const enabledAttacks = getSelectedAttacks({
@@ -250,7 +268,12 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       attackType: (rawEnabledAttacks[0] ?? 'none') as TrainConfig['attackType'],
       enabledAttacks: rawEnabledAttacks,
     });
-    const enabledDefenses = preferredCombination?.defenses ?? ['trimmed_mean'];
+    const enabledDefenses = getSelectedDefenses({
+      ...mockConfigurationData.defaultConfig,
+      defenseEnabled: Boolean(preferredCombination?.defenses?.length),
+      defenseType: ((preferredCombination?.defenses[0] ?? UNIFIED_ROBUST_DEFENSE) as TrainConfig['defenseType']),
+      enabledDefenses: preferredCombination?.defenses ?? [UNIFIED_ROBUST_DEFENSE],
+    });
     const enabledPrivacyMetrics = preferredCombination?.privacy_metrics ?? [];
     const mode = deriveModeFromModules(enabledAttacks, enabledDefenses);
     const attackGroups = splitAttackModules(enabledAttacks, attackTaxonomy);
@@ -327,7 +350,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
       }
 
       if (mode === 'defense') {
-        const nextDefense = getSelectedDefenses(current)[0] ?? configurationSource.defenseOptions[0]?.value ?? 'trimmed_mean';
+        const nextDefense = getSelectedDefenses(current)[0] ?? configurationSource.defenseOptions[0]?.value ?? UNIFIED_ROBUST_DEFENSE;
         return {
           ...current,
           mode,
@@ -352,7 +375,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         getSelectedAttacks(current).find((attack) => configurationSource.poisoningAttackOptions.some((option) => option.value === attack)) ??
         configurationSource.poisoningAttackOptions[0]?.value ??
         UNIFIED_POISONING_ATTACK;
-      const nextDefense = getSelectedDefenses(current)[0] ?? configurationSource.defenseOptions[0]?.value ?? 'trimmed_mean';
+      const nextDefense = getSelectedDefenses(current)[0] ?? configurationSource.defenseOptions[0]?.value ?? UNIFIED_ROBUST_DEFENSE;
       return {
         ...current,
         mode,
@@ -415,13 +438,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
     updateConfig((current) => {
       const attacks = getSelectedAttacks(current);
       const currentDefenses = getSelectedDefenses(current);
-      const nextDefenses = currentDefenses.includes(defenseName)
-        ? currentDefenses.filter((name) => name !== defenseName)
-        : [...currentDefenses, defenseName];
-      if (nextDefenses.length > configurationSource.maxEnabledDefenses) {
-        setMessage(`当前最多选择 ${configurationSource.maxEnabledDefenses} 个防御模块。`);
-        return current;
-      }
+      const nextDefenses = currentDefenses.includes(defenseName) ? [] : [UNIFIED_ROBUST_DEFENSE];
 
       const attackGroups = splitAttackModules(attacks, attackTaxonomy);
       const mode = deriveModeFromModules(attacks, nextDefenses);
@@ -522,6 +539,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 恶意客户端总量由全局“恶意客户端比例”决定；这里仅配置这批恶意客户端在三种非定向投毒子策略之间的分配比例。
               </p>
             ) : null}
+            {moduleName === UNIFIED_ROBUST_DEFENSE ? (
+              <p className="mt-2 text-xs text-on-surface-variant">
+                当前只配置统一鲁棒防御入口；具体采用裁剪、过滤、鲁棒聚合或组合模式，由下方“鲁棒防御模式”决定。
+              </p>
+            ) : null}
           </div>
           <span className={cn('shrink-0 rounded px-2 py-0.5 text-[10px] font-bold', toneClass)}>已选择</span>
         </div>
@@ -551,7 +573,9 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 );
               }
 
-              if (inputType === 'string' && typeof value === 'string' && hasParameterValueLabel(value)) {
+              const stringOptions = parameterValueOptions[paramName] ?? [];
+              if (inputType === 'string' && (stringOptions.length || (typeof value === 'string' && hasParameterValueLabel(value)))) {
+                const options = stringOptions.length ? stringOptions : [String(value)];
                 return (
                   <label key={paramName} className="space-y-1">
                     <span className="block text-xs font-bold text-on-surface">{paramLabel.title}</span>
@@ -560,7 +584,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                       onChange={(event) => updateModuleParam(field, moduleName, paramName, event.target.value)}
                       className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 text-primary focus:ring-1 focus:ring-primary"
                     >
-                      <option value={value}>{getParameterValueLabel(value)}</option>
+                      {options.map((optionValue) => (
+                        <option key={optionValue} value={optionValue}>
+                          {getParameterValueLabel(optionValue)}
+                        </option>
+                      ))}
                     </select>
                     <span className="block text-[10px] text-on-surface-variant">
                       类型：{inputTypeLabel}，默认值：{getParameterValueLabel(String(defaultValue ?? '未提供'))}
@@ -655,7 +683,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <div>
             <h4 className="font-bold text-error">模块链选择</h4>
             <p className="mt-1 text-xs text-on-surface-variant">
-              按投毒攻击、隐私泄露观测、防御链、观测模块的语义提交；当前最多启用 1 个投毒攻击，可额外启用 1 个隐私泄露观测。
+              按投毒攻击、隐私泄露观测、鲁棒防御、观测模块的语义提交；当前最多启用 1 个投毒攻击，可额外启用 1 个隐私泄露观测。
             </p>
           </div>
         </div>
@@ -693,11 +721,12 @@ export const Configuration: React.FC<ConfigurationProps> = ({
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">防御链</label>
-            <span className="text-[10px] text-on-surface-variant">
-              {selectedDefenses.length}/{configurationSource.maxEnabledDefenses}
-            </span>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">鲁棒防御</label>
+            <span className="text-[10px] text-on-surface-variant">统一入口</span>
           </div>
+          <p className="text-[11px] leading-relaxed text-on-surface-variant">
+            当前推荐只启用一个“鲁棒防御”入口；内部支持裁剪型、过滤型、鲁棒聚合型以及组合模式。
+          </p>
           <div className="flex flex-wrap gap-2">
             {configurationSource.defenseOptions.map((option) =>
               renderModuleOption(option, selectedDefenses.includes(option.value), () => toggleDefense(option.value), 'tertiary'),
@@ -1031,7 +1060,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
               )}
               {!selectedAttacks.length && !selectedDefenses.length && !selectedPrivacyMetrics.length ? (
                 <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 text-sm text-on-surface-variant">
-                  当前未选择攻击、防御或观测模块，无模块专属参数。
+                  当前未选择攻击、鲁棒防御或观测模块，无模块专属参数。
                 </div>
               ) : null}
             </div>
@@ -1065,7 +1094,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 {renderChainSummary(selectedPrivacyProbes)}
               </div>
               <div className="flex items-start justify-between gap-4 text-sm">
-                <span className="text-on-surface-variant">防御链</span>
+                <span className="text-on-surface-variant">鲁棒防御</span>
                 {renderChainSummary(selectedDefenses)}
               </div>
               <div className="flex items-start justify-between gap-4 text-sm">
@@ -1128,7 +1157,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   {formConfig.model} / {formConfig.dataset} / {getScenarioLabel(scenario).title}
                 </p>
                 <p className="mt-1 text-xs text-on-surface/60">
-                  执行顺序：投毒攻击/隐私探针 → 防御链 → 观测模块
+                  执行顺序：投毒攻击/隐私探针 → 鲁棒防御 → 观测模块
                 </p>
               </div>
             </div>
@@ -1139,7 +1168,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   {isValidatedCombination
                     ? '已匹配验证组合。'
                     : configurationSource.dataSource === 'api'
-                      ? '当前组合尚未在能力矩阵中标记为已验证；后端会按攻击、防御、观测顺序处理。'
+                      ? '当前组合尚未在能力矩阵中标记为已验证；后端会按投毒/隐私探针、鲁棒防御、观测顺序处理。'
                       : formConfig.advanced.notes}
                   {' '}必填字段：模型 / 数据集 / 实验场景。
                 </span>

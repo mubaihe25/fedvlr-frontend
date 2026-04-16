@@ -1,5 +1,5 @@
 import {mockConfigurationData} from '../mock/configuration';
-import {getModuleLabel, isPrivacyProbeModule} from '../lib/experimentLabels';
+import {getModuleLabel, isPrivacyProbeModule, isRobustDefenseModule} from '../lib/experimentLabels';
 import type {SelectOption} from '../types/common';
 import type {
   CapabilitiesResponse,
@@ -57,6 +57,8 @@ const compact = (values?: string[]) =>
 
 export const UNIFIED_POISONING_ATTACK = 'poisoning_attack';
 const legacyPoisoningAttacks = new Set(['client_update_scale', 'sign_flip', 'model_replacement', 'poisoning', 'nondirected_poisoning']);
+export const UNIFIED_ROBUST_DEFENSE = 'robust_defense';
+const legacyRobustDefenses = new Set(['norm_clip', 'update_filter', 'trimmed_mean', 'robust', 'robust_aggregation_defense']);
 
 const normalizeAttackSelection = (values?: string[]) => {
   const attacks = compact(values);
@@ -69,7 +71,14 @@ export const getSelectedAttacks = (config: TrainConfig) =>
   normalizeAttackSelection(config.enabledAttacks ?? (config.attackEnabled ? [config.attackType] : []));
 
 export const getSelectedDefenses = (config: TrainConfig) =>
-  compact(config.enabledDefenses ?? (config.defenseEnabled ? [config.defenseType] : []));
+  normalizeDefenseSelection(config.enabledDefenses ?? (config.defenseEnabled ? [config.defenseType] : []));
+
+const normalizeDefenseSelection = (values?: string[]) => {
+  const defenses = compact(values);
+  const hasRobustDefense = defenses.some((defense) => defense === UNIFIED_ROBUST_DEFENSE || legacyRobustDefenses.has(defense));
+  const nonRobust = defenses.filter((defense) => defense !== UNIFIED_ROBUST_DEFENSE && !legacyRobustDefenses.has(defense));
+  return hasRobustDefense ? [UNIFIED_ROBUST_DEFENSE, ...nonRobust] : nonRobust;
+};
 
 export const getSelectedPrivacyMetrics = (config: TrainConfig) => compact(config.enabledPrivacyMetrics);
 
@@ -147,6 +156,64 @@ const getUnifiedPoisoningModule = (attacks: CapabilityModule[] = []) => {
   return normalizePoisoningModule(directModule);
 };
 
+const createFallbackRobustDefenseModule = (): CapabilityModule => ({
+  name: UNIFIED_ROBUST_DEFENSE,
+  aliases: ['robust', 'robust_aggregation_defense'],
+  type: 'unified_robust_defense',
+  family: 'robust_defense',
+  category: 'robust_defense',
+  strategy: 'unified_robust_defense',
+  display_category: '鲁棒防御',
+  is_read_only: false,
+  mutates_participant_params: true,
+  config_schema: {
+    robust_defense_mode: 'string',
+    robust_clip_norm: 'float',
+    robust_filter_rule: 'string',
+    robust_filter_std_factor: 'float',
+    robust_max_filtered_ratio: 'float',
+    robust_trim_ratio: 'float',
+    robust_min_clients_for_trim: 'integer',
+    robust_trim_rule: 'string',
+  },
+  default_values: {
+    robust_defense_mode: 'trimmed_mean',
+    robust_clip_norm: 30.0,
+    robust_filter_rule: 'update_norm > mean + filter_std_factor * std',
+    robust_filter_std_factor: 2.0,
+    robust_max_filtered_ratio: 0.3,
+    robust_trim_ratio: 0.2,
+    robust_min_clients_for_trim: 5,
+    robust_trim_rule: 'coordinate_trimmed_mean',
+  },
+  notes: '统一的鲁棒防御入口，内部支持裁剪型、过滤型和鲁棒聚合型模式。',
+});
+
+const normalizeRobustDefenseModule = (module?: CapabilityModule): CapabilityModule => {
+  const fallback = createFallbackRobustDefenseModule();
+  return {
+    ...fallback,
+    ...(module ?? {}),
+    name: UNIFIED_ROBUST_DEFENSE,
+    aliases: Array.from(new Set([...(fallback.aliases ?? []), ...(module?.aliases ?? [])])),
+    config_schema: {
+      ...fallback.config_schema,
+      ...(module?.config_schema ?? {}),
+    },
+    default_values: {
+      ...fallback.default_values,
+      ...(module?.default_values ?? {}),
+    },
+  };
+};
+
+const getUnifiedRobustDefenseModule = (defenses: CapabilityModule[] = []) => {
+  const directModule = defenses.find(
+    (module) => module.name === UNIFIED_ROBUST_DEFENSE || module.aliases?.includes(UNIFIED_ROBUST_DEFENSE),
+  );
+  return normalizeRobustDefenseModule(directModule);
+};
+
 const mapCapabilitiesToSource = (
   capabilitiesResponse: CapabilitiesResponse,
   schemaResponse: ExperimentConfigSchemaResponse,
@@ -154,12 +221,22 @@ const mapCapabilitiesToSource = (
   const capabilities = capabilitiesResponse.data;
   const schema = schemaResponse.data;
   const poisoningAttack = getUnifiedPoisoningModule(capabilities.attacks);
+  const robustDefense = getUnifiedRobustDefenseModule(capabilities.defenses);
   const normalizedCapabilities: CapabilityMatrixData = {
     ...capabilities,
     attacks: [
       poisoningAttack,
       ...capabilities.attacks.filter(
         (module) => module.name !== UNIFIED_POISONING_ATTACK && !legacyPoisoningAttacks.has(module.name),
+      ),
+    ],
+    defenses: [
+      robustDefense,
+      ...capabilities.defenses.filter(
+        (module) =>
+          module.name !== UNIFIED_ROBUST_DEFENSE &&
+          !legacyRobustDefenses.has(module.name) &&
+          !isRobustDefenseModule(module.name, module),
       ),
     ],
   };
@@ -186,14 +263,14 @@ const mapCapabilitiesToSource = (
     attackOptions: [poisoningAttack].map(mapModuleToOption),
     poisoningAttackOptions: [poisoningAttack].map(mapModuleToOption),
     privacyProbeOptions: privacyProbes.map(mapModuleToOption),
-    defenseOptions: normalizedCapabilities.defenses.map(mapModuleToOption),
+    defenseOptions: [robustDefense].map(mapModuleToOption),
     privacyMetricOptions: normalizedCapabilities.privacy_metrics.map(mapModuleToOption),
     requiredFields: schemaResponse.required_fields,
     schemaVersion: schema.version,
     maxEnabledAttacks: policy?.max_enabled_attacks ?? normalizedCapabilities.max_enabled_attacks ?? 2,
     maxEnabledPoisoningAttacks: 1,
     maxEnabledPrivacyProbes: 1,
-    maxEnabledDefenses: policy?.max_enabled_defenses ?? normalizedCapabilities.max_enabled_defenses ?? 2,
+    maxEnabledDefenses: 1,
     maxEnabledPrivacyMetrics: policy?.max_enabled_privacy_metrics ?? normalizedCapabilities.max_enabled_privacy_metrics ?? 3,
     executionOrder: policy?.execution_order ?? normalizedCapabilities.execution_order?.join(' -> ') ?? 'enabled_attacks -> enabled_defenses -> enabled_privacy_metrics',
     capabilities: normalizedCapabilities,
@@ -210,13 +287,13 @@ export const createFallbackExperimentConfigurationSource = (fallbackReason?: str
   attackOptions: [UNIFIED_POISONING_ATTACK].map(fallbackModuleOption),
   poisoningAttackOptions: [UNIFIED_POISONING_ATTACK].map(fallbackModuleOption),
   privacyProbeOptions: ['client_preference_leakage_probe'].map(fallbackModuleOption),
-  defenseOptions: mockConfigurationData.defenseOptions.filter((option) => option.value !== 'none'),
+  defenseOptions: [UNIFIED_ROBUST_DEFENSE].map(fallbackModuleOption),
   privacyMetricOptions: ['client_update_norm'].map(fallbackModuleOption),
   requiredFields: ['model', 'dataset', 'scenario'],
   maxEnabledAttacks: 2,
   maxEnabledPoisoningAttacks: 1,
   maxEnabledPrivacyProbes: 1,
-  maxEnabledDefenses: 2,
+  maxEnabledDefenses: 1,
   maxEnabledPrivacyMetrics: 3,
   executionOrder: 'enabled_attacks -> enabled_defenses -> enabled_privacy_metrics',
 });
@@ -254,7 +331,7 @@ export const findValidatedCombination = (
         combination.scenario === scenario &&
         combination.validated_models.includes(config.model) &&
         sameList(normalizeAttackSelection(combination.attacks), attacks) &&
-        sameList(combination.defenses, defenses) &&
+        sameList(normalizeDefenseSelection(combination.defenses), defenses) &&
         sameList(combination.privacy_metrics, privacyMetrics),
     ) ?? null
   );

@@ -310,7 +310,7 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
               </p>
             </div>
             <div className="border-b border-outline-variant/10 pb-3">
-              <span className="text-on-surface-variant">防御链</span>
+              <span className="text-on-surface-variant">鲁棒防御</span>
               <p className="mt-1 font-semibold text-on-surface">{result.configSummary.defenseLabel}</p>
             </div>
             <div>

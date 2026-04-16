@@ -1,6 +1,6 @@
 import {mockAnalysisData} from '../mock/analysis';
 import {buildTrainConfigSummary, defaultTrainConfig} from '../mock/configuration';
-import {formatAttackSemanticGroups, formatModuleChain, getModuleLabel, getScenarioLabel} from '../lib/experimentLabels';
+import {formatAttackSemanticGroups, formatDefenseSemanticGroups, formatModuleChain, getModuleLabel, getScenarioLabel} from '../lib/experimentLabels';
 import type {AttackTaxonomyMap} from '../lib/experimentLabels';
 import {apiGet} from './api';
 import {simulateRequest} from './mockAdapter';
@@ -93,7 +93,16 @@ const mapDefenseType = (activeDefenses?: string[]): DefenseType => {
     return 'none';
   }
 
-  if (defenseName === 'norm_clip' || defenseName === 'update_filter' || defenseName === 'trimmed_mean' || defenseName === 'client_update_anomaly') {
+  if (
+    defenseName === 'robust_defense' ||
+    defenseName === 'robust' ||
+    defenseName === 'robust_aggregation_defense' ||
+    defenseName === 'norm_clip' ||
+    defenseName === 'update_filter' ||
+    defenseName === 'trimmed_mean' ||
+    defenseName === 'client_update_anomaly' ||
+    defenseName === 'client_update_anomaly_detector'
+  ) {
     return defenseName;
   }
 
@@ -106,6 +115,21 @@ const asNumber = (value: unknown, fallback = 0) =>
 const formatMetric = (value: number | undefined, digits = 3) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '暂无';
 
+const getNestedMetricCandidate = (value: unknown, fields: string[]): number => {
+  if (!value || typeof value !== 'object') {
+    return 0;
+  }
+
+  const record = value as Record<string, unknown>;
+  const directMax = fields.reduce((fieldMax, field) => Math.max(fieldMax, Number(record[field] ?? 0)), 0);
+  const childMax = Object.values(record).reduce<number>(
+    (maxValue, child) => Math.max(maxValue, getNestedMetricCandidate(child, fields)),
+    0,
+  );
+  const candidate = Math.max(directMax, childMax);
+  return Number.isFinite(candidate) ? candidate : 0;
+};
+
 const getMaxNestedMetricCount = (
   rounds: ExperimentResultRoundMetric[],
   bucket: 'attack_metrics' | 'defense_metrics',
@@ -117,11 +141,10 @@ const getMaxNestedMetricCount = (
       return maxValue;
     }
 
-    const roundMax = Object.values(metrics).reduce((valueMax, value) => {
-      const record = value as Record<string, unknown>;
-      const candidate = fields.reduce((fieldMax, field) => Math.max(fieldMax, Number(record[field] ?? 0)), 0);
-      return Number.isFinite(candidate) ? Math.max(valueMax, candidate) : valueMax;
-    }, 0);
+    const roundMax = Object.values(metrics).reduce(
+      (valueMax, value) => Math.max(valueMax, getNestedMetricCandidate(value, fields)),
+      0,
+    );
 
     return Math.max(maxValue, roundMax);
   }, 0);
@@ -180,6 +203,7 @@ const buildConfigSummary = (
   };
 
   const attackGroups = formatAttackSemanticGroups(activeAttacks, attackTaxonomy);
+  const defenseGroups = formatDefenseSemanticGroups(activeDefenses);
 
   return {
     ...buildTrainConfigSummary(config),
@@ -189,7 +213,7 @@ const buildConfigSummary = (
     attackLabel: attackGroups.poisoningLabel,
     poisoningAttackLabel: attackGroups.poisoningLabel,
     privacyProbeLabel: attackGroups.privacyProbeLabel,
-    defenseLabel: listLabel(activeDefenses),
+    defenseLabel: defenseGroups.robustLabel,
     privacyLevel: listLabel(activePrivacyMetrics),
     observationLabel: listLabel(activePrivacyMetrics),
     estimatedDuration: '后端未返回',
@@ -262,6 +286,7 @@ const buildRealResult = (
   const validCurve = buildCurve('valid_score', '验证指标', '#afffd1', allRounds, 'valid_score');
   const testCurve = buildCurve('test_score', '测试指标', '#ffb86b', allRounds, 'test_score');
   const attackGroups = formatAttackSemanticGroups(activeAttacks, base.attackTaxonomy);
+  const defenseGroups = formatDefenseSemanticGroups(activeDefenses);
   const configSummary = buildConfigSummary(
     model,
     dataset,
@@ -280,8 +305,8 @@ const buildRealResult = (
       : trimmedCount
         ? `截尾均值处理计数 ${trimmedCount}`
         : activeDefenses.length
-          ? '防御模块已启用，当前摘要未返回处理计数'
-          : '未启用防御模块';
+          ? '鲁棒防御已启用，当前摘要未返回处理计数'
+          : '未启用鲁棒防御';
 
   return {
     experimentId: base.experimentId,
@@ -335,7 +360,7 @@ const buildRealResult = (
     summaryText: {
       headline: '基于当前实验结果自动生成。',
       conclusion: `当前实验为${scenarioLabel}，模型 ${model}，数据集 ${dataset}。最终 Recall@20=${formatMetric(recall20)}，NDCG@20=${formatMetric(ndcg20)}，Loss=${formatMetric(loss)}。`,
-      securityAssessment: `投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；防御链：${formatModuleChain(activeDefenses)}；观测模块：${formatModuleChain(activePrivacyMetrics)}。恶意客户端统计 ${maliciousCount}，最大攻击命中 ${attackedCount}。`,
+      securityAssessment: `投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；观测模块：${formatModuleChain(activePrivacyMetrics)}。恶意客户端统计 ${maliciousCount}，最大攻击命中 ${attackedCount}。`,
       recommendation: `${defenseObservation}。以上结论仅基于当前 summary/result 中可验证字段生成，未补造额外评分。`,
     },
     defenseEfficiencyScore: 0,
@@ -567,6 +592,9 @@ const scenarioOrder = [
   'baseline',
   'attack_only_poisoning',
   'attack_only_sign_flip',
+  'attack_and_robust_defense',
+  'attack_and_robust_defense_trimmed_mean',
+  'attack_and_robust_defense_clip_then_trimmed_mean',
   'attack_and_defense_poisoning_trimmed_mean',
   'attack_and_defense_poisoning_norm_clip',
   'attack_and_defense_clip',
@@ -615,6 +643,30 @@ const scenarioMeta: Record<
     defenseLabel: '范数裁剪防御',
     stageStatus: '范数裁剪防御',
   },
+  attack_and_robust_defense: {
+    name: '攻防对照组',
+    status: 'Defended',
+    accent: 'tertiary',
+    attackLabel: '投毒攻击',
+    defenseLabel: '鲁棒防御',
+    stageStatus: '鲁棒防御',
+  },
+  attack_and_robust_defense_trimmed_mean: {
+    name: '攻防对照组',
+    status: 'Defended',
+    accent: 'tertiary',
+    attackLabel: '投毒攻击',
+    defenseLabel: '鲁棒防御',
+    stageStatus: '鲁棒聚合型防御',
+  },
+  attack_and_robust_defense_clip_then_trimmed_mean: {
+    name: '攻防对照组',
+    status: 'Defended',
+    accent: 'tertiary',
+    attackLabel: '投毒攻击',
+    defenseLabel: '鲁棒防御',
+    stageStatus: '裁剪 + 鲁棒聚合',
+  },
   attack_and_defense_poisoning_trimmed_mean: {
     name: '攻防对照组',
     status: 'Defended',
@@ -648,7 +700,7 @@ const getScenarioMeta = (item: ShowcaseComparisonItem, index: number) =>
     status: item.experiment_mode ?? 'Compared',
     accent: index === 0 ? 'neutral' : index === 1 ? 'danger' : 'tertiary',
     attackLabel: listLabel(item.active_attacks),
-    defenseLabel: listLabel(item.active_defenses),
+    defenseLabel: formatDefenseSemanticGroups(item.active_defenses).robustLabel,
     stageStatus: item.experiment_mode ?? '已加载',
   };
 
@@ -660,6 +712,7 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
     const ndcg20 = asMetric(item.ndcg20);
     const loss = asMetric(item.loss);
     const attackGroups = formatAttackSemanticGroups(item.active_attacks, item.attack_taxonomy as AttackTaxonomyMap | undefined);
+    const defenseGroups = formatDefenseSemanticGroups(item.active_defenses);
 
     return {
       id: item.scenario || `showcase-${index + 1}`,
@@ -668,7 +721,7 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
       status: meta.status,
       accent: meta.accent,
       attackLabel: attackGroups.poisoning.length ? attackGroups.poisoningLabel : meta.attackLabel,
-      defenseLabel: listLabel(item.active_defenses) || meta.defenseLabel,
+      defenseLabel: defenseGroups.robust.length ? defenseGroups.robustLabel : meta.defenseLabel,
       metrics: {
         recall10: recall20,
         recall20,
@@ -685,6 +738,9 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
   const baseline = findItem('baseline');
   const attack = findItem('attack_only_poisoning') ?? findItem('attack_only_sign_flip');
   const defense =
+    findItem('attack_and_robust_defense') ??
+    findItem('attack_and_robust_defense_trimmed_mean') ??
+    findItem('attack_and_robust_defense_clip_then_trimmed_mean') ??
     findItem('attack_and_defense_poisoning_trimmed_mean') ??
     findItem('attack_and_defense_poisoning_norm_clip') ??
     findItem('attack_and_defense_clip');
@@ -723,10 +779,10 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
         defense: formatAttackSemanticGroups(defense?.active_attacks, defense?.attack_taxonomy as AttackTaxonomyMap | undefined).privacyProbeLabel,
       },
       {
-        label: '防御模块',
-        baseline: listLabel(baseline?.active_defenses),
-        attack: listLabel(attack?.active_defenses),
-        defense: listLabel(defense?.active_defenses),
+        label: '鲁棒防御',
+        baseline: formatDefenseSemanticGroups(baseline?.active_defenses).robustLabel,
+        attack: formatDefenseSemanticGroups(attack?.active_defenses).robustLabel,
+        defense: formatDefenseSemanticGroups(defense?.active_defenses).robustLabel,
       },
       {
         label: '恶意客户端',

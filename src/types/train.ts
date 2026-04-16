@@ -22,10 +22,14 @@ export type DefenseType =
   | 'secure-aggregation'
   | 'differential-privacy'
   | 'cyber-shield'
+  | 'robust_defense'
+  | 'robust'
+  | 'robust_aggregation_defense'
   | 'norm_clip'
   | 'update_filter'
   | 'trimmed_mean'
-  | 'client_update_anomaly';
+  | 'client_update_anomaly'
+  | 'client_update_anomaly_detector';
 
 export type UnifiedExperimentScenario =
   | 'baseline'

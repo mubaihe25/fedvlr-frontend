@@ -47,6 +47,7 @@ export const defenseOptions: SelectOption<DefenseType>[] = [
   {value: 'secure-aggregation', label: '安全聚合'},
   {value: 'differential-privacy', label: '差分隐私'},
   {value: 'cyber-shield', label: 'Cyber-Shield 防御'},
+  {value: 'robust_defense', label: '鲁棒防御'},
   {value: 'norm_clip', label: 'NormClipDefense'},
   {value: 'update_filter', label: 'UpdateFilterDefense'},
   {value: 'trimmed_mean', label: 'TrimmedMeanDefense'},
@@ -73,8 +74,8 @@ export const defaultTrainConfig: TrainConfig = {
   attackType: 'poisoning_attack',
   enabledAttacks: ['poisoning_attack'],
   defenseEnabled: true,
-  defenseType: 'cyber-shield',
-  enabledDefenses: ['trimmed_mean'],
+  defenseType: 'robust_defense',
+  enabledDefenses: ['robust_defense'],
   enabledPrivacyMetrics: [],
   maliciousClientConfig: {
     enabled: true,
@@ -101,10 +102,15 @@ export const defaultTrainConfig: TrainConfig = {
     },
   },
   defenseParams: {
-    trimmed_mean: {
-      trim_ratio: 0.2,
-      min_clients_for_trim: 5,
-      trim_rule: 'coordinate_trimmed_mean',
+    robust_defense: {
+      robust_defense_mode: 'trimmed_mean',
+      robust_clip_norm: 30,
+      robust_filter_rule: 'update_norm > mean + filter_std_factor * std',
+      robust_filter_std_factor: 2,
+      robust_max_filtered_ratio: 0.3,
+      robust_trim_ratio: 0.2,
+      robust_min_clients_for_trim: 5,
+      robust_trim_rule: 'coordinate_trimmed_mean',
     },
   },
   privacyParams: {},

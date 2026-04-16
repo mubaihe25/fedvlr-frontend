@@ -5,6 +5,7 @@ export interface ExperimentDisplayLabel {
 }
 
 export type AttackSemanticKind = 'poisoning' | 'privacy_probe' | 'other';
+export type DefenseSemanticKind = 'robust_defense' | 'defense_observation' | 'other';
 
 export interface ModuleTaxonomyLike {
   name?: string;
@@ -16,6 +17,10 @@ export interface ModuleTaxonomyLike {
   attack_category?: string;
   attack_strategy?: string;
   attack_display_category?: string;
+  defense_family?: string;
+  defense_category?: string;
+  defense_strategy?: string;
+  defense_display_category?: string;
   is_read_only?: boolean;
   mutates_participant_params?: boolean;
 }
@@ -70,6 +75,21 @@ const moduleLabels: Record<string, ExperimentDisplayLabel> = {
     code: 'client_preference_leakage_probe',
     description: '只读分析联邦更新中的潜在偏好泄露风险，不直接修改聚合输入。',
   },
+  robust_defense: {
+    title: '鲁棒防御',
+    code: 'robust_defense',
+    description: '统一的鲁棒防御入口，内部支持裁剪型、过滤型和鲁棒聚合型模式。',
+  },
+  robust: {
+    title: '鲁棒防御',
+    code: 'robust',
+    description: '统一的鲁棒防御入口。',
+  },
+  robust_aggregation_defense: {
+    title: '鲁棒防御',
+    code: 'robust_aggregation_defense',
+    description: '统一的鲁棒防御入口。',
+  },
   norm_clip: {
     title: '范数裁剪防御',
     code: 'norm_clip',
@@ -117,6 +137,14 @@ const parameterLabels: Record<string, ExperimentDisplayLabel> = {
   poisoning_replacement_scale: {title: '模型替换缩放系数', code: 'poisoning_replacement_scale'},
   poisoning_replacement_rule: {title: '模型替换规则', code: 'poisoning_replacement_rule'},
   poisoning_strategy_weights: {title: '子策略分配权重', code: 'poisoning_strategy_weights'},
+  robust_defense_mode: {title: '鲁棒防御模式', code: 'robust_defense_mode'},
+  robust_clip_norm: {title: '裁剪阈值', code: 'robust_clip_norm'},
+  robust_filter_rule: {title: '过滤规则', code: 'robust_filter_rule'},
+  robust_filter_std_factor: {title: '过滤标准差系数', code: 'robust_filter_std_factor'},
+  robust_max_filtered_ratio: {title: '最大过滤比例', code: 'robust_max_filtered_ratio'},
+  robust_trim_ratio: {title: '截尾比例', code: 'robust_trim_ratio'},
+  robust_min_clients_for_trim: {title: '最小截尾客户端数', code: 'robust_min_clients_for_trim'},
+  robust_trim_rule: {title: '截尾规则', code: 'robust_trim_rule'},
   replacement_scale: {title: '替换缩放系数', code: 'replacement_scale'},
   replacement_rule: {title: '替换规则', code: 'replacement_rule'},
   attack_scale: {title: '攻击缩放系数', code: 'attack_scale'},
@@ -145,6 +173,12 @@ const parameterValueLabels: Record<string, string> = {
   weighted_partition: '按权重分流',
   aligned_mean: '对齐均值',
   coordinate_trimmed_mean: '逐坐标截尾均值',
+  clip: '裁剪型',
+  filter: '过滤型',
+  trimmed_mean: '鲁棒聚合型',
+  clip_then_trimmed_mean: '裁剪 + 鲁棒聚合',
+  filter_then_trimmed_mean: '过滤 + 鲁棒聚合',
+  clip_then_filter_then_trimmed_mean: '裁剪 + 过滤 + 鲁棒聚合',
   'update_norm > mean + filter_std_factor * std': '更新范数高于均值阈值',
 };
 
@@ -188,6 +222,15 @@ const poisoningAttackNames = new Set([
   'model_replacement',
 ]);
 const privacyProbeNames = new Set(['client_preference_leakage_probe']);
+const robustDefenseNames = new Set([
+  'robust_defense',
+  'robust',
+  'robust_aggregation_defense',
+  'norm_clip',
+  'update_filter',
+  'trimmed_mean',
+]);
+const defenseObservationNames = new Set(['client_update_anomaly', 'client_update_anomaly_detector']);
 
 const getTaxonomyValue = (taxonomy: ModuleTaxonomyLike | undefined, ...keys: Array<keyof ModuleTaxonomyLike>) => {
   for (const key of keys) {
@@ -243,6 +286,77 @@ export const isPoisoningAttackModule = (moduleName: string, taxonomy?: ModuleTax
 
 export const isPrivacyProbeModule = (moduleName: string, taxonomy?: ModuleTaxonomyLike | AttackTaxonomyMap) =>
   getAttackSemanticKind(moduleName, taxonomy) === 'privacy_probe';
+
+export const getDefenseSemanticKind = (
+  moduleName: string,
+  taxonomy?: ModuleTaxonomyLike,
+): DefenseSemanticKind => {
+  const family = getTaxonomyValue(taxonomy, 'defense_family', 'family');
+  const category = getTaxonomyValue(taxonomy, 'defense_category', 'category');
+  const displayCategory = getTaxonomyValue(taxonomy, 'defense_display_category', 'display_category');
+  const normalized = [family, category, displayCategory].join(' ').toLowerCase();
+
+  if (
+    family === 'defense_observation' ||
+    category === 'anomaly_detection' ||
+    normalized.includes('observation') ||
+    normalized.includes('detect') ||
+    defenseObservationNames.has(moduleName) ||
+    (taxonomy?.is_read_only === true && !taxonomy?.mutates_participant_params)
+  ) {
+    return 'defense_observation';
+  }
+
+  if (
+    family === 'robust_defense' ||
+    category === 'robust_defense' ||
+    normalized.includes('robust') ||
+    robustDefenseNames.has(moduleName)
+  ) {
+    return 'robust_defense';
+  }
+
+  return 'other';
+};
+
+export const isRobustDefenseModule = (moduleName: string, taxonomy?: ModuleTaxonomyLike) =>
+  getDefenseSemanticKind(moduleName, taxonomy) === 'robust_defense';
+
+export const splitDefenseModules = (values: string[] = [], taxonomy?: Record<string, ModuleTaxonomyLike | undefined>) => {
+  const groups = {
+    robust: [] as string[],
+    observation: [] as string[],
+    other: [] as string[],
+  };
+
+  values.forEach((value) => {
+    const kind = getDefenseSemanticKind(value, taxonomy?.[value]);
+    if (kind === 'robust_defense') {
+      groups.robust.push(value);
+    } else if (kind === 'defense_observation') {
+      groups.observation.push(value);
+    } else {
+      groups.other.push(value);
+    }
+  });
+
+  return groups;
+};
+
+export const formatDefenseSemanticGroups = (values: string[] = [], taxonomy?: Record<string, ModuleTaxonomyLike | undefined>) => {
+  const groups = splitDefenseModules(values, taxonomy);
+  const robustDetail = formatModuleChain(groups.robust);
+  return {
+    ...groups,
+    robustLabel: groups.robust.length
+      ? groups.robust.some((value) => value === 'robust_defense' || value === 'robust' || value === 'robust_aggregation_defense')
+        ? '鲁棒防御'
+        : `鲁棒防御：${robustDetail}`
+      : '未启用',
+    observationLabel: formatModuleChain(groups.observation),
+    otherLabel: formatModuleChain(groups.other),
+  };
+};
 
 export const buildAttackTaxonomyMap = (modules?: ModuleTaxonomyLike[]): AttackTaxonomyMap =>
   (modules ?? []).reduce<AttackTaxonomyMap>((map, module) => {
