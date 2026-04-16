@@ -26,6 +26,7 @@ import {
 import {getTaskStatus, stopTask} from '../../services/task';
 import {getLaunchStatus} from '../../services/experiment';
 import {cn} from '../../lib/utils';
+import {sanitizeLogText} from '../../lib/logText';
 import type {AsyncState, ConsoleExperimentContext} from '../../types/common';
 import type {TaskLogLevel, TaskStatusResponse} from '../../types/task';
 import type {LaunchExperimentRecord, LaunchExperimentResponse} from '../../types/train';
@@ -224,8 +225,8 @@ export const Monitoring: React.FC<MonitoringProps> = ({
       response.launch_mode === 'dry_run';
     const warnings = response.validation_warnings ?? [];
     const errors = response.errors ?? [];
-    const stdoutTail = response.stdout_tail?.trim();
-    const stderrTail = response.stderr_tail?.trim();
+    const stdoutTail = sanitizeLogText(response.stdout_tail).trim();
+    const stderrTail = sanitizeLogText(response.stderr_tail).trim();
     const isRunning = response.status === 'running' || response.status === 'queued';
     const isFailed = response.status === 'failed' || (!response.success && !isRunning);
     const statusTone = isRunning

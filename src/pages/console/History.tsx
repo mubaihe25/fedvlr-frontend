@@ -734,10 +734,8 @@ export const History: React.FC<HistoryProps> = ({
                       <p className="text-xs font-bold">{previewTarget.keyParams.localEpochs}</p>
                     </div>
                     <div className="rounded-lg border border-outline-variant/5 bg-surface-container-low p-3">
-                      <p className="mb-1 text-[10px] text-on-surface-variant">差分隐私</p>
-                      <p className="text-xs font-bold text-tertiary">
-                        {previewTarget.keyParams.privacyBudget ? `ε=${previewTarget.keyParams.privacyBudget}` : '未启用'}
-                      </p>
+                      <p className="mb-1 text-[10px] text-on-surface-variant">总训练轮数</p>
+                      <p className="text-xs font-bold text-tertiary">{previewTarget.keyParams.totalRounds ?? '未返回'}</p>
                     </div>
                     <div className="rounded-lg border border-outline-variant/5 bg-surface-container-low p-3">
                       <p className="mb-1 text-[10px] text-on-surface-variant">优化器</p>

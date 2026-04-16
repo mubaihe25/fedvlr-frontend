@@ -45,7 +45,7 @@ const TOTAL_ROUNDS_MAX = 120;
 
 const optimizerOptions: Array<{value: TrainConfig['advanced']['optimizer']; label: string; backendValue: 'adam' | 'sgd'}> = [
   {value: 'adam', label: 'Adam', backendValue: 'adam'},
-  {value: 'adamw', label: 'AdamW（按 Adam 提交）', backendValue: 'adam'},
+  {value: 'adamw', label: 'AdamW', backendValue: 'adam'},
   {value: 'sgd', label: 'SGD', backendValue: 'sgd'},
 ];
 
@@ -935,8 +935,8 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                 <p className="text-xs text-on-surface-variant">这些字段会作为真实训练参数随实验配置提交。</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
-              <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
                 <div className="flex items-end justify-between">
                   <label className="text-xs font-bold text-on-surface-variant">
                     {getParameterLabel('lr').title}
@@ -952,11 +952,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   onChange={(event) =>
                     updateConfig((current) => ({...current, learningRate: Number(event.target.value)}))
                   }
-                  className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-primary"
+                  className="mt-4 h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-primary"
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
                 <div className="flex items-end justify-between">
                   <label className="text-xs font-bold text-on-surface-variant">
                     {getParameterLabel('epochs').title}
@@ -972,7 +972,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   onChange={(event) =>
                     updateConfig((current) => ({...current, totalRounds: Number(event.target.value)}))
                   }
-                  className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-primary"
+                  className="mt-4 h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-primary"
                 />
                 <input
                   type="number"
@@ -982,11 +982,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   onChange={(event) =>
                     updateConfig((current) => ({...current, totalRounds: Number(event.target.value)}))
                   }
-                  className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
+                  className="mt-4 w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
                 <div className="flex items-end justify-between">
                   <label className="text-xs font-bold text-on-surface-variant">
                     {getParameterLabel('clients_sample_ratio').title}
@@ -1002,11 +1002,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                   onChange={(event) =>
                     updateConfig((current) => ({...current, clientSamplingRate: Number(event.target.value)}))
                   }
-                  className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-primary"
+                  className="mt-4 h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-primary"
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
                 <label className="text-xs font-bold text-on-surface-variant">
                   {getParameterLabel('local_epochs').title}
                 </label>
@@ -1021,11 +1021,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                       advanced: {...current.advanced, localEpochs: Number(event.target.value)},
                     }))
                   }
-                  className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
+                  className="mt-3 w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
                 <label className="text-xs font-bold text-on-surface-variant">
                   {getParameterLabel('l2_reg').title}
                 </label>
@@ -1040,11 +1040,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                       advanced: {...current.advanced, weightDecay: Number(event.target.value)},
                     }))
                   }
-                  className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
+                  className="mt-3 w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 font-mono text-primary focus:ring-1 focus:ring-primary"
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4">
                 <label className="text-xs font-bold text-on-surface-variant">
                   {getParameterLabel('optimizer').title}
                 </label>
@@ -1059,7 +1059,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                       },
                     }))
                   }
-                  className="w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 text-primary focus:ring-1 focus:ring-primary"
+                  className="mt-3 w-full rounded-lg border-none bg-surface-container-highest px-4 py-2 text-primary focus:ring-1 focus:ring-primary"
                 >
                   {optimizerOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -1067,12 +1067,9 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-on-surface-variant">
-                  提交字段为 learner；AdamW 会按后端兼容值 Adam 执行，GPU 默认启用。
-                </p>
               </div>
 
-              <div className="space-y-4">
+              <div className="rounded-xl border border-error/10 bg-error/5 p-4 md:col-span-2 xl:col-span-3">
                 <div className="flex items-end justify-between">
                   <label className="text-xs font-bold uppercase text-on-surface-variant">恶意客户端比例</label>
                   <span className="font-mono text-sm text-error">{Math.round(formConfig.poisoningRatio * 100)}%</span>
@@ -1101,7 +1098,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({
                       };
                     })
                   }
-                  className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-error"
+                  className="mt-4 h-1 w-full cursor-pointer appearance-none rounded-lg bg-surface-container-highest accent-error"
                 />
               </div>
             </div>

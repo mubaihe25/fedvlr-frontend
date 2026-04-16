@@ -87,6 +87,8 @@ export interface ExperimentResult {
     loss: CurveSeries;
     utility: CurveSeries[];
   };
+  utilityMetricTitle?: string;
+  utilityMetricDescription?: string;
   configSummary: ResultConfigSummary;
   summaryText: ResultSummaryText;
   defenseEfficiencyScore: number;

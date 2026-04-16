@@ -181,6 +181,40 @@ const buildCurve = (
   return {key, label, color, points};
 };
 
+const formatBackendMetricName = (key: string) => {
+  const [metricName, cutoff] = key.split('@');
+  const normalizedName = metricName.toUpperCase();
+  return cutoff ? `${normalizedName}@${cutoff}` : normalizedName;
+};
+
+const inferBackendScoreMetricLabel = (
+  metadata: Record<string, unknown> | undefined,
+  rounds: Array<{valid_score?: number | null; test_score?: number | null}>,
+) => {
+  const explicitMetric = metadata?.valid_metric ?? metadata?.validMetric;
+  if (typeof explicitMetric === 'string' && explicitMetric.trim()) {
+    return formatBackendMetricName(explicitMetric.trim());
+  }
+
+  const bestValidResult = metadata?.best_valid_result;
+  if (!bestValidResult || typeof bestValidResult !== 'object') {
+    return null;
+  }
+
+  const scoreValues = rounds
+    .flatMap((round) => [round.valid_score, round.test_score])
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const metricEntries = Object.entries(bestValidResult as Record<string, unknown>)
+    .map(([key, value]) => [key, Number(value)] as const)
+    .filter(([, value]) => Number.isFinite(value));
+
+  const matchedMetric = metricEntries.find(([, metricValue]) =>
+    scoreValues.some((scoreValue) => Math.abs(scoreValue - metricValue) < 1e-9),
+  );
+
+  return matchedMetric ? formatBackendMetricName(matchedMetric[0]) : null;
+};
+
 const buildConfigSummary = (
   model: string,
   dataset: string,
@@ -248,6 +282,7 @@ const buildRealResult = (
     maliciousClientSummary?: ExperimentSummaryDetail['malicious_client_summary'];
     roundSummaries?: ExperimentRoundSummary[];
     roundMetrics?: ExperimentResultRoundMetric[];
+    metadata?: Record<string, unknown>;
     source: ExperimentResult['source'];
     dataSourceLabel: string;
   },
@@ -285,8 +320,21 @@ const buildRealResult = (
         test_score: round.test_score,
       }));
   const lossCurve = buildCurve('loss', '训练损失', '#81ecff', allRounds, 'avg_train_loss');
-  const validCurve = buildCurve('valid_score', '验证主指标', '#afffd1', allRounds, 'valid_score');
-  const testCurve = buildCurve('test_score', '测试主指标', '#ffb86b', allRounds, 'test_score');
+  const backendScoreMetricLabel = inferBackendScoreMetricLabel(base.metadata, allRounds);
+  const validCurve = buildCurve(
+    'valid_score',
+    backendScoreMetricLabel ? `验证 ${backendScoreMetricLabel}` : '验证主指标',
+    '#afffd1',
+    allRounds,
+    'valid_score',
+  );
+  const testCurve = buildCurve(
+    'test_score',
+    backendScoreMetricLabel ? `测试 ${backendScoreMetricLabel}` : '测试主指标',
+    '#ffb86b',
+    allRounds,
+    'test_score',
+  );
   const attackGroups = formatAttackSemanticGroups(activeAttacks, base.attackTaxonomy);
   const defenseGroups = formatDefenseSemanticGroups(activeDefenses);
   const configSummary = buildConfigSummary(
@@ -358,6 +406,12 @@ const buildRealResult = (
       loss: lossCurve ?? {key: 'loss', label: '训练损失', color: '#81ecff', points: []},
       utility: [validCurve, testCurve].filter((series): series is CurveSeries => Boolean(series)),
     },
+    utilityMetricTitle: backendScoreMetricLabel
+      ? `验证/测试 ${backendScoreMetricLabel} 曲线`
+      : '验证/测试主指标曲线',
+    utilityMetricDescription: backendScoreMetricLabel
+      ? `使用真实 valid_score / test_score 字段，已根据结果元数据推断为后端主评估指标 ${backendScoreMetricLabel}。`
+      : '使用真实 valid_score / test_score 字段；当前结果没有逐轮 Recall@20 / NDCG@20 字段，因此这里明确展示为后端当前主评估指标。',
     configSummary,
     summaryText: {
       headline: '基于当前实验结果自动生成。',
@@ -401,6 +455,7 @@ const loadResultByExperimentKey = async (experimentKey: string, source: Experime
     finalEval: result.final_eval,
     maliciousClientSummary: result.metadata?.malicious_client_summary,
     roundMetrics: result.round_metrics,
+    metadata: result.metadata,
     source,
     dataSourceLabel: source === 'recent-launch' ? '最近一次真实实验结果' : '历史实验真实结果',
   });

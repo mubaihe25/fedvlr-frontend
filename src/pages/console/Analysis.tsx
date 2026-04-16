@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import {AlertCircle, CheckCircle2, Database, FileText, Info, ShieldCheck, Zap} from 'lucide-react';
 import {getAnalysisResult} from '../../services/result';
+import {sanitizeLogText} from '../../lib/logText';
 import {cn} from '../../lib/utils';
 import type {AsyncState, ConsoleExperimentContext} from '../../types/common';
 import type {AnalysisResultResponse, CurveSeries, ExperimentResult} from '../../types/result';
@@ -41,9 +42,6 @@ const sourceBadgeClasses = {
 
 const formatMetricValue = (value?: number) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '暂无';
-
-const stripAnsiEscapes = (value?: string | null) =>
-  (value ?? '').replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
 
 const buildChartData = (seriesList: CurveSeries[]) => {
   const rows = new Map<number | string, Record<string, string | number>>();
@@ -251,8 +249,8 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
 
   const lossChartData = useMemo(() => buildChartData(lossSeries), [lossSeries]);
   const scoreChartData = useMemo(() => buildChartData(scoreSeries), [scoreSeries]);
-  const validationStdoutTail = stripAnsiEscapes(lastLaunchRecord?.response.stdout_tail);
-  const validationStderrTail = stripAnsiEscapes(lastLaunchRecord?.response.stderr_tail);
+  const validationStdoutTail = sanitizeLogText(lastLaunchRecord?.response.stdout_tail);
+  const validationStderrTail = sanitizeLogText(lastLaunchRecord?.response.stderr_tail);
 
   if (loadState === 'loading') {
     return (
@@ -402,8 +400,8 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
               emptyText="当前结果文件没有可绘制的训练损失字段。"
             />
             <CurveChart
-              title="验证/测试主指标曲线"
-              description="使用真实 valid_score / test_score 字段，按后端主评估指标记录展示。"
+              title={result.utilityMetricTitle ?? '验证/测试主指标曲线'}
+              description={result.utilityMetricDescription ?? '使用真实 valid_score / test_score 字段，按后端主评估指标记录展示。'}
               seriesList={scoreSeries}
               data={scoreChartData}
               emptyText="当前结果文件没有可绘制的验证/测试主指标字段。"
