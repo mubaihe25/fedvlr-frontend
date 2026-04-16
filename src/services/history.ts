@@ -44,19 +44,50 @@ interface ApiResultShape extends Partial<ExperimentResultDetail> {
   relative_path: string;
 }
 
-const parseExperimentTimestamp = (experimentId?: string | null) => {
-  if (!experimentId) {
-    return '未知时间';
+const parseExperimentTimestamp = (...candidates: Array<string | null | undefined>) => {
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    const normalized = String(candidate);
+    const compactMatch = normalized.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?!\d)/);
+    const underscoredMatch = normalized.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(?:_\d{1,6})?/);
+    const match = underscoredMatch ?? compactMatch;
+
+    if (match) {
+      const [, year, month, day, hour, minute, second] = match;
+      return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+    }
   }
 
-  const match = experimentId.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/);
-  if (!match) {
-    return experimentId;
-  }
-
-  const [, year, month, day, hour, minute, second] = match;
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+  return '未知时间';
 };
+
+const shortModeLabels: Record<string, string> = {
+  baseline: '基线',
+  attack_only: '投毒',
+  defense_only: '防御',
+  attack_and_defense: '攻防对照',
+  privacy_observation: '隐私观测',
+};
+
+const buildApiRecordTitle = (payload: {
+  model?: string | null;
+  dataset?: string | null;
+  experiment_mode?: string | null;
+}) => {
+  const model = payload.model || '未知模型';
+  const dataset = payload.dataset || '未知数据集';
+  const mode = shortModeLabels[payload.experiment_mode || ''] || '实验';
+  return `${model} / ${dataset} / ${mode}`;
+};
+
+const buildApiSourceName = (payload: {
+  experiment_id?: string | null;
+  file_name?: string | null;
+  relative_path?: string | null;
+}) => payload.experiment_id || payload.file_name || payload.relative_path || '未记录原始标识';
 
 const extractExperimentKeyFromRecordId = (recordId: string) => {
   if (!recordId.startsWith('api::')) {
@@ -341,8 +372,9 @@ const mapApiSummaryToHistoryRecord = (
   return {
     id: `api::${summary.experiment_key}`,
     taskId: `api::${summary.experiment_key}`,
-    name: `实验 #${summary.experiment_id || summary.file_name}`,
-    createdAt: parseExperimentTimestamp(summary.experiment_id),
+    name: buildApiRecordTitle(summary),
+    sourceName: buildApiSourceName(summary),
+    createdAt: parseExperimentTimestamp(summary.experiment_id, summary.file_name, summary.relative_path),
     dataset: summary.dataset || config.dataset,
     model: summary.model || config.model,
     mode: config.mode,
@@ -385,8 +417,9 @@ const mapApiResultToHistoryRecord = (result: ApiResultShape): HistoryRecord => {
   return {
     id: `api::${result.experiment_key}`,
     taskId: `api::${result.experiment_key}`,
-    name: `实验 #${result.experiment_id || result.file_name}`,
-    createdAt: parseExperimentTimestamp(result.experiment_id),
+    name: buildApiRecordTitle(result),
+    sourceName: buildApiSourceName(result),
+    createdAt: parseExperimentTimestamp(result.experiment_id, result.file_name, result.relative_path),
     dataset: result.dataset || config.dataset,
     model: result.model || config.model,
     mode: config.mode,

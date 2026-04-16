@@ -122,7 +122,7 @@ export const History: React.FC<HistoryProps> = ({
       const keyword = filters.keyword.trim().toLowerCase();
       const matchesKeyword =
         !keyword ||
-        [record.name, record.model, record.dataset].some((text) => text.toLowerCase().includes(keyword));
+        [record.name, record.sourceName ?? '', record.model, record.dataset].some((text) => text.toLowerCase().includes(keyword));
       const matchesModel = filters.model === 'all' || record.model === filters.model;
       const matchesMode = filters.mode === 'all' || record.mode === filters.mode;
 
@@ -432,7 +432,7 @@ export const History: React.FC<HistoryProps> = ({
                 key={record.taskId}
                 onClick={() => handleToggleComparison(record)}
                 className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary transition hover:bg-primary/20"
-                title="点击取消加入对比"
+                title={record.sourceName ? `点击取消加入对比：${record.sourceName}` : '点击取消加入对比'}
               >
                 {record.name}
               </button>
@@ -547,7 +547,7 @@ export const History: React.FC<HistoryProps> = ({
                   )}
                 >
                   <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
-                    <div className="flex gap-4">
+                    <div className="flex min-w-0 flex-1 gap-4">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-outline-variant/20 bg-surface-container-highest">
                         {record.status === 'failed' ? (
                           <AlertTriangle className="h-6 w-6 text-error" fill="currentColor" />
@@ -555,9 +555,11 @@ export const History: React.FC<HistoryProps> = ({
                           <Shield className="h-6 w-6 text-primary" fill="currentColor" />
                         )}
                       </div>
-                      <div>
-                        <div className="mb-1 flex items-center gap-3">
-                          <h3 className="font-bold text-on-background">{record.name}</h3>
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
+                          <h3 className="min-w-0 max-w-full truncate font-bold text-on-background" title={record.name}>
+                            {record.name}
+                          </h3>
                           <span className={cn('rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', statusClasses[record.status])}>
                             {record.status}
                           </span>
@@ -576,6 +578,12 @@ export const History: React.FC<HistoryProps> = ({
                             <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">已加入对比</span>
                           ) : null}
                         </div>
+                        <p
+                          className="mb-2 max-w-full truncate text-[11px] text-on-surface-variant/80"
+                          title={record.sourceName ?? record.taskId}
+                        >
+                          {record.sourceName ?? record.taskId}
+                        </p>
                         <div className="flex flex-wrap gap-4 text-xs text-on-surface-variant">
                           <span className="flex items-center gap-1">
                             <Clock className="h-3.5 w-3.5" /> {record.createdAt}
@@ -589,7 +597,7 @@ export const History: React.FC<HistoryProps> = ({
                         </div>
                       </div>
                     </div>
-                    <div className="w-full sm:w-auto sm:text-right">
+                    <div className="w-full shrink-0 sm:w-auto sm:text-right">
                       <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">指标简报</p>
                       {record.status === 'failed' ? (
                         <p className="flex items-center gap-1 text-[10px] font-bold tracking-widest text-error sm:justify-end">
@@ -700,6 +708,19 @@ export const History: React.FC<HistoryProps> = ({
                     {previewStatusMessage.text}
                   </div>
                 ) : null}
+
+                <div className="min-w-0 rounded-xl border border-outline-variant/5 bg-surface-container-low p-4">
+                  <p className="truncate text-sm font-bold text-on-background" title={previewTarget.name}>
+                    {previewTarget.name}
+                  </p>
+                  <p
+                    className="mt-1 truncate text-[11px] text-on-surface-variant"
+                    title={previewTarget.sourceName ?? previewTarget.taskId}
+                  >
+                    {previewTarget.sourceName ?? previewTarget.taskId}
+                  </p>
+                  <p className="mt-2 text-xs text-on-surface-variant">创建时间：{previewTarget.createdAt}</p>
+                </div>
 
                 <div>
                   <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">配置参数摘要</p>

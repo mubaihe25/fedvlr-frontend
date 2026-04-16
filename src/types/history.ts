@@ -19,6 +19,7 @@ export interface HistoryRecord {
   id: string;
   taskId: string;
   name: string;
+  sourceName?: string;
   createdAt: string;
   dataset: string;
   model: string;
