@@ -112,10 +112,12 @@ const collectRoundMetricValues = (
     values.push(
       ...collectMetricFromSources(
         [
+          round,
           round.valid_result,
           round.test_result,
           round.best_valid_result,
           round.best_test_result,
+          extra,
           extra?.valid_result,
           extra?.test_result,
           extra?.best_valid_result,
@@ -159,7 +161,7 @@ export const getBestExperimentMetric = ({
   metric,
   cutoff,
 }: BestMetricInput) => {
-  const explicitBest = collectMetricFromSources(
+  const explicitBestValues = collectMetricFromSources(
     [
       metadata?.best_test_result,
       metadata?.bestTestResult,
@@ -174,17 +176,20 @@ export const getBestExperimentMetric = ({
     cutoff,
   );
 
-  if (explicitBest.length) {
-    return explicitBest[0];
-  }
-
   const roundValues = [
     ...collectRoundMetricValues(roundMetrics, metric, cutoff),
     ...collectRoundSummaryScoreValues(metadata, roundSummaries, metric, cutoff),
   ];
 
+  // Round-level metrics are the source of truth for "best over the whole run".
+  // Some result files expose final/best snapshots that can be stale or not the
+  // maximum round value, so compare them instead of trusting the first snapshot.
   if (roundValues.length) {
-    return Math.max(...roundValues);
+    return Math.max(...roundValues, ...explicitBestValues);
+  }
+
+  if (explicitBestValues.length) {
+    return Math.max(...explicitBestValues);
   }
 
   const finalValues = collectMetricFromSources(
@@ -198,5 +203,5 @@ export const getBestExperimentMetric = ({
     cutoff,
   );
 
-  return finalValues[0];
+  return finalValues.length ? Math.max(...finalValues) : undefined;
 };
