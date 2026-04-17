@@ -1,5 +1,6 @@
 import {mockAnalysisData} from '../mock/analysis';
 import {buildTrainConfigSummary, defaultTrainConfig} from '../mock/configuration';
+import {getBestExperimentMetric} from '../lib/experimentMetrics';
 import {formatAttackSemanticGroups, formatDefenseSemanticGroups, formatModuleChain, getModuleLabel, getScenarioLabel} from '../lib/experimentLabels';
 import type {AttackTaxonomyMap} from '../lib/experimentLabels';
 import {apiGet} from './api';
@@ -129,49 +130,22 @@ const mapDefenseType = (activeDefenses?: string[]): DefenseType => {
 const asNumber = (value: unknown, fallback = 0) =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
-const asOptionalNumber = (value: unknown) =>
-  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-
-const readMetricValue = (source: unknown, ...keys: string[]) => {
-  if (!source || typeof source !== 'object') {
-    return undefined;
-  }
-
-  const record = source as Record<string, unknown>;
-  for (const key of keys) {
-    const value = asOptionalNumber(record[key]);
-    if (value !== undefined) {
-      return value;
-    }
-  }
-
-  return undefined;
-};
-
 const readEvalMetric = (
   finalEval: unknown,
   metadata: Record<string, unknown> | undefined,
   metric: 'recall' | 'ndcg',
   cutoff: 20 | 50,
+  roundSummaries?: ExperimentRoundSummary[],
+  roundMetrics?: ExperimentResultRoundMetric[],
 ) => {
-  const compactKey = `${metric}${cutoff}`;
-  const atKey = `${metric}@${cutoff}`;
-  const directValue =
-    readMetricValue(finalEval, compactKey, atKey) ??
-    readMetricValue((finalEval as {extra?: unknown} | undefined)?.extra, compactKey, atKey);
-
-  if (directValue !== undefined) {
-    return directValue;
-  }
-
-  if (cutoff === 50) {
-    return (
-      readMetricValue(metadata?.best_test_result, compactKey, atKey) ??
-      readMetricValue(metadata?.best_valid_result, compactKey, atKey)
-    );
-  }
-
-  return undefined;
+  return getBestExperimentMetric({
+    finalEval,
+    metadata,
+    roundSummaries,
+    roundMetrics,
+    metric,
+    cutoff,
+  });
 };
 
 const formatMetric = (value: number | undefined, digits = 3) =>
@@ -360,10 +334,10 @@ const buildRealResult = (
   const roundSummaries = base.roundSummaries ?? [];
   const roundMetrics = base.roundMetrics ?? [];
   const totalRounds = roundMetrics.length || roundSummaries.length || defaultTrainConfig.totalRounds;
-  const recall20 = readEvalMetric(base.finalEval, base.metadata, 'recall', 20);
-  const ndcg20 = readEvalMetric(base.finalEval, base.metadata, 'ndcg', 20);
-  const recall50 = readEvalMetric(base.finalEval, base.metadata, 'recall', 50);
-  const ndcg50 = readEvalMetric(base.finalEval, base.metadata, 'ndcg', 50);
+  const recall20 = readEvalMetric(base.finalEval, base.metadata, 'recall', 20, roundSummaries, roundMetrics);
+  const ndcg20 = readEvalMetric(base.finalEval, base.metadata, 'ndcg', 20, roundSummaries, roundMetrics);
+  const recall50 = readEvalMetric(base.finalEval, base.metadata, 'recall', 50, roundSummaries, roundMetrics);
+  const ndcg50 = readEvalMetric(base.finalEval, base.metadata, 'ndcg', 50, roundSummaries, roundMetrics);
   const loss = asNumber(base.finalEval?.loss);
   const maliciousCount =
     asNumber(base.maliciousClientSummary?.unique_malicious_client_count) ||
@@ -818,10 +792,6 @@ const orderedShowcaseItems = (items: ShowcaseComparisonItem[]) =>
 const enrichShowcaseItemsWithResultMetrics = async (items: ShowcaseComparisonItem[]) => {
   return Promise.all(
     items.map(async (item) => {
-      if (item.recall50 !== undefined && item.ndcg50 !== undefined) {
-        return item;
-      }
-
       const experimentKey = getExperimentKeyFromResultPath(item.result_path);
       if (!experimentKey) {
         return item;
@@ -830,12 +800,26 @@ const enrichShowcaseItemsWithResultMetrics = async (items: ShowcaseComparisonIte
       try {
         const response = await apiGet<ExperimentResultResponse>(`/experiments/${encodeURIComponent(experimentKey)}/result`);
         const result = response.result;
-        const recall50 = readEvalMetric(result.final_eval, result.metadata, 'recall', 50);
-        const ndcg50 = readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50);
+        const recall50 = readEvalMetric(
+          result.final_eval,
+          result.metadata,
+          'recall',
+          50,
+          undefined,
+          result.round_metrics,
+        );
+        const ndcg50 = readEvalMetric(
+          result.final_eval,
+          result.metadata,
+          'ndcg',
+          50,
+          undefined,
+          result.round_metrics,
+        );
         return {
           ...item,
-          recall50: item.recall50 ?? recall50 ?? null,
-          ndcg50: item.ndcg50 ?? ndcg50 ?? null,
+          recall50: recall50 ?? item.recall50 ?? null,
+          ndcg50: ndcg50 ?? item.ndcg50 ?? null,
         };
       } catch {
         return item;
