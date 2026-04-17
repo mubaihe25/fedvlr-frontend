@@ -15,7 +15,7 @@ import type {
   ReuseHistoryResponse,
 } from '../types/history';
 import type {AttackType, DefenseType, ExperimentMode, TrainConfig} from '../types/train';
-import {apiGet} from './api';
+import {apiGet, buildApiUrl} from './api';
 import {simulateRequest} from './mockAdapter';
 import {mockStore} from './mockStore';
 
@@ -95,6 +95,35 @@ const extractExperimentKeyFromRecordId = (recordId: string) => {
   }
 
   return recordId.slice(5);
+};
+
+const getCsvFileNameFromHeader = (contentDisposition: string | null, fallbackName: string) => {
+  if (!contentDisposition) {
+    return fallbackName;
+  }
+
+  const encodedMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    try {
+      return decodeURIComponent(encodedMatch[1].replace(/"/g, ''));
+    } catch {
+      return encodedMatch[1].replace(/"/g, '');
+    }
+  }
+
+  const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1] ?? fallbackName;
+};
+
+const triggerBrowserDownload = (blob: Blob, fileName: string) => {
+  const downloadUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = downloadUrl;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(downloadUrl);
 };
 
 const mapExperimentMode = (experimentMode?: string | null): ExperimentMode => {
@@ -541,6 +570,30 @@ export const getHistoryList = async (): Promise<HistoryListResponse> => {
       };
     });
   }
+};
+
+export const downloadHistoryCsv = async (id: string): Promise<void> => {
+  const experimentKey = extractExperimentKeyFromRecordId(id);
+  if (!experimentKey) {
+    throw new Error('Mock 记录暂无真实 CSV 原始数据。');
+  }
+
+  const response = await fetch(buildApiUrl(`/experiments/${encodeURIComponent(experimentKey)}/csv`), {
+    headers: {
+      Accept: 'text/csv',
+    },
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`CSV 下载失败：${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`);
+  }
+
+  const blob = await response.blob();
+  const keyParts = experimentKey.split('__');
+  const fallbackName = `${keyParts[keyParts.length - 1] || 'experiment'}.csv`;
+  const fileName = getCsvFileNameFromHeader(response.headers.get('content-disposition'), fallbackName);
+  triggerBrowserDownload(blob, fileName);
 };
 
 export const getHistorySummaryPreview = async (id: string): Promise<HistoryRecord> => {

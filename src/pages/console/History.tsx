@@ -16,7 +16,14 @@ import {
   Trash2,
 } from 'lucide-react';
 import {cn} from '../../lib/utils';
-import {deleteHistory, getHistoryList, getHistoryResultPreview, getHistorySummaryPreview, reuseHistoryConfig} from '../../services/history';
+import {
+  deleteHistory,
+  downloadHistoryCsv,
+  getHistoryList,
+  getHistoryResultPreview,
+  getHistorySummaryPreview,
+  reuseHistoryConfig,
+} from '../../services/history';
 import {mockHistoryData} from '../../mock/history';
 import type {AsyncState} from '../../types/common';
 import type {HistoryFilters, HistoryRecord} from '../../types/history';
@@ -76,6 +83,7 @@ export const History: React.FC<HistoryProps> = ({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [downloadBusyId, setDownloadBusyId] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<AsyncState>('idle');
   const [previewRecord, setPreviewRecord] = useState<HistoryRecord | null>(null);
   const [previewErrorMessage, setPreviewErrorMessage] = useState('');
@@ -334,6 +342,23 @@ export const History: React.FC<HistoryProps> = ({
       setErrorMessage(error instanceof Error ? error.message : '复用配置失败。');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const handleDownloadCsv = async (record: HistoryRecord) => {
+    if (!record.id.startsWith('api::')) {
+      setErrorMessage('Mock 记录暂无真实 CSV 原始数据。');
+      return;
+    }
+
+    try {
+      setDownloadBusyId(record.id);
+      setErrorMessage('');
+      await downloadHistoryCsv(record.id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'CSV 下载失败，请稍后重试。');
+    } finally {
+      setDownloadBusyId(null);
     }
   };
 
@@ -799,9 +824,18 @@ export const History: React.FC<HistoryProps> = ({
                         ? '打开完整分析页'
                         : '当前记录不可查看完整分析'}
                   </button>
-                  <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-highest py-3 text-sm font-bold text-on-background transition-all hover:border-primary/50">
+                  <button
+                    onClick={() => handleDownloadCsv(previewTarget)}
+                    disabled={!previewTarget.id.startsWith('api::') || downloadBusyId === previewTarget.id}
+                    title={!previewTarget.id.startsWith('api::') ? 'Mock 记录暂无真实 CSV 原始数据' : '下载该实验对应的 CSV 原始结果文件'}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/10 bg-surface-container-highest py-3 text-sm font-bold text-on-background transition-all hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
                     <Download className="h-5 w-5" />
-                    导出 CSV 原始数据
+                    {downloadBusyId === previewTarget.id
+                      ? '正在准备 CSV...'
+                      : previewTarget.id.startsWith('api::')
+                        ? '导出 CSV 原始数据'
+                        : 'Mock 记录暂无 CSV'}
                   </button>
                   <button
                     onClick={handleDeleteSelected}

@@ -31,9 +31,13 @@ export const getApiBaseUrl = () => {
   return trimTrailingSlash(configuredBaseUrl || DEFAULT_API_BASE_URL);
 };
 
-export const apiGet = async <T>(path: string): Promise<T> => {
+export const buildApiUrl = (path: string) => {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const response = await fetch(`${getApiBaseUrl()}${normalizedPath}`, {
+  return `${getApiBaseUrl()}${normalizedPath}`;
+};
+
+export const apiGet = async <T>(path: string): Promise<T> => {
+  const response = await fetch(buildApiUrl(path), {
     headers: {
       Accept: 'application/json',
     },
@@ -47,8 +51,7 @@ export const apiGet = async <T>(path: string): Promise<T> => {
 };
 
 export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const response = await fetch(`${getApiBaseUrl()}${normalizedPath}`, {
+  const response = await fetch(buildApiUrl(path), {
     method: 'POST',
     headers: {
       Accept: 'application/json',
