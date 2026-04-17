@@ -86,6 +86,25 @@ const getYAxisDomain = (data: Array<Record<string, string | number>>, seriesList
   return [Number((minValue - padding).toFixed(6)), Number((maxValue + padding).toFixed(6))] as const;
 };
 
+const getLossYAxisDomain = (data: Array<Record<string, string | number>>, seriesList: CurveSeries[]) => {
+  const values = getChartValues(data, seriesList);
+  if (!values.length) {
+    return ['auto', 'auto'] as const;
+  }
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const span = maxValue - minValue;
+  const centerAbs = Math.max(Math.abs((minValue + maxValue) / 2), 1);
+  const padding =
+    span > 0
+      ? Math.max(span * 0.35, centerAbs * 0.025, 0.02)
+      : Math.max(centerAbs * 0.04, 0.02);
+  const lowerBound = Math.max(0, minValue - padding);
+
+  return [Number(lowerBound.toFixed(6)), Number((maxValue + padding).toFixed(6))] as const;
+};
+
 const getXAxisTicks = (data: Array<Record<string, string | number>>) => {
   const epochs = data.map((row) => row.epoch).filter((epoch) => epoch !== undefined);
   if (epochs.length <= 16) {
@@ -104,10 +123,11 @@ interface CurveChartProps {
   seriesList: CurveSeries[];
   data: Array<Record<string, string | number>>;
   emptyText: string;
+  yAxisDomain?: ReturnType<typeof getYAxisDomain>;
 }
 
-const CurveChart: React.FC<CurveChartProps> = ({title, description, seriesList, data, emptyText}) => {
-  const yAxisDomain = getYAxisDomain(data, seriesList);
+const CurveChart: React.FC<CurveChartProps> = ({title, description, seriesList, data, emptyText, yAxisDomain}) => {
+  const resolvedYAxisDomain = yAxisDomain ?? getYAxisDomain(data, seriesList);
   const xAxisTicks = getXAxisTicks(data);
   const minWidth = getChartMinWidth(data.length);
 
@@ -147,7 +167,7 @@ const CurveChart: React.FC<CurveChartProps> = ({title, description, seriesList, 
                   fontSize={10}
                   tickLine={false}
                   axisLine={false}
-                  domain={yAxisDomain}
+                  domain={resolvedYAxisDomain}
                   tickFormatter={(value) => formatMetricValue(Number(value))}
                 />
                 <Tooltip
@@ -249,6 +269,7 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
 
   const lossChartData = useMemo(() => buildChartData(lossSeries), [lossSeries]);
   const scoreChartData = useMemo(() => buildChartData(scoreSeries), [scoreSeries]);
+  const lossYAxisDomain = useMemo(() => getLossYAxisDomain(lossChartData, lossSeries), [lossChartData, lossSeries]);
   const validationStdoutTail = sanitizeLogText(lastLaunchRecord?.response.stdout_tail);
   const validationStderrTail = sanitizeLogText(lastLaunchRecord?.response.stderr_tail);
 
@@ -397,6 +418,7 @@ export const Analysis: React.FC<AnalysisProps> = ({taskId, lastLaunchRecord, exp
               description="仅使用 round_summaries / round_metrics 中的训练损失字段。"
               seriesList={lossSeries}
               data={lossChartData}
+              yAxisDomain={lossYAxisDomain}
               emptyText="当前结果文件没有可绘制的训练损失字段。"
             />
             <CurveChart

@@ -247,32 +247,36 @@ const formatBackendMetricName = (key: string) => {
   return cutoff ? `${normalizedName}@${cutoff}` : normalizedName;
 };
 
-const inferBackendScoreMetricLabel = (
-  metadata: Record<string, unknown> | undefined,
-  rounds: Array<{valid_score?: number | null; test_score?: number | null}>,
-) => {
-  const explicitMetric = metadata?.valid_metric ?? metadata?.validMetric;
-  if (typeof explicitMetric === 'string' && explicitMetric.trim()) {
-    return formatBackendMetricName(explicitMetric.trim());
+const getNestedRecordValue = (source: unknown, path: string[]) =>
+  path.reduce<unknown>((current, key) => {
+    if (!current || typeof current !== 'object') {
+      return undefined;
+    }
+    return (current as Record<string, unknown>)[key];
+  }, source);
+
+const inferBackendScoreMetricLabel = (metadata: Record<string, unknown> | undefined) => {
+  const explicitMetricCandidates = [
+    ['valid_metric'],
+    ['validMetric'],
+    ['training_config', 'valid_metric'],
+    ['training_config', 'validMetric'],
+    ['trainingConfig', 'valid_metric'],
+    ['trainingConfig', 'validMetric'],
+    ['mapped_config', 'valid_metric'],
+    ['mapped_config', 'validMetric'],
+    ['config', 'valid_metric'],
+    ['config', 'validMetric'],
+  ];
+
+  for (const path of explicitMetricCandidates) {
+    const explicitMetric = getNestedRecordValue(metadata, path);
+    if (typeof explicitMetric === 'string' && explicitMetric.trim()) {
+      return formatBackendMetricName(explicitMetric.trim());
+    }
   }
 
-  const bestValidResult = metadata?.best_valid_result;
-  if (!bestValidResult || typeof bestValidResult !== 'object') {
-    return null;
-  }
-
-  const scoreValues = rounds
-    .flatMap((round) => [round.valid_score, round.test_score])
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  const metricEntries = Object.entries(bestValidResult as Record<string, unknown>)
-    .map(([key, value]) => [key, Number(value)] as const)
-    .filter(([, value]) => Number.isFinite(value));
-
-  const matchedMetric = metricEntries.find(([, metricValue]) =>
-    scoreValues.some((scoreValue) => Math.abs(scoreValue - metricValue) < 1e-9),
-  );
-
-  return matchedMetric ? formatBackendMetricName(matchedMetric[0]) : null;
+  return null;
 };
 
 const buildConfigSummary = (
@@ -382,7 +386,7 @@ const buildRealResult = (
         test_score: round.test_score,
       }));
   const lossCurve = buildCurve('loss', '训练损失', '#81ecff', allRounds, 'avg_train_loss');
-  const backendScoreMetricLabel = inferBackendScoreMetricLabel(base.metadata, allRounds);
+  const backendScoreMetricLabel = inferBackendScoreMetricLabel(base.metadata);
   const validCurve = buildCurve(
     'valid_score',
     backendScoreMetricLabel ? `验证 ${backendScoreMetricLabel}` : '验证主指标',
