@@ -209,12 +209,12 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
               <h4 className="mb-1 text-sm font-bold text-on-surface-variant">{group.name}</h4>
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg bg-surface-container-low p-3">
-                  <p className="text-[10px] font-bold text-on-surface-variant">Recall@20</p>
-                  <p className="mt-1 text-xl font-bold text-primary">{formatMetric(group.metrics.recall20)}</p>
+                  <p className="text-[10px] font-bold text-on-surface-variant">Recall@50</p>
+                  <p className="mt-1 text-xl font-bold text-primary">{formatMetric(group.metrics.recall50)}</p>
                 </div>
                 <div className="rounded-lg bg-surface-container-low p-3">
-                  <p className="text-[10px] font-bold text-on-surface-variant">NDCG@20</p>
-                  <p className="mt-1 text-xl font-bold text-secondary">{formatMetric(group.metrics.ndcg20)}</p>
+                  <p className="text-[10px] font-bold text-on-surface-variant">NDCG@50</p>
+                  <p className="mt-1 text-xl font-bold text-secondary">{formatMetric(group.metrics.ndcg50)}</p>
                 </div>
                 <div className="rounded-lg bg-surface-container-low p-3">
                   <p className="text-[10px] font-bold text-on-surface-variant">Loss</p>
@@ -246,11 +246,11 @@ export const Comparison: React.FC<ComparisonProps> = ({comparisonSelectionIds}) 
             <div className="flex gap-4">
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded bg-primary" />
-                <span className="text-[10px] font-bold text-on-surface-variant">RECALL@20</span>
+                <span className="text-[10px] font-bold text-on-surface-variant">RECALL@50</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded bg-secondary" />
-                <span className="text-[10px] font-bold text-on-surface-variant">NDCG@20</span>
+                <span className="text-[10px] font-bold text-on-surface-variant">NDCG@50</span>
               </div>
             </div>
           </div>

@@ -202,6 +202,51 @@ const getParticipantCount = (counts: Array<number | null | undefined>) => {
   return Math.max(...normalized);
 };
 
+const asOptionalNumber = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const readMetricValue = (source: unknown, ...keys: string[]) => {
+  if (!source || typeof source !== 'object') {
+    return undefined;
+  }
+
+  const record = source as Record<string, unknown>;
+  for (const key of keys) {
+    const value = asOptionalNumber(record[key]);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const readEvalMetric = (
+  finalEval: unknown,
+  metadata: Record<string, unknown> | undefined,
+  metric: 'recall' | 'ndcg',
+  cutoff: 20 | 50,
+) => {
+  const compactKey = `${metric}${cutoff}`;
+  const atKey = `${metric}@${cutoff}`;
+  const directValue =
+    readMetricValue(finalEval, compactKey, atKey) ??
+    readMetricValue((finalEval as {extra?: unknown} | undefined)?.extra, compactKey, atKey);
+
+  if (directValue !== undefined) {
+    return directValue;
+  }
+
+  if (cutoff === 50) {
+    return (
+      readMetricValue(metadata?.best_test_result, compactKey, atKey) ??
+      readMetricValue(metadata?.best_valid_result, compactKey, atKey)
+    );
+  }
+
+  return undefined;
+};
+
 const buildPreviewBarsFromValues = (values: Array<number | null | undefined>) => {
   const normalized = values
     .map((value) => Number(value ?? 0))
@@ -223,7 +268,13 @@ const buildSummaryPreviewBars = (summary: ApiSummaryShape) => {
     return buildPreviewBarsFromValues(roundValues);
   }
 
-  return buildPreviewBarsFromValues([summary.final_eval?.recall20 ?? summary.final_eval?.ndcg20 ?? 0.1]);
+  return buildPreviewBarsFromValues([
+    readEvalMetric(summary.final_eval, undefined, 'recall', 50) ??
+      readEvalMetric(summary.final_eval, undefined, 'ndcg', 50) ??
+      summary.final_eval?.recall20 ??
+      summary.final_eval?.ndcg20 ??
+      0.1,
+  ]);
 };
 
 const buildResultPreviewBars = (result: ApiResultShape) => {
@@ -232,7 +283,13 @@ const buildResultPreviewBars = (result: ApiResultShape) => {
     return buildPreviewBarsFromValues(roundValues);
   }
 
-  return buildPreviewBarsFromValues([result.final_eval?.recall20 ?? result.final_eval?.ndcg20 ?? 0.1]);
+  return buildPreviewBarsFromValues([
+    readEvalMetric(result.final_eval, result.metadata, 'recall', 50) ??
+      readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50) ??
+      result.final_eval?.recall20 ??
+      result.final_eval?.ndcg20 ??
+      0.1,
+  ]);
 };
 
 const getNestedMetricCandidate = (value: unknown, fields: string[]): number => {
@@ -282,11 +339,11 @@ const buildSummaryText = (summary: ApiSummaryShape) => {
   const defenseGroups = formatDefenseSemanticGroups(summary.active_defenses);
   const privacyCount = summary.active_privacy_metrics?.length ?? 0;
   const maliciousCount = summary.malicious_client_summary?.unique_malicious_client_count ?? 0;
-  const recall20 = summary.final_eval?.recall20;
-  const ndcg20 = summary.final_eval?.ndcg20;
+  const recall50 = readEvalMetric(summary.final_eval, undefined, 'recall', 50);
+  const ndcg50 = readEvalMetric(summary.final_eval, undefined, 'ndcg', 50);
   const roundCount = getSummaryRounds(summary).length;
 
-  return `实验场景：${mode}；场景标签：${scenarioTags}；投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
+  return `实验场景：${mode}；场景标签：${scenarioTags}；投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@50=${recall50?.toFixed(3) ?? '--'}，NDCG@50=${ndcg50?.toFixed(3) ?? '--'}。`;
 };
 
 const buildResultText = (result: ApiResultShape) => {
@@ -315,10 +372,10 @@ const buildResultText = (result: ApiResultShape) => {
     'trimmed_client_count',
   ]);
   const privacyRounds = countPrivacyObservationRounds(getResultRounds(result));
-  const recall20 = result.final_eval?.recall20;
-  const ndcg20 = result.final_eval?.ndcg20;
+  const recall50 = readEvalMetric(result.final_eval, result.metadata, 'recall', 50);
+  const ndcg50 = readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50);
 
-  return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，最大过滤客户端 ${filteredCount} 个，截尾处理计数 ${trimCount}，隐私观测命中 ${privacyRounds} 轮。最终 Recall@20=${recall20?.toFixed(3) ?? '--'}，NDCG@20=${ndcg20?.toFixed(3) ?? '--'}。`;
+  return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，最大过滤客户端 ${filteredCount} 个，截尾处理计数 ${trimCount}，隐私观测命中 ${privacyRounds} 轮。最终 Recall@50=${recall50?.toFixed(3) ?? '--'}，NDCG@50=${ndcg50?.toFixed(3) ?? '--'}。`;
 };
 
 const buildApiConfigFromSummary = (summary: ApiSummaryShape): TrainConfig => {
@@ -395,8 +452,10 @@ const mapApiSummaryToHistoryRecord = (
   const config = buildApiConfigFromSummary(summary);
   const rounds = getSummaryRounds(summary);
   const lastRound = rounds[rounds.length - 1];
-  const recall20 = summary.final_eval?.recall20 ?? undefined;
-  const ndcg20 = summary.final_eval?.ndcg20 ?? undefined;
+  const recall20 = readEvalMetric(summary.final_eval, undefined, 'recall', 20);
+  const recall50 = readEvalMetric(summary.final_eval, undefined, 'recall', 50);
+  const ndcg20 = readEvalMetric(summary.final_eval, undefined, 'ndcg', 20);
+  const ndcg50 = readEvalMetric(summary.final_eval, undefined, 'ndcg', 50);
 
   return {
     id: `api::${summary.experiment_key}`,
@@ -422,8 +481,10 @@ const mapApiSummaryToHistoryRecord = (
     metrics: {
       recall10: recall20,
       recall20,
+      recall50,
       ndcg10: ndcg20,
       ndcg20,
+      ndcg50,
       loss: summary.final_eval?.loss ?? lastRound?.avg_train_loss ?? undefined,
     },
     status: 'completed',
@@ -440,8 +501,10 @@ const mapApiResultToHistoryRecord = (result: ApiResultShape): HistoryRecord => {
   const config = buildApiConfigFromResult(result);
   const rounds = getResultRounds(result);
   const lastRound = rounds[rounds.length - 1];
-  const recall20 = result.final_eval?.recall20 ?? undefined;
-  const ndcg20 = result.final_eval?.ndcg20 ?? undefined;
+  const recall20 = readEvalMetric(result.final_eval, result.metadata, 'recall', 20);
+  const recall50 = readEvalMetric(result.final_eval, result.metadata, 'recall', 50);
+  const ndcg20 = readEvalMetric(result.final_eval, result.metadata, 'ndcg', 20);
+  const ndcg50 = readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50);
 
   return {
     id: `api::${result.experiment_key}`,
@@ -467,8 +530,10 @@ const mapApiResultToHistoryRecord = (result: ApiResultShape): HistoryRecord => {
     metrics: {
       recall10: recall20,
       recall20,
+      recall50,
       ndcg10: ndcg20,
       ndcg20,
+      ndcg50,
       loss: result.final_eval?.loss ?? lastRound?.avg_train_loss ?? undefined,
     },
     status: 'completed',

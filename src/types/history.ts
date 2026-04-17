@@ -65,9 +65,14 @@ export interface ExperimentSummaryListItem {
   active_privacy_metrics?: string[];
   final_eval?: {
     recall20?: number | null;
+    recall50?: number | null;
+    'recall@50'?: number | null;
     ndcg20?: number | null;
+    ndcg50?: number | null;
+    'ndcg@50'?: number | null;
     loss?: number | null;
     extra?: Record<string, unknown>;
+    [key: string]: unknown;
   };
 }
 
@@ -122,9 +127,14 @@ export interface ExperimentSummaryDetail {
   malicious_client_summary?: ExperimentMaliciousClientSummary;
   final_eval?: {
     recall20?: number | null;
+    recall50?: number | null;
+    'recall@50'?: number | null;
     ndcg20?: number | null;
+    ndcg50?: number | null;
+    'ndcg@50'?: number | null;
     loss?: number | null;
     extra?: Record<string, unknown>;
+    [key: string]: unknown;
   };
   round_summaries?: ExperimentRoundSummary[];
 }
@@ -175,6 +185,8 @@ export interface ExperimentResultMetadata {
   attack_summaries?: Record<string, unknown>;
   defense_summaries?: Record<string, unknown>;
   privacy_metric_summaries?: Record<string, unknown>;
+  best_valid_result?: Record<string, unknown>;
+  best_test_result?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -193,9 +205,14 @@ export interface ExperimentResultDetail {
   round_metrics?: ExperimentResultRoundMetric[];
   final_eval?: {
     recall20?: number | null;
+    recall50?: number | null;
+    'recall@50'?: number | null;
     ndcg20?: number | null;
+    ndcg50?: number | null;
+    'ndcg@50'?: number | null;
     loss?: number | null;
     extra?: Record<string, unknown>;
+    [key: string]: unknown;
   };
   metadata?: ExperimentResultMetadata;
 }

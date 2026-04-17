@@ -43,6 +43,21 @@ const extractExperimentKeyFromTaskId = (taskId?: string | null) =>
 
 const normalizePathToken = (value?: string | null) => value?.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '';
 
+const getExperimentKeyFromResultPath = (resultPath?: string | null) => {
+  if (!resultPath) {
+    return null;
+  }
+
+  const normalized = resultPath.replace(/\\/g, '/');
+  const marker = 'outputs/results/';
+  const relativePath = normalized.includes(marker)
+    ? normalized.slice(normalized.indexOf(marker) + marker.length)
+    : normalized;
+  const relativeBase = relativePath.replace(/\.experiment_result\.json$/, '').replace(/\.experiment_summary\.json$/, '');
+
+  return relativeBase && relativeBase !== relativePath ? relativeBase.split('/').filter(Boolean).join('__') : null;
+};
+
 const isValidationLaunch = (record: LaunchExperimentRecord) =>
   Boolean(
     record.options.validateOnly ||
@@ -113,6 +128,51 @@ const mapDefenseType = (activeDefenses?: string[]): DefenseType => {
 
 const asNumber = (value: unknown, fallback = 0) =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const asOptionalNumber = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const readMetricValue = (source: unknown, ...keys: string[]) => {
+  if (!source || typeof source !== 'object') {
+    return undefined;
+  }
+
+  const record = source as Record<string, unknown>;
+  for (const key of keys) {
+    const value = asOptionalNumber(record[key]);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const readEvalMetric = (
+  finalEval: unknown,
+  metadata: Record<string, unknown> | undefined,
+  metric: 'recall' | 'ndcg',
+  cutoff: 20 | 50,
+) => {
+  const compactKey = `${metric}${cutoff}`;
+  const atKey = `${metric}@${cutoff}`;
+  const directValue =
+    readMetricValue(finalEval, compactKey, atKey) ??
+    readMetricValue((finalEval as {extra?: unknown} | undefined)?.extra, compactKey, atKey);
+
+  if (directValue !== undefined) {
+    return directValue;
+  }
+
+  if (cutoff === 50) {
+    return (
+      readMetricValue(metadata?.best_test_result, compactKey, atKey) ??
+      readMetricValue(metadata?.best_valid_result, compactKey, atKey)
+    );
+  }
+
+  return undefined;
+};
 
 const formatMetric = (value: number | undefined, digits = 3) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '暂无';
@@ -296,8 +356,10 @@ const buildRealResult = (
   const roundSummaries = base.roundSummaries ?? [];
   const roundMetrics = base.roundMetrics ?? [];
   const totalRounds = roundMetrics.length || roundSummaries.length || defaultTrainConfig.totalRounds;
-  const recall20 = asNumber(base.finalEval?.recall20);
-  const ndcg20 = asNumber(base.finalEval?.ndcg20);
+  const recall20 = readEvalMetric(base.finalEval, base.metadata, 'recall', 20);
+  const ndcg20 = readEvalMetric(base.finalEval, base.metadata, 'ndcg', 20);
+  const recall50 = readEvalMetric(base.finalEval, base.metadata, 'recall', 50);
+  const ndcg50 = readEvalMetric(base.finalEval, base.metadata, 'ndcg', 50);
   const loss = asNumber(base.finalEval?.loss);
   const maliciousCount =
     asNumber(base.maliciousClientSummary?.unique_malicious_client_count) ||
@@ -379,15 +441,15 @@ const buildRealResult = (
     metrics: {
       recall10: recall20,
       recall20,
-      recall50: recall20,
+      recall50,
       ndcg10: ndcg20,
       ndcg20,
-      ndcg50: ndcg20,
+      ndcg50,
       loss,
     },
     metricCards: [
-      {label: 'Recall@20', value: formatMetric(recall20), change: '最终评估', tone: 'primary'},
-      {label: 'NDCG@20', value: formatMetric(ndcg20), change: '最终评估', tone: 'tertiary'},
+      {label: 'Recall@50', value: formatMetric(recall50), change: '最终评估', tone: 'primary'},
+      {label: 'NDCG@50', value: formatMetric(ndcg50), change: '最终评估', tone: 'tertiary'},
       {label: 'Loss', value: formatMetric(loss), change: '最终评估', tone: 'neutral'},
       {
         label: activeAttacks.length ? '最大攻击命中' : '恶意客户端数',
@@ -411,11 +473,11 @@ const buildRealResult = (
       : '验证/测试主指标曲线',
     utilityMetricDescription: backendScoreMetricLabel
       ? `使用真实 valid_score / test_score 字段，已根据结果元数据推断为后端主评估指标 ${backendScoreMetricLabel}。`
-      : '使用真实 valid_score / test_score 字段；当前结果没有逐轮 Recall@20 / NDCG@20 字段，因此这里明确展示为后端当前主评估指标。',
+      : '使用真实 valid_score / test_score 字段；当前结果没有逐轮 Recall@50 / NDCG@50 字段，因此这里明确展示为后端当前主评估指标。',
     configSummary,
     summaryText: {
       headline: '基于当前实验结果自动生成。',
-      conclusion: `当前实验为${scenarioLabel}，模型 ${model}，数据集 ${dataset}。最终 Recall@20=${formatMetric(recall20)}，NDCG@20=${formatMetric(ndcg20)}，Loss=${formatMetric(loss)}。`,
+      conclusion: `当前实验为${scenarioLabel}，模型 ${model}，数据集 ${dataset}。最终 Recall@50=${formatMetric(recall50)}，NDCG@50=${formatMetric(ndcg50)}，Loss=${formatMetric(loss)}。`,
       securityAssessment: `投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；观测模块：${formatModuleChain(activePrivacyMetrics)}。恶意客户端统计 ${maliciousCount}，最大攻击命中 ${attackedCount}。`,
       recommendation: `${defenseObservation}。以上结论仅基于当前 summary/result 中可验证字段生成，未补造额外评分。`,
     },
@@ -630,7 +692,10 @@ export const getComparisonResult = async (taskIds?: string[]): Promise<Compariso
       throw new Error('Showcase comparison response is empty.');
     }
 
-    return mapShowcaseComparison(response);
+    return mapShowcaseComparison({
+      ...response,
+      items: await enrichShowcaseItemsWithResultMetrics(response.items),
+    });
   } catch (error) {
     const fallback = await simulateRequest(() => mockStore.getDefaultComparison());
     return {
@@ -746,7 +811,40 @@ const orderedShowcaseItems = (items: ShowcaseComparisonItem[]) =>
     return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
   });
 
-const asMetric = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+const enrichShowcaseItemsWithResultMetrics = async (items: ShowcaseComparisonItem[]) => {
+  return Promise.all(
+    items.map(async (item) => {
+      if (item.recall50 !== undefined && item.ndcg50 !== undefined) {
+        return item;
+      }
+
+      const experimentKey = getExperimentKeyFromResultPath(item.result_path);
+      if (!experimentKey) {
+        return item;
+      }
+
+      try {
+        const response = await apiGet<ExperimentResultResponse>(`/experiments/${encodeURIComponent(experimentKey)}/result`);
+        const result = response.result;
+        const recall50 = readEvalMetric(result.final_eval, result.metadata, 'recall', 50);
+        const ndcg50 = readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50);
+        return {
+          ...item,
+          recall50: item.recall50 ?? recall50 ?? null,
+          ndcg50: item.ndcg50 ?? ndcg50 ?? null,
+        };
+      } catch {
+        return item;
+      }
+    }),
+  );
+};
+
+const asMetric = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+const asMetricOrZero = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+
+const formatPercentMetric = (value?: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : '暂无';
 
 const getScenarioMeta = (item: ShowcaseComparisonItem, index: number) =>
   scenarioMeta[item.scenario] ?? {
@@ -774,8 +872,10 @@ const getHistoryGroupAccent = (record: HistoryRecord, index: number): Comparison
 const mapHistoryRecordToComparisonGroup = (record: HistoryRecord, index: number): ComparisonResult['groups'][number] => {
   const configSummary = record.configSummary;
   const recall20 = asMetric(record.metrics.recall20);
+  const recall50 = asMetric(record.metrics.recall50);
   const ndcg20 = asMetric(record.metrics.ndcg20);
-  const loss = asMetric(record.metrics.loss);
+  const ndcg50 = asMetric(record.metrics.ndcg50);
+  const loss = asMetricOrZero(record.metrics.loss);
 
   return {
     id: record.id,
@@ -797,10 +897,10 @@ const mapHistoryRecordToComparisonGroup = (record: HistoryRecord, index: number)
     metrics: {
       recall10: recall20,
       recall20,
-      recall50: recall20,
+      recall50,
       ndcg10: ndcg20,
       ndcg20,
-      ndcg50: ndcg20,
+      ndcg50,
       loss,
     },
   };
@@ -814,12 +914,12 @@ const mapHistoryRecordsToComparison = (records: HistoryRecord[]): ComparisonResu
     summary: `当前对比来自历史实验页手动选择的 ${groups.length} 条实验记录，优先使用真实 summary/result 字段生成。`,
     findings: groups.map(
       (group) =>
-        `${group.name}：Recall@20 ${(group.metrics.recall20 * 100).toFixed(2)}%，NDCG@20 ${(group.metrics.ndcg20 * 100).toFixed(2)}%，Loss ${(group.metrics.loss ?? 0).toFixed(4)}。`,
+        `${group.name}：Recall@50 ${formatPercentMetric(group.metrics.recall50)}，NDCG@50 ${formatPercentMetric(group.metrics.ndcg50)}，Loss ${(group.metrics.loss ?? 0).toFixed(4)}。`,
     ),
     metricComparison: groups.map((group) => ({
       name: group.name,
-      recall: group.metrics.recall20,
-      ndcg: group.metrics.ndcg20,
+      recall: group.metrics.recall50,
+      ndcg: group.metrics.ndcg50,
       loss: group.metrics.loss ?? 0,
     })),
     configDiff: [
@@ -881,8 +981,10 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
   const groups = items.map((item, index) => {
     const meta = getScenarioMeta(item, index);
     const recall20 = asMetric(item.recall20);
+    const recall50 = asMetric(item.recall50);
     const ndcg20 = asMetric(item.ndcg20);
-    const loss = asMetric(item.loss);
+    const ndcg50 = asMetric(item.ndcg50);
+    const loss = asMetricOrZero(item.loss);
     const attackGroups = formatAttackSemanticGroups(item.active_attacks, item.attack_taxonomy as AttackTaxonomyMap | undefined);
     const defenseGroups = formatDefenseSemanticGroups(item.active_defenses);
 
@@ -897,10 +999,10 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
       metrics: {
         recall10: recall20,
         recall20,
-        recall50: recall20,
+        recall50,
         ndcg10: ndcg20,
         ndcg20,
-        ndcg50: ndcg20,
+        ndcg50,
         loss,
       },
     };
@@ -923,12 +1025,12 @@ const mapShowcaseComparison = (response: ShowcaseComparisonResponse): Comparison
       'ShowcaseV1 展示版对比已接入真实 API 数据，覆盖正常基线、攻击退化与攻防约束三组正式实验。',
     findings: items.map((item, index) => {
       const meta = getScenarioMeta(item, index);
-      return item.display_note ?? `${meta.name}：Recall@20 ${(asMetric(item.recall20) * 100).toFixed(2)}%，NDCG@20 ${(asMetric(item.ndcg20) * 100).toFixed(2)}%。`;
+      return item.display_note ?? `${meta.name}：Recall@50 ${formatPercentMetric(item.recall50 ?? undefined)}，NDCG@50 ${formatPercentMetric(item.ndcg50 ?? undefined)}。`;
     }),
     metricComparison: groups.map((group) => ({
       name: group.name,
-      recall: group.metrics.recall20,
-      ndcg: group.metrics.ndcg20,
+      recall: group.metrics.recall50,
+      ndcg: group.metrics.ndcg50,
       loss: group.metrics.loss ?? 0,
     })),
     configDiff: [

@@ -240,6 +240,7 @@ export const History: React.FC<HistoryProps> = ({
         const record = await getHistorySummaryPreview(selectedRecord.id);
         if (!cancelled) {
           setPreviewRecord(record);
+          setRecords((current) => current.map((item) => (item.id === record.id ? record : item)));
           setPreviewState('success');
           setPreviewSource(record.detailLevel ?? 'summary');
         }
@@ -319,6 +320,7 @@ export const History: React.FC<HistoryProps> = ({
         setPreviewSource('result');
         const resultRecord = await getHistoryResultPreview(record.id);
         setPreviewRecord(resultRecord);
+        setRecords((current) => current.map((item) => (item.id === resultRecord.id ? resultRecord : item)));
         setPreviewState('success');
         setPreviewSource('result');
       } catch (error) {
@@ -544,29 +546,33 @@ export const History: React.FC<HistoryProps> = ({
               const isApiRecord = record.id.startsWith('api::');
               const isCompared = comparisonSelectionIds.includes(record.taskId);
               const primaryMetricLabel =
-                record.metrics.recall20 !== undefined
-                  ? 'Recall@20'
+                record.metrics.recall50 !== undefined
+                  ? 'Recall@50'
                   : record.metrics.f1Score !== undefined
                     ? 'F1 Score'
                     : 'Accuracy';
               const primaryMetricValue =
-                record.metrics.recall20 !== undefined
-                  ? record.metrics.recall20.toFixed(3)
+                record.metrics.recall50 !== undefined
+                  ? record.metrics.recall50.toFixed(3)
                   : record.metrics.f1Score !== undefined
                     ? record.metrics.f1Score.toFixed(3)
-                    : `${((record.metrics.accuracy ?? 0) * 100).toFixed(1)}%`;
+                    : record.metrics.accuracy !== undefined
+                      ? `${(record.metrics.accuracy * 100).toFixed(1)}%`
+                      : '暂无';
               const secondaryMetricLabel =
-                record.metrics.ndcg20 !== undefined
-                  ? 'NDCG@20'
+                record.metrics.ndcg50 !== undefined
+                  ? 'NDCG@50'
                   : record.metrics.privacyBudget !== undefined
                     ? '隐私预算'
                     : 'Loss';
               const secondaryMetricValue =
-                record.metrics.ndcg20 !== undefined
-                  ? record.metrics.ndcg20.toFixed(3)
+                record.metrics.ndcg50 !== undefined
+                  ? record.metrics.ndcg50.toFixed(3)
                   : record.metrics.privacyBudget !== undefined
                     ? `ε=${record.metrics.privacyBudget}`
-                    : (record.metrics.loss ?? 0).toFixed(3);
+                    : record.metrics.loss !== undefined
+                      ? record.metrics.loss.toFixed(3)
+                      : '暂无';
 
               return (
                 <div

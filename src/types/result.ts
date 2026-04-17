@@ -7,12 +7,12 @@ export type ResultSource = 'current-task' | 'history' | 'example' | 'recent-laun
 export type AnalysisDataSource = 'recent-launch' | 'history' | 'mock' | 'validate-only';
 
 export interface ExperimentMetrics {
-  recall10: number;
-  recall20: number;
-  recall50: number;
-  ndcg10: number;
-  ndcg20: number;
-  ndcg50: number;
+  recall10?: number;
+  recall20?: number;
+  recall50?: number;
+  ndcg10?: number;
+  ndcg20?: number;
+  ndcg50?: number;
   accuracy?: number;
   loss?: number;
   defenseScore?: number;
@@ -130,8 +130,8 @@ export interface ComparisonGroup {
 
 export interface ComparisonMetricDatum {
   name: string;
-  recall: number;
-  ndcg: number;
+  recall?: number;
+  ndcg?: number;
   loss: number;
 }
 
@@ -169,7 +169,9 @@ export interface ShowcaseComparisonItem {
   active_defenses?: string[];
   active_privacy_metrics?: string[];
   recall20?: number | null;
+  recall50?: number | null;
   ndcg20?: number | null;
+  ndcg50?: number | null;
   loss?: number | null;
   malicious_client_count?: number | null;
   attacked_client_count?: number | null;
