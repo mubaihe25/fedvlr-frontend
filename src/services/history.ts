@@ -14,7 +14,7 @@ import type {
   HistoryRecord,
   ReuseHistoryResponse,
 } from '../types/history';
-import type {AttackType, DefenseType, ExperimentMode, TrainConfig} from '../types/train';
+import type {AttackType, DefenseType, ExperimentMode, TrainAdvancedConfig, TrainConfig} from '../types/train';
 import {apiGet, buildApiUrl} from './api';
 import {simulateRequest} from './mockAdapter';
 import {mockStore} from './mockStore';
@@ -36,6 +36,12 @@ interface ApiSummaryShape extends Partial<ExperimentSummaryDetail> {
   active_defenses?: string[];
   active_privacy_metrics?: string[];
   final_eval?: ExperimentSummaryDetail['final_eval'];
+  metadata?: Record<string, unknown>;
+  training_params?: Record<string, unknown>;
+  config?: Record<string, unknown>;
+  extra_config?: Record<string, unknown>;
+  type?: string | null;
+  comment?: string | null;
 }
 
 interface ApiResultShape extends Partial<ExperimentResultDetail> {
@@ -124,6 +130,245 @@ const triggerBrowserDownload = (blob: Blob, fileName: string) => {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(downloadUrl);
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const asFiniteNumber = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (!normalized) {
+      return undefined;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
+};
+
+const asPositiveInteger = (value: unknown) => {
+  const parsed = asFiniteNumber(value);
+  if (parsed === undefined) {
+    return undefined;
+  }
+
+  return Math.max(1, Math.round(parsed));
+};
+
+const normalizeOptimizer = (value: unknown): TrainAdvancedConfig['optimizer'] | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'adam' || normalized === 'adamw' || normalized === 'sgd') {
+    return normalized;
+  }
+
+  return undefined;
+};
+
+const readNumberFromSources = (sources: Record<string, unknown>[], keys: string[]) => {
+  for (const source of sources) {
+    for (const key of keys) {
+      const parsed = asFiniteNumber(source[key]);
+      if (parsed !== undefined) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const readStringFromSources = (sources: Record<string, unknown>[], keys: string[]) => {
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const parseNumberToken = (value: string) => {
+  const normalized = value.trim().replace(/p/g, '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const readNumberFromText = (texts: string[], patterns: RegExp[]) => {
+  for (const text of texts) {
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      const parsed = match?.[1] ? parseNumberToken(match[1]) : undefined;
+      if (parsed !== undefined) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const collectConfigSources = (
+  payload: ApiSummaryShape | ApiResultShape,
+  csvConfig?: Record<string, unknown>,
+) => {
+  const root = payload as unknown as Record<string, unknown>;
+  const metadata = isRecord(root.metadata) ? root.metadata : undefined;
+  const launcherPayload = metadata && isRecord(metadata.launcher_payload) ? metadata.launcher_payload : undefined;
+
+  return [
+    csvConfig,
+    root,
+    root.training_params,
+    root.config,
+    root.extra_config,
+    root.mapped_config,
+    metadata,
+    metadata?.training_params,
+    metadata?.config,
+    metadata?.extra_config,
+    metadata?.mapped_config,
+    metadata?.csv_params,
+    metadata?.config_summary,
+    launcherPayload,
+    launcherPayload?.mapped_config,
+  ].filter(isRecord);
+};
+
+const collectTextSources = (
+  payload: ApiSummaryShape | ApiResultShape,
+  sources: Record<string, unknown>[],
+) => {
+  const root = payload as unknown as Record<string, unknown>;
+  const textKeys = ['experiment_id', 'file_name', 'relative_path', 'comment', 'result_file_name', 'type'];
+  const values: string[] = [];
+
+  for (const key of textKeys) {
+    const value = root[key];
+    if (typeof value === 'string' && value.trim()) {
+      values.push(value);
+    }
+  }
+
+  for (const source of sources) {
+    for (const key of textKeys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.trim()) {
+        values.push(value);
+      }
+    }
+  }
+
+  return values;
+};
+
+const extractTrainingParams = (
+  payload: ApiSummaryShape | ApiResultShape,
+  csvConfig?: Record<string, unknown>,
+) => {
+  const sources = collectConfigSources(payload, csvConfig);
+  const textSources = collectTextSources(payload, sources);
+  const optimizerRaw = readStringFromSources(sources, ['learner', 'optimizer']);
+
+  return {
+    learningRate:
+      readNumberFromSources(sources, ['lr', 'learning_rate', 'learningRate']) ??
+      readNumberFromText(textSources, [/(?:^|[^a-z0-9])lr[=_-]?([0-9]+(?:p[0-9]+)?(?:e[+-]?\d+)?)/i]),
+    localEpochs: asPositiveInteger(readNumberFromSources(sources, ['local_epochs', 'localEpochs'])),
+    totalRounds: asPositiveInteger(readNumberFromSources(sources, ['epochs', 'total_rounds', 'totalRounds'])),
+    clientSamplingRate: readNumberFromSources(sources, [
+      'clients_sample_ratio',
+      'client_sampling_rate',
+      'clientSamplingRate',
+    ]),
+    optimizer: normalizeOptimizer(optimizerRaw),
+    weightDecay:
+      readNumberFromSources(sources, ['l2_reg', 'weight_decay', 'weightDecay']) ??
+      readNumberFromText(textSources, [/(?:^|[^a-z0-9])l2(?:_reg)?[=_-]?([0-9]+(?:p[0-9]+)?(?:e[+-]?\d+)?)/i]),
+  };
+};
+
+const parseCsvLine = (line: string) => {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      index += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values;
+};
+
+const parseCsvConfigSnapshot = (csvText: string): Record<string, unknown> | undefined => {
+  const lines = csvText.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) {
+    return undefined;
+  }
+
+  const headers = parseCsvLine(lines[0]).map((header) => header.trim());
+  const values = parseCsvLine(lines[1]);
+  const snapshot: Record<string, unknown> = {};
+
+  headers.forEach((header, index) => {
+    if (header) {
+      snapshot[header] = values[index]?.trim() ?? '';
+    }
+  });
+
+  return snapshot;
+};
+
+const loadHistoryCsvConfigFromApi = async (experimentKey: string) => {
+  try {
+    const response = await fetch(buildApiUrl(`/experiments/${encodeURIComponent(experimentKey)}/csv`), {
+      headers: {
+        Accept: 'text/csv',
+      },
+    });
+
+    if (!response.ok) {
+      return undefined;
+    }
+
+    return parseCsvConfigSnapshot(await response.text());
+  } catch {
+    return undefined;
+  }
 };
 
 const mapExperimentMode = (experimentMode?: string | null): ExperimentMode => {
@@ -378,7 +623,10 @@ const buildResultText = (result: ApiResultShape) => {
   return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，最大过滤客户端 ${filteredCount} 个，截尾处理计数 ${trimCount}，隐私观测命中 ${privacyRounds} 轮。最终 Recall@50=${recall50?.toFixed(3) ?? '--'}，NDCG@50=${ndcg50?.toFixed(3) ?? '--'}。`;
 };
 
-const buildApiConfigFromSummary = (summary: ApiSummaryShape): TrainConfig => {
+const buildApiConfigFromSummary = (
+  summary: ApiSummaryShape,
+  csvConfig?: Record<string, unknown>,
+): TrainConfig => {
   const rounds = getSummaryRounds(summary);
   const activeAttacks = summary.active_attacks ?? [];
   const activeDefenses = summary.active_defenses ?? [];
@@ -386,6 +634,7 @@ const buildApiConfigFromSummary = (summary: ApiSummaryShape): TrainConfig => {
   const mode = mapExperimentMode(summary.experiment_mode);
   const attackType = mapAttackType(activeAttacks);
   const defenseType = mapDefenseType(activeDefenses);
+  const trainingParams = extractTrainingParams(summary, csvConfig);
 
   return {
     ...defaultTrainConfig,
@@ -400,13 +649,23 @@ const buildApiConfigFromSummary = (summary: ApiSummaryShape): TrainConfig => {
     enabledDefenses: activeDefenses,
     enabledPrivacyMetrics: activePrivacyMetrics,
     clientCount: getParticipantCount(rounds.map((round) => round.num_participants)),
-    clientSamplingRate: 1,
-    totalRounds: rounds.length || defaultTrainConfig.totalRounds,
+    clientSamplingRate: trainingParams.clientSamplingRate ?? 1,
+    totalRounds: (trainingParams.totalRounds ?? rounds.length) || defaultTrainConfig.totalRounds,
     poisoningRatio: summary.malicious_client_summary?.ratio ?? defaultTrainConfig.poisoningRatio,
+    learningRate: trainingParams.learningRate ?? defaultTrainConfig.learningRate,
+    advanced: {
+      ...defaultTrainConfig.advanced,
+      localEpochs: trainingParams.localEpochs ?? defaultTrainConfig.advanced.localEpochs,
+      optimizer: trainingParams.optimizer ?? defaultTrainConfig.advanced.optimizer,
+      weightDecay: trainingParams.weightDecay ?? defaultTrainConfig.advanced.weightDecay,
+    },
   };
 };
 
-const buildApiConfigFromResult = (result: ApiResultShape): TrainConfig => {
+const buildApiConfigFromResult = (
+  result: ApiResultShape,
+  csvConfig?: Record<string, unknown>,
+): TrainConfig => {
   const rounds = getResultRounds(result);
   const activeAttacks = result.active_attacks ?? [];
   const activeDefenses = result.active_defenses ?? [];
@@ -414,6 +673,7 @@ const buildApiConfigFromResult = (result: ApiResultShape): TrainConfig => {
   const mode = mapExperimentMode(result.experiment_mode);
   const attackType = mapAttackType(activeAttacks);
   const defenseType = mapDefenseType(activeDefenses);
+  const trainingParams = extractTrainingParams(result, csvConfig);
 
   return {
     ...defaultTrainConfig,
@@ -428,9 +688,16 @@ const buildApiConfigFromResult = (result: ApiResultShape): TrainConfig => {
     enabledDefenses: activeDefenses,
     enabledPrivacyMetrics: activePrivacyMetrics,
     clientCount: getParticipantCount(rounds.map((round) => round.num_participants)),
-    clientSamplingRate: 1,
-    totalRounds: rounds.length || defaultTrainConfig.totalRounds,
+    clientSamplingRate: trainingParams.clientSamplingRate ?? 1,
+    totalRounds: (trainingParams.totalRounds ?? rounds.length) || defaultTrainConfig.totalRounds,
     poisoningRatio: result.metadata?.malicious_client_summary?.ratio ?? defaultTrainConfig.poisoningRatio,
+    learningRate: trainingParams.learningRate ?? defaultTrainConfig.learningRate,
+    advanced: {
+      ...defaultTrainConfig.advanced,
+      localEpochs: trainingParams.localEpochs ?? defaultTrainConfig.advanced.localEpochs,
+      optimizer: trainingParams.optimizer ?? defaultTrainConfig.advanced.optimizer,
+      weightDecay: trainingParams.weightDecay ?? defaultTrainConfig.advanced.weightDecay,
+    },
   };
 };
 
@@ -448,8 +715,9 @@ const buildConfigSummary = (config: TrainConfig) => ({
 const mapApiSummaryToHistoryRecord = (
   summary: ApiSummaryShape,
   detailLevel: HistoryRecord['detailLevel'] = 'list',
+  csvConfig?: Record<string, unknown>,
 ): HistoryRecord => {
-  const config = buildApiConfigFromSummary(summary);
+  const config = buildApiConfigFromSummary(summary, csvConfig);
   const rounds = getSummaryRounds(summary);
   const lastRound = rounds[rounds.length - 1];
   const recall20 = readEvalMetric(summary.final_eval, undefined, 'recall', 20);
@@ -472,7 +740,7 @@ const mapApiSummaryToHistoryRecord = (
       learningRate: config.learningRate,
       clientSamplingRate: config.clientSamplingRate,
       localEpochs: config.advanced.localEpochs,
-      totalRounds: rounds.length || config.totalRounds,
+      totalRounds: config.totalRounds,
       clientCount: config.clientCount,
       optimizer: config.advanced.optimizer,
       poisoningRatio: config.poisoningRatio,
@@ -497,8 +765,11 @@ const mapApiSummaryToHistoryRecord = (
   };
 };
 
-const mapApiResultToHistoryRecord = (result: ApiResultShape): HistoryRecord => {
-  const config = buildApiConfigFromResult(result);
+const mapApiResultToHistoryRecord = (
+  result: ApiResultShape,
+  csvConfig?: Record<string, unknown>,
+): HistoryRecord => {
+  const config = buildApiConfigFromResult(result, csvConfig);
   const rounds = getResultRounds(result);
   const lastRound = rounds[rounds.length - 1];
   const recall20 = readEvalMetric(result.final_eval, result.metadata, 'recall', 20);
@@ -521,7 +792,7 @@ const mapApiResultToHistoryRecord = (result: ApiResultShape): HistoryRecord => {
       learningRate: config.learningRate,
       clientSamplingRate: config.clientSamplingRate,
       localEpochs: config.advanced.localEpochs,
-      totalRounds: rounds.length || config.totalRounds,
+      totalRounds: config.totalRounds,
       clientCount: config.clientCount,
       optimizer: config.advanced.optimizer,
       poisoningRatio: config.poisoningRatio,
@@ -580,6 +851,7 @@ const loadHistorySummaryFromApi = async (recordId: string): Promise<HistoryRecor
   }
 
   const response = await apiGet<ExperimentSummaryResponse>(`/experiments/${encodeURIComponent(experimentKey)}/summary`);
+  const csvConfig = await loadHistoryCsvConfigFromApi(experimentKey);
   const upgradedResult = apiHistoryResultCache.get(recordId);
   if (upgradedResult) {
     return upgradedResult;
@@ -593,6 +865,7 @@ const loadHistorySummaryFromApi = async (recordId: string): Promise<HistoryRecor
       ...response.summary,
     },
     'summary',
+    csvConfig,
   );
 
   apiHistorySummaryCache.set(record.id, record);
@@ -608,12 +881,13 @@ const loadHistoryResultFromApi = async (recordId: string): Promise<HistoryRecord
   }
 
   const response = await apiGet<ExperimentResultResponse>(`/experiments/${encodeURIComponent(experimentKey)}/result`);
+  const csvConfig = await loadHistoryCsvConfigFromApi(experimentKey);
   const record = mapApiResultToHistoryRecord({
     experiment_key: response.experiment_key,
     file_name: response.file_name,
     relative_path: response.relative_path,
     ...response.result,
-  });
+  }, csvConfig);
 
   apiHistoryResultCache.set(record.id, record);
   apiHistoryCache.set(record.id, record);
