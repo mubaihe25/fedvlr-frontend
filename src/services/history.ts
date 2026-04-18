@@ -1,7 +1,13 @@
-import {buildTrainConfigSummary, defaultTrainConfig} from '../mock/configuration';
-import {getBestExperimentMetric} from '../lib/experimentMetrics';
-import {formatAttackSemanticGroups, formatDefenseSemanticGroups} from '../lib/experimentLabels';
-import type {AttackTaxonomyMap} from '../lib/experimentLabels';
+import {
+  buildTrainConfigSummary,
+  defaultTrainConfig,
+} from "../mock/configuration";
+import { getBestExperimentMetric } from "../lib/experimentMetrics";
+import {
+  formatAttackSemanticGroups,
+  formatDefenseSemanticGroups,
+} from "../lib/experimentLabels";
+import type { AttackTaxonomyMap } from "../lib/experimentLabels";
 import type {
   ExperimentResultDetail,
   ExperimentResultResponse,
@@ -14,11 +20,17 @@ import type {
   HistoryListResponse,
   HistoryRecord,
   ReuseHistoryResponse,
-} from '../types/history';
-import type {AttackType, DefenseType, ExperimentMode, TrainAdvancedConfig, TrainConfig} from '../types/train';
-import {apiGet, buildApiUrl} from './api';
-import {simulateRequest} from './mockAdapter';
-import {mockStore} from './mockStore';
+} from "../types/history";
+import type {
+  AttackType,
+  DefenseType,
+  ExperimentMode,
+  TrainAdvancedConfig,
+  TrainConfig,
+} from "../types/train";
+import { apiGet, buildApiUrl } from "./api";
+import { simulateRequest } from "./mockAdapter";
+import { mockStore } from "./mockStore";
 
 const apiHistoryCache = new Map<string, HistoryRecord>();
 const apiHistorySummaryCache = new Map<string, HistoryRecord>();
@@ -36,7 +48,7 @@ interface ApiSummaryShape extends Partial<ExperimentSummaryDetail> {
   active_attacks?: string[];
   active_defenses?: string[];
   active_privacy_metrics?: string[];
-  final_eval?: ExperimentSummaryDetail['final_eval'];
+  final_eval?: ExperimentSummaryDetail["final_eval"];
   metadata?: Record<string, unknown>;
   training_params?: Record<string, unknown>;
   config?: Record<string, unknown>;
@@ -51,15 +63,21 @@ interface ApiResultShape extends Partial<ExperimentResultDetail> {
   relative_path: string;
 }
 
-const parseExperimentTimestamp = (...candidates: Array<string | null | undefined>) => {
+const parseExperimentTimestamp = (
+  ...candidates: Array<string | null | undefined>
+) => {
   for (const candidate of candidates) {
     if (!candidate) {
       continue;
     }
 
     const normalized = String(candidate);
-    const compactMatch = normalized.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?!\d)/);
-    const underscoredMatch = normalized.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(?:_\d{1,6})?/);
+    const compactMatch = normalized.match(
+      /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?!\d)/,
+    );
+    const underscoredMatch = normalized.match(
+      /(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(?:_\d{1,6})?/,
+    );
     const match = underscoredMatch ?? compactMatch;
 
     if (match) {
@@ -68,15 +86,15 @@ const parseExperimentTimestamp = (...candidates: Array<string | null | undefined
     }
   }
 
-  return '未知时间';
+  return "未知时间";
 };
 
 const shortModeLabels: Record<string, string> = {
-  baseline: '基线',
-  attack_only: '投毒',
-  defense_only: '防御',
-  attack_and_defense: '攻防对照',
-  privacy_observation: '隐私观测',
+  baseline: "基线",
+  attack_only: "投毒",
+  defense_only: "防御",
+  attack_and_defense: "攻防对照",
+  privacy_observation: "隐私观测",
 };
 
 const buildApiRecordTitle = (payload: {
@@ -84,9 +102,9 @@ const buildApiRecordTitle = (payload: {
   dataset?: string | null;
   experiment_mode?: string | null;
 }) => {
-  const model = payload.model || '未知模型';
-  const dataset = payload.dataset || '未知数据集';
-  const mode = shortModeLabels[payload.experiment_mode || ''] || '实验';
+  const model = payload.model || "未知模型";
+  const dataset = payload.dataset || "未知数据集";
+  const mode = shortModeLabels[payload.experiment_mode || ""] || "实验";
   return `${model} / ${dataset} / ${mode}`;
 };
 
@@ -94,17 +112,24 @@ const buildApiSourceName = (payload: {
   experiment_id?: string | null;
   file_name?: string | null;
   relative_path?: string | null;
-}) => payload.experiment_id || payload.file_name || payload.relative_path || '未记录原始标识';
+}) =>
+  payload.experiment_id ||
+  payload.file_name ||
+  payload.relative_path ||
+  "未记录原始标识";
 
 const extractExperimentKeyFromRecordId = (recordId: string) => {
-  if (!recordId.startsWith('api::')) {
+  if (!recordId.startsWith("api::")) {
     return null;
   }
 
   return recordId.slice(5);
 };
 
-const getCsvFileNameFromHeader = (contentDisposition: string | null, fallbackName: string) => {
+const getCsvFileNameFromHeader = (
+  contentDisposition: string | null,
+  fallbackName: string,
+) => {
   if (!contentDisposition) {
     return fallbackName;
   }
@@ -112,9 +137,9 @@ const getCsvFileNameFromHeader = (contentDisposition: string | null, fallbackNam
   const encodedMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
   if (encodedMatch?.[1]) {
     try {
-      return decodeURIComponent(encodedMatch[1].replace(/"/g, ''));
+      return decodeURIComponent(encodedMatch[1].replace(/"/g, ""));
     } catch {
-      return encodedMatch[1].replace(/"/g, '');
+      return encodedMatch[1].replace(/"/g, "");
     }
   }
 
@@ -124,7 +149,7 @@ const getCsvFileNameFromHeader = (contentDisposition: string | null, fallbackNam
 
 const triggerBrowserDownload = (blob: Blob, fileName: string) => {
   const downloadUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
+  const anchor = document.createElement("a");
   anchor.href = downloadUrl;
   anchor.download = fileName;
   document.body.appendChild(anchor);
@@ -134,14 +159,14 @@ const triggerBrowserDownload = (blob: Blob, fileName: string) => {
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const asFiniteNumber = (value: unknown) => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     const normalized = value.trim();
     if (!normalized) {
       return undefined;
@@ -163,20 +188,25 @@ const asPositiveInteger = (value: unknown) => {
   return Math.max(1, Math.round(parsed));
 };
 
-const normalizeOptimizer = (value: unknown): TrainAdvancedConfig['optimizer'] | undefined => {
-  if (typeof value !== 'string') {
+const normalizeOptimizer = (
+  value: unknown,
+): TrainAdvancedConfig["optimizer"] | undefined => {
+  if (typeof value !== "string") {
     return undefined;
   }
 
   const normalized = value.trim().toLowerCase();
-  if (normalized === 'adam' || normalized === 'adamw' || normalized === 'sgd') {
+  if (normalized === "adam" || normalized === "adamw" || normalized === "sgd") {
     return normalized;
   }
 
   return undefined;
 };
 
-const readNumberFromSources = (sources: Record<string, unknown>[], keys: string[]) => {
+const readNumberFromSources = (
+  sources: Record<string, unknown>[],
+  keys: string[],
+) => {
   for (const source of sources) {
     for (const key of keys) {
       const parsed = asFiniteNumber(source[key]);
@@ -189,11 +219,14 @@ const readNumberFromSources = (sources: Record<string, unknown>[], keys: string[
   return undefined;
 };
 
-const readStringFromSources = (sources: Record<string, unknown>[], keys: string[]) => {
+const readStringFromSources = (
+  sources: Record<string, unknown>[],
+  keys: string[],
+) => {
   for (const source of sources) {
     for (const key of keys) {
       const value = source[key];
-      if (typeof value === 'string' && value.trim()) {
+      if (typeof value === "string" && value.trim()) {
         return value.trim();
       }
     }
@@ -203,7 +236,7 @@ const readStringFromSources = (sources: Record<string, unknown>[], keys: string[
 };
 
 const parseNumberToken = (value: string) => {
-  const normalized = value.trim().replace(/p/g, '.');
+  const normalized = value.trim().replace(/p/g, ".");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
@@ -228,7 +261,10 @@ const collectConfigSources = (
 ) => {
   const root = payload as unknown as Record<string, unknown>;
   const metadata = isRecord(root.metadata) ? root.metadata : undefined;
-  const launcherPayload = metadata && isRecord(metadata.launcher_payload) ? metadata.launcher_payload : undefined;
+  const launcherPayload =
+    metadata && isRecord(metadata.launcher_payload)
+      ? metadata.launcher_payload
+      : undefined;
 
   return [
     csvConfig,
@@ -254,12 +290,19 @@ const collectTextSources = (
   sources: Record<string, unknown>[],
 ) => {
   const root = payload as unknown as Record<string, unknown>;
-  const textKeys = ['experiment_id', 'file_name', 'relative_path', 'comment', 'result_file_name', 'type'];
+  const textKeys = [
+    "experiment_id",
+    "file_name",
+    "relative_path",
+    "comment",
+    "result_file_name",
+    "type",
+  ];
   const values: string[] = [];
 
   for (const key of textKeys) {
     const value = root[key];
-    if (typeof value === 'string' && value.trim()) {
+    if (typeof value === "string" && value.trim()) {
       values.push(value);
     }
   }
@@ -267,7 +310,7 @@ const collectTextSources = (
   for (const source of sources) {
     for (const key of textKeys) {
       const value = source[key];
-      if (typeof value === 'string' && value.trim()) {
+      if (typeof value === "string" && value.trim()) {
         values.push(value);
       }
     }
@@ -282,29 +325,41 @@ const extractTrainingParams = (
 ) => {
   const sources = collectConfigSources(payload, csvConfig);
   const textSources = collectTextSources(payload, sources);
-  const optimizerRaw = readStringFromSources(sources, ['learner', 'optimizer']);
+  const optimizerRaw = readStringFromSources(sources, ["learner", "optimizer"]);
 
   return {
     learningRate:
-      readNumberFromSources(sources, ['lr', 'learning_rate', 'learningRate']) ??
-      readNumberFromText(textSources, [/(?:^|[^a-z0-9])lr[=_-]?([0-9]+(?:p[0-9]+)?(?:e[+-]?\d+)?)/i]),
-    localEpochs: asPositiveInteger(readNumberFromSources(sources, ['local_epochs', 'localEpochs'])),
-    totalRounds: asPositiveInteger(readNumberFromSources(sources, ['epochs', 'total_rounds', 'totalRounds'])),
+      readNumberFromSources(sources, ["lr", "learning_rate", "learningRate"]) ??
+      readNumberFromText(textSources, [
+        /(?:^|[^a-z0-9])lr[=_-]?([0-9]+(?:p[0-9]+)?(?:e[+-]?\d+)?)/i,
+      ]),
+    localEpochs: asPositiveInteger(
+      readNumberFromSources(sources, ["local_epochs", "localEpochs"]),
+    ),
+    totalRounds: asPositiveInteger(
+      readNumberFromSources(sources, ["epochs", "total_rounds", "totalRounds"]),
+    ),
     clientSamplingRate: readNumberFromSources(sources, [
-      'clients_sample_ratio',
-      'client_sampling_rate',
-      'clientSamplingRate',
+      "clients_sample_ratio",
+      "client_sampling_rate",
+      "clientSamplingRate",
     ]),
     optimizer: normalizeOptimizer(optimizerRaw),
     weightDecay:
-      readNumberFromSources(sources, ['l2_reg', 'weight_decay', 'weightDecay']) ??
-      readNumberFromText(textSources, [/(?:^|[^a-z0-9])l2(?:_reg)?[=_-]?([0-9]+(?:p[0-9]+)?(?:e[+-]?\d+)?)/i]),
+      readNumberFromSources(sources, [
+        "l2_reg",
+        "weight_decay",
+        "weightDecay",
+      ]) ??
+      readNumberFromText(textSources, [
+        /(?:^|[^a-z0-9])l2(?:_reg)?[=_-]?([0-9]+(?:p[0-9]+)?(?:e[+-]?\d+)?)/i,
+      ]),
   };
 };
 
 const parseCsvLine = (line: string) => {
   const values: string[] = [];
-  let current = '';
+  let current = "";
   let inQuotes = false;
 
   for (let index = 0; index < line.length; index += 1) {
@@ -322,9 +377,9 @@ const parseCsvLine = (line: string) => {
       continue;
     }
 
-    if (char === ',' && !inQuotes) {
+    if (char === "," && !inQuotes) {
       values.push(current);
-      current = '';
+      current = "";
       continue;
     }
 
@@ -335,7 +390,9 @@ const parseCsvLine = (line: string) => {
   return values;
 };
 
-const parseCsvConfigSnapshot = (csvText: string): Record<string, unknown> | undefined => {
+const parseCsvConfigSnapshot = (
+  csvText: string,
+): Record<string, unknown> | undefined => {
   const lines = csvText.split(/\r?\n/).filter((line) => line.trim());
   if (lines.length < 2) {
     return undefined;
@@ -347,7 +404,7 @@ const parseCsvConfigSnapshot = (csvText: string): Record<string, unknown> | unde
 
   headers.forEach((header, index) => {
     if (header) {
-      snapshot[header] = values[index]?.trim() ?? '';
+      snapshot[header] = values[index]?.trim() ?? "";
     }
   });
 
@@ -356,11 +413,14 @@ const parseCsvConfigSnapshot = (csvText: string): Record<string, unknown> | unde
 
 const loadHistoryCsvConfigFromApi = async (experimentKey: string) => {
   try {
-    const response = await fetch(buildApiUrl(`/experiments/${encodeURIComponent(experimentKey)}/csv`), {
-      headers: {
-        Accept: 'text/csv',
+    const response = await fetch(
+      buildApiUrl(`/experiments/${encodeURIComponent(experimentKey)}/csv`),
+      {
+        headers: {
+          Accept: "text/csv",
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       return undefined;
@@ -374,66 +434,70 @@ const loadHistoryCsvConfigFromApi = async (experimentKey: string) => {
 
 const mapExperimentMode = (experimentMode?: string | null): ExperimentMode => {
   switch (experimentMode) {
-    case 'attack_only':
-      return 'attack';
-    case 'defense_only':
-      return 'defense';
-    case 'attack_and_defense':
-      return 'comparison';
-    case 'baseline':
-    case 'privacy_observation':
+    case "attack_only":
+      return "attack";
+    case "defense_only":
+      return "defense";
+    case "attack_and_defense":
+      return "comparison";
+    case "baseline":
+    case "privacy_observation":
     default:
-      return 'baseline';
+      return "baseline";
   }
 };
 
 const mapAttackType = (activeAttacks?: string[]): AttackType => {
   const attackName = activeAttacks?.[0];
   if (!attackName) {
-    return 'none';
+    return "none";
   }
 
   if (
-    attackName === 'poisoning_attack' ||
-    attackName === 'poisoning' ||
-    attackName === 'nondirected_poisoning' ||
-    attackName === 'client_update_scale' ||
-    attackName === 'sign_flip' ||
-    attackName === 'model_replacement' ||
-    attackName === 'client_preference_leakage_probe'
+    attackName === "poisoning_attack" ||
+    attackName === "poisoning" ||
+    attackName === "nondirected_poisoning" ||
+    attackName === "client_update_scale" ||
+    attackName === "sign_flip" ||
+    attackName === "model_replacement" ||
+    attackName === "client_preference_leakage_probe"
   ) {
     return attackName;
   }
 
-  return 'gradient-noise';
+  return "gradient-noise";
 };
 
 const mapDefenseType = (activeDefenses?: string[]): DefenseType => {
   const defenseName = activeDefenses?.[0];
   if (!defenseName) {
-    return 'none';
+    return "none";
   }
 
   if (
-    defenseName === 'robust_defense' ||
-    defenseName === 'robust' ||
-    defenseName === 'robust_aggregation_defense' ||
-    defenseName === 'norm_clip' ||
-    defenseName === 'update_filter' ||
-    defenseName === 'trimmed_mean' ||
-    defenseName === 'client_update_anomaly' ||
-    defenseName === 'client_update_anomaly_detector'
+    defenseName === "robust_defense" ||
+    defenseName === "robust" ||
+    defenseName === "robust_aggregation_defense" ||
+    defenseName === "norm_clip" ||
+    defenseName === "update_filter" ||
+    defenseName === "trimmed_mean" ||
+    defenseName === "client_update_anomaly" ||
+    defenseName === "client_update_anomaly_detector"
   ) {
     return defenseName;
   }
 
-  return 'anomaly-detection';
+  return "anomaly-detection";
 };
 
-const getSummaryRounds = (summary: ApiSummaryShape): ExperimentRoundSummary[] =>
+const getSummaryRounds = (
+  summary: ApiSummaryShape,
+): ExperimentRoundSummary[] =>
   Array.isArray(summary.round_summaries) ? summary.round_summaries : [];
 
-const getResultRounds = (result: ApiResultShape): ExperimentResultRoundMetric[] =>
+const getResultRounds = (
+  result: ApiResultShape,
+): ExperimentResultRoundMetric[] =>
   Array.isArray(result.round_metrics) ? result.round_metrics : [];
 
 const getParticipantCount = (counts: Array<number | null | undefined>) => {
@@ -451,7 +515,7 @@ const getParticipantCount = (counts: Array<number | null | undefined>) => {
 const readEvalMetric = (
   finalEval: unknown,
   metadata: Record<string, unknown> | undefined,
-  metric: 'recall' | 'ndcg',
+  metric: "recall" | "ndcg",
   cutoff: 20 | 50,
   roundSummaries?: ExperimentRoundSummary[],
   roundMetrics?: ExperimentResultRoundMetric[],
@@ -466,7 +530,9 @@ const readEvalMetric = (
   });
 };
 
-const buildPreviewBarsFromValues = (values: Array<number | null | undefined>) => {
+const buildPreviewBarsFromValues = (
+  values: Array<number | null | undefined>,
+) => {
   const normalized = values
     .map((value) => Number(value ?? 0))
     .filter((value) => Number.isFinite(value) && value > 0)
@@ -478,18 +544,37 @@ const buildPreviewBarsFromValues = (values: Array<number | null | undefined>) =>
   }
 
   const base = Math.max(12, Math.min(100, Math.round(0.1 * 100)));
-  return [Math.max(12, base - 18), Math.max(16, base - 10), Math.max(20, base - 4), base];
+  return [
+    Math.max(12, base - 18),
+    Math.max(16, base - 10),
+    Math.max(20, base - 4),
+    base,
+  ];
 };
 
 const buildSummaryPreviewBars = (summary: ApiSummaryShape) => {
-  const roundValues = getSummaryRounds(summary).map((round) => round.test_score ?? round.valid_score ?? 0);
+  const roundValues = getSummaryRounds(summary).map(
+    (round) => round.test_score ?? round.valid_score ?? 0,
+  );
   if (roundValues.length) {
     return buildPreviewBarsFromValues(roundValues);
   }
 
   return buildPreviewBarsFromValues([
-    readEvalMetric(summary.final_eval, summary.metadata, 'recall', 50, getSummaryRounds(summary)) ??
-      readEvalMetric(summary.final_eval, summary.metadata, 'ndcg', 50, getSummaryRounds(summary)) ??
+    readEvalMetric(
+      summary.final_eval,
+      summary.metadata,
+      "recall",
+      50,
+      getSummaryRounds(summary),
+    ) ??
+      readEvalMetric(
+        summary.final_eval,
+        summary.metadata,
+        "ndcg",
+        50,
+        getSummaryRounds(summary),
+      ) ??
       summary.final_eval?.recall20 ??
       summary.final_eval?.ndcg20 ??
       0.1,
@@ -497,14 +582,30 @@ const buildSummaryPreviewBars = (summary: ApiSummaryShape) => {
 };
 
 const buildResultPreviewBars = (result: ApiResultShape) => {
-  const roundValues = getResultRounds(result).map((round) => round.test_score ?? round.valid_score ?? 0);
+  const roundValues = getResultRounds(result).map(
+    (round) => round.test_score ?? round.valid_score ?? 0,
+  );
   if (roundValues.length) {
     return buildPreviewBarsFromValues(roundValues);
   }
 
   return buildPreviewBarsFromValues([
-    readEvalMetric(result.final_eval, result.metadata, 'recall', 50, undefined, getResultRounds(result)) ??
-      readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50, undefined, getResultRounds(result)) ??
+    readEvalMetric(
+      result.final_eval,
+      result.metadata,
+      "recall",
+      50,
+      undefined,
+      getResultRounds(result),
+    ) ??
+      readEvalMetric(
+        result.final_eval,
+        result.metadata,
+        "ndcg",
+        50,
+        undefined,
+        getResultRounds(result),
+      ) ??
       result.final_eval?.recall20 ??
       result.final_eval?.ndcg20 ??
       0.1,
@@ -512,14 +613,18 @@ const buildResultPreviewBars = (result: ApiResultShape) => {
 };
 
 const getNestedMetricCandidate = (value: unknown, fields: string[]): number => {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== "object") {
     return 0;
   }
 
   const record = value as Record<string, unknown>;
-  const directMax = fields.reduce((fieldMax, field) => Math.max(fieldMax, Number(record[field] ?? 0)), 0);
+  const directMax = fields.reduce(
+    (fieldMax, field) => Math.max(fieldMax, Number(record[field] ?? 0)),
+    0,
+  );
   const childMax = Object.values(record).reduce<number>(
-    (maxValue, child) => Math.max(maxValue, getNestedMetricCandidate(child, fields)),
+    (maxValue, child) =>
+      Math.max(maxValue, getNestedMetricCandidate(child, fields)),
     0,
   );
   const candidate = Math.max(directMax, childMax);
@@ -528,7 +633,7 @@ const getNestedMetricCandidate = (value: unknown, fields: string[]): number => {
 
 const getMaxNestedMetricCount = (
   rounds: ExperimentResultRoundMetric[],
-  bucket: 'attack_metrics' | 'defense_metrics',
+  bucket: "attack_metrics" | "defense_metrics",
   fields: string[],
 ) =>
   rounds.reduce((maxValue, round) => {
@@ -538,7 +643,8 @@ const getMaxNestedMetricCount = (
     }
 
     const roundMax = Object.values(metrics).reduce(
-      (valueMax, value) => Math.max(valueMax, getNestedMetricCandidate(value, fields)),
+      (valueMax, value) =>
+        Math.max(valueMax, getNestedMetricCandidate(value, fields)),
       0,
     );
 
@@ -552,50 +658,94 @@ const countPrivacyObservationRounds = (rounds: ExperimentResultRoundMetric[]) =>
   }).length;
 
 const buildSummaryText = (summary: ApiSummaryShape) => {
-  const mode = summary.experiment_mode || 'baseline';
-  const scenarioTags = summary.scenario_tags?.length ? summary.scenario_tags.join(' / ') : '未标注';
-  const attackGroups = formatAttackSemanticGroups(summary.active_attacks, summary.attack_taxonomy as AttackTaxonomyMap | undefined);
+  const mode = summary.experiment_mode || "baseline";
+  const scenarioTags = summary.scenario_tags?.length
+    ? summary.scenario_tags.join(" / ")
+    : "未标注";
+  const attackGroups = formatAttackSemanticGroups(
+    summary.active_attacks,
+    summary.attack_taxonomy as AttackTaxonomyMap | undefined,
+  );
   const defenseGroups = formatDefenseSemanticGroups(summary.active_defenses);
   const privacyCount = summary.active_privacy_metrics?.length ?? 0;
-  const maliciousCount = summary.malicious_client_summary?.unique_malicious_client_count ?? 0;
+  const maliciousCount =
+    summary.malicious_client_summary?.unique_malicious_client_count ?? 0;
   const roundCount = getSummaryRounds(summary).length;
   const rounds = getSummaryRounds(summary);
-  const recall50 = readEvalMetric(summary.final_eval, summary.metadata, 'recall', 50, rounds);
-  const ndcg50 = readEvalMetric(summary.final_eval, summary.metadata, 'ndcg', 50, rounds);
+  const recall50 = readEvalMetric(
+    summary.final_eval,
+    summary.metadata,
+    "recall",
+    50,
+    rounds,
+  );
+  const ndcg50 = readEvalMetric(
+    summary.final_eval,
+    summary.metadata,
+    "ndcg",
+    50,
+    rounds,
+  );
 
-  return `实验场景：${mode}；场景标签：${scenarioTags}；投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@50=${recall50?.toFixed(3) ?? '--'}，NDCG@50=${ndcg50?.toFixed(3) ?? '--'}。`;
+  return `实验场景：${mode}；场景标签：${scenarioTags}；投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，共记录 ${roundCount} 轮摘要。最终 Recall@50=${recall50?.toFixed(3) ?? "--"}，NDCG@50=${ndcg50?.toFixed(3) ?? "--"}。`;
 };
 
 const buildResultText = (result: ApiResultShape) => {
-  const mode = result.experiment_mode || 'baseline';
-  const scenarioTags = result.scenario_tags?.length ? result.scenario_tags.join(' / ') : '未标注';
+  const mode = result.experiment_mode || "baseline";
+  const scenarioTags = result.scenario_tags?.length
+    ? result.scenario_tags.join(" / ")
+    : "未标注";
   const roundCount = getResultRounds(result).length;
-  const attackGroups = formatAttackSemanticGroups(result.active_attacks, result.metadata?.attack_taxonomy as AttackTaxonomyMap | undefined);
+  const attackGroups = formatAttackSemanticGroups(
+    result.active_attacks,
+    result.metadata?.attack_taxonomy as AttackTaxonomyMap | undefined,
+  );
   const defenseGroups = formatDefenseSemanticGroups(result.active_defenses);
   const privacyCount = result.active_privacy_metrics?.length ?? 0;
   const maliciousSummary = result.metadata?.malicious_client_summary;
-  const maliciousCount = maliciousSummary?.unique_malicious_client_count ?? result.malicious_clients?.length ?? 0;
-  const attackedCount = getMaxNestedMetricCount(getResultRounds(result), 'attack_metrics', [
-    'attacked_client_count',
-    'poisoned_client_count',
-  ]);
-  const clippedCount = getMaxNestedMetricCount(getResultRounds(result), 'defense_metrics', [
-    'clipped_client_count',
-    'total_clipped_clients',
-  ]);
-  const filteredCount = getMaxNestedMetricCount(getResultRounds(result), 'defense_metrics', [
-    'filtered_client_count',
-    'total_filtered_clients',
-  ]);
-  const trimCount = getMaxNestedMetricCount(getResultRounds(result), 'defense_metrics', [
-    'effective_trim_count',
-    'trimmed_client_count',
-  ]);
+  const maliciousCount =
+    maliciousSummary?.unique_malicious_client_count ??
+    result.malicious_clients?.length ??
+    0;
+  const attackedCount = getMaxNestedMetricCount(
+    getResultRounds(result),
+    "attack_metrics",
+    ["attacked_client_count", "poisoned_client_count"],
+  );
+  const clippedCount = getMaxNestedMetricCount(
+    getResultRounds(result),
+    "defense_metrics",
+    ["clipped_client_count", "total_clipped_clients"],
+  );
+  const filteredCount = getMaxNestedMetricCount(
+    getResultRounds(result),
+    "defense_metrics",
+    ["filtered_client_count", "total_filtered_clients"],
+  );
+  const trimCount = getMaxNestedMetricCount(
+    getResultRounds(result),
+    "defense_metrics",
+    ["effective_trim_count", "trimmed_client_count"],
+  );
   const privacyRounds = countPrivacyObservationRounds(getResultRounds(result));
-  const recall50 = readEvalMetric(result.final_eval, result.metadata, 'recall', 50, undefined, getResultRounds(result));
-  const ndcg50 = readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50, undefined, getResultRounds(result));
+  const recall50 = readEvalMetric(
+    result.final_eval,
+    result.metadata,
+    "recall",
+    50,
+    undefined,
+    getResultRounds(result),
+  );
+  const ndcg50 = readEvalMetric(
+    result.final_eval,
+    result.metadata,
+    "ndcg",
+    50,
+    undefined,
+    getResultRounds(result),
+  );
 
-  return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，最大过滤客户端 ${filteredCount} 个，截尾处理计数 ${trimCount}，隐私观测命中 ${privacyRounds} 轮。最终 Recall@50=${recall50?.toFixed(3) ?? '--'}，NDCG@50=${ndcg50?.toFixed(3) ?? '--'}。`;
+  return `实验场景：${mode}；场景标签：${scenarioTags}；共记录 ${roundCount} 轮真实结果。投毒攻击：${attackGroups.poisoningLabel}；隐私泄露观测：${attackGroups.privacyProbeLabel}；鲁棒防御：${defenseGroups.robustLabel}；防御检测：${defenseGroups.observationLabel}；观测模块 ${privacyCount} 个；恶意客户端占位 ${maliciousCount} 个，最大攻击命中客户端 ${attackedCount} 个，最大裁剪客户端 ${clippedCount} 个，最大过滤客户端 ${filteredCount} 个，截尾处理计数 ${trimCount}，隐私观测命中 ${privacyRounds} 轮。最终 Recall@50=${recall50?.toFixed(3) ?? "--"}，NDCG@50=${ndcg50?.toFixed(3) ?? "--"}。`;
 };
 
 const buildApiConfigFromSummary = (
@@ -623,16 +773,26 @@ const buildApiConfigFromSummary = (
     defenseType,
     enabledDefenses: activeDefenses,
     enabledPrivacyMetrics: activePrivacyMetrics,
-    clientCount: getParticipantCount(rounds.map((round) => round.num_participants)),
+    clientCount: getParticipantCount(
+      rounds.map((round) => round.num_participants),
+    ),
     clientSamplingRate: trainingParams.clientSamplingRate ?? 1,
-    totalRounds: (trainingParams.totalRounds ?? rounds.length) || defaultTrainConfig.totalRounds,
-    poisoningRatio: summary.malicious_client_summary?.ratio ?? defaultTrainConfig.poisoningRatio,
-    learningRate: trainingParams.learningRate ?? defaultTrainConfig.learningRate,
+    totalRounds:
+      (trainingParams.totalRounds ?? rounds.length) ||
+      defaultTrainConfig.totalRounds,
+    poisoningRatio:
+      summary.malicious_client_summary?.ratio ??
+      defaultTrainConfig.poisoningRatio,
+    learningRate:
+      trainingParams.learningRate ?? defaultTrainConfig.learningRate,
     advanced: {
       ...defaultTrainConfig.advanced,
-      localEpochs: trainingParams.localEpochs ?? defaultTrainConfig.advanced.localEpochs,
-      optimizer: trainingParams.optimizer ?? defaultTrainConfig.advanced.optimizer,
-      weightDecay: trainingParams.weightDecay ?? defaultTrainConfig.advanced.weightDecay,
+      localEpochs:
+        trainingParams.localEpochs ?? defaultTrainConfig.advanced.localEpochs,
+      optimizer:
+        trainingParams.optimizer ?? defaultTrainConfig.advanced.optimizer,
+      weightDecay:
+        trainingParams.weightDecay ?? defaultTrainConfig.advanced.weightDecay,
     },
   };
 };
@@ -662,16 +822,26 @@ const buildApiConfigFromResult = (
     defenseType,
     enabledDefenses: activeDefenses,
     enabledPrivacyMetrics: activePrivacyMetrics,
-    clientCount: getParticipantCount(rounds.map((round) => round.num_participants)),
+    clientCount: getParticipantCount(
+      rounds.map((round) => round.num_participants),
+    ),
     clientSamplingRate: trainingParams.clientSamplingRate ?? 1,
-    totalRounds: (trainingParams.totalRounds ?? rounds.length) || defaultTrainConfig.totalRounds,
-    poisoningRatio: result.metadata?.malicious_client_summary?.ratio ?? defaultTrainConfig.poisoningRatio,
-    learningRate: trainingParams.learningRate ?? defaultTrainConfig.learningRate,
+    totalRounds:
+      (trainingParams.totalRounds ?? rounds.length) ||
+      defaultTrainConfig.totalRounds,
+    poisoningRatio:
+      result.metadata?.malicious_client_summary?.ratio ??
+      defaultTrainConfig.poisoningRatio,
+    learningRate:
+      trainingParams.learningRate ?? defaultTrainConfig.learningRate,
     advanced: {
       ...defaultTrainConfig.advanced,
-      localEpochs: trainingParams.localEpochs ?? defaultTrainConfig.advanced.localEpochs,
-      optimizer: trainingParams.optimizer ?? defaultTrainConfig.advanced.optimizer,
-      weightDecay: trainingParams.weightDecay ?? defaultTrainConfig.advanced.weightDecay,
+      localEpochs:
+        trainingParams.localEpochs ?? defaultTrainConfig.advanced.localEpochs,
+      optimizer:
+        trainingParams.optimizer ?? defaultTrainConfig.advanced.optimizer,
+      weightDecay:
+        trainingParams.weightDecay ?? defaultTrainConfig.advanced.weightDecay,
     },
   };
 };
@@ -689,23 +859,51 @@ const buildConfigSummary = (config: TrainConfig) => ({
 
 const mapApiSummaryToHistoryRecord = (
   summary: ApiSummaryShape,
-  detailLevel: HistoryRecord['detailLevel'] = 'list',
+  detailLevel: HistoryRecord["detailLevel"] = "list",
   csvConfig?: Record<string, unknown>,
 ): HistoryRecord => {
   const config = buildApiConfigFromSummary(summary, csvConfig);
   const rounds = getSummaryRounds(summary);
   const lastRound = rounds[rounds.length - 1];
-  const recall20 = readEvalMetric(summary.final_eval, summary.metadata, 'recall', 20, rounds);
-  const recall50 = readEvalMetric(summary.final_eval, summary.metadata, 'recall', 50, rounds);
-  const ndcg20 = readEvalMetric(summary.final_eval, summary.metadata, 'ndcg', 20, rounds);
-  const ndcg50 = readEvalMetric(summary.final_eval, summary.metadata, 'ndcg', 50, rounds);
+  const recall20 = readEvalMetric(
+    summary.final_eval,
+    summary.metadata,
+    "recall",
+    20,
+    rounds,
+  );
+  const recall50 = readEvalMetric(
+    summary.final_eval,
+    summary.metadata,
+    "recall",
+    50,
+    rounds,
+  );
+  const ndcg20 = readEvalMetric(
+    summary.final_eval,
+    summary.metadata,
+    "ndcg",
+    20,
+    rounds,
+  );
+  const ndcg50 = readEvalMetric(
+    summary.final_eval,
+    summary.metadata,
+    "ndcg",
+    50,
+    rounds,
+  );
 
   return {
     id: `api::${summary.experiment_key}`,
     taskId: `api::${summary.experiment_key}`,
     name: buildApiRecordTitle(summary),
     sourceName: buildApiSourceName(summary),
-    createdAt: parseExperimentTimestamp(summary.experiment_id, summary.file_name, summary.relative_path),
+    createdAt: parseExperimentTimestamp(
+      summary.experiment_id,
+      summary.file_name,
+      summary.relative_path,
+    ),
     dataset: summary.dataset || config.dataset,
     model: summary.model || config.model,
     mode: config.mode,
@@ -730,13 +928,13 @@ const mapApiSummaryToHistoryRecord = (
       ndcg50,
       loss: summary.final_eval?.loss ?? lastRound?.avg_train_loss ?? undefined,
     },
-    status: 'completed',
+    status: "completed",
     config,
     configSummary: buildConfigSummary(config),
     summary: buildSummaryText(summary),
     previewBars: buildSummaryPreviewBars(summary),
     detailLevel,
-    dataSource: 'api',
+    dataSource: "api",
   };
 };
 
@@ -747,17 +945,49 @@ const mapApiResultToHistoryRecord = (
   const config = buildApiConfigFromResult(result, csvConfig);
   const rounds = getResultRounds(result);
   const lastRound = rounds[rounds.length - 1];
-  const recall20 = readEvalMetric(result.final_eval, result.metadata, 'recall', 20, undefined, rounds);
-  const recall50 = readEvalMetric(result.final_eval, result.metadata, 'recall', 50, undefined, rounds);
-  const ndcg20 = readEvalMetric(result.final_eval, result.metadata, 'ndcg', 20, undefined, rounds);
-  const ndcg50 = readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50, undefined, rounds);
+  const recall20 = readEvalMetric(
+    result.final_eval,
+    result.metadata,
+    "recall",
+    20,
+    undefined,
+    rounds,
+  );
+  const recall50 = readEvalMetric(
+    result.final_eval,
+    result.metadata,
+    "recall",
+    50,
+    undefined,
+    rounds,
+  );
+  const ndcg20 = readEvalMetric(
+    result.final_eval,
+    result.metadata,
+    "ndcg",
+    20,
+    undefined,
+    rounds,
+  );
+  const ndcg50 = readEvalMetric(
+    result.final_eval,
+    result.metadata,
+    "ndcg",
+    50,
+    undefined,
+    rounds,
+  );
 
   return {
     id: `api::${result.experiment_key}`,
     taskId: `api::${result.experiment_key}`,
     name: buildApiRecordTitle(result),
     sourceName: buildApiSourceName(result),
-    createdAt: parseExperimentTimestamp(result.experiment_id, result.file_name, result.relative_path),
+    createdAt: parseExperimentTimestamp(
+      result.experiment_id,
+      result.file_name,
+      result.relative_path,
+    ),
     dataset: result.dataset || config.dataset,
     model: result.model || config.model,
     mode: config.mode,
@@ -782,13 +1012,13 @@ const mapApiResultToHistoryRecord = (
       ndcg50,
       loss: result.final_eval?.loss ?? lastRound?.avg_train_loss ?? undefined,
     },
-    status: 'completed',
+    status: "completed",
     config,
     configSummary: buildConfigSummary(config),
     summary: buildResultText(result),
     previewBars: buildResultPreviewBars(result),
-    detailLevel: 'result',
-    dataSource: 'api',
+    detailLevel: "result",
+    dataSource: "api",
   };
 };
 
@@ -797,7 +1027,9 @@ const enrichSummaryRecordWithResultMetrics = async (
   record: HistoryRecord,
 ): Promise<HistoryRecord> => {
   try {
-    const response = await apiGet<ExperimentResultResponse>(`/experiments/${encodeURIComponent(summary.experiment_key)}/result`);
+    const response = await apiGet<ExperimentResultResponse>(
+      `/experiments/${encodeURIComponent(summary.experiment_key)}/result`,
+    );
     const result: ApiResultShape = {
       experiment_key: response.experiment_key,
       file_name: response.file_name,
@@ -810,10 +1042,38 @@ const enrichSummaryRecordWithResultMetrics = async (
       ...record,
       metrics: {
         ...record.metrics,
-        recall20: readEvalMetric(result.final_eval, result.metadata, 'recall', 20, undefined, rounds),
-        recall50: readEvalMetric(result.final_eval, result.metadata, 'recall', 50, undefined, rounds),
-        ndcg20: readEvalMetric(result.final_eval, result.metadata, 'ndcg', 20, undefined, rounds),
-        ndcg50: readEvalMetric(result.final_eval, result.metadata, 'ndcg', 50, undefined, rounds),
+        recall20: readEvalMetric(
+          result.final_eval,
+          result.metadata,
+          "recall",
+          20,
+          undefined,
+          rounds,
+        ),
+        recall50: readEvalMetric(
+          result.final_eval,
+          result.metadata,
+          "recall",
+          50,
+          undefined,
+          rounds,
+        ),
+        ndcg20: readEvalMetric(
+          result.final_eval,
+          result.metadata,
+          "ndcg",
+          20,
+          undefined,
+          rounds,
+        ),
+        ndcg50: readEvalMetric(
+          result.final_eval,
+          result.metadata,
+          "ndcg",
+          50,
+          undefined,
+          rounds,
+        ),
         loss: result.final_eval?.loss ?? record.metrics.loss,
       },
       previewBars: buildResultPreviewBars(result),
@@ -824,15 +1084,17 @@ const enrichSummaryRecordWithResultMetrics = async (
 };
 
 const loadHistoryFromApi = async (): Promise<HistoryListResponse> => {
-  const response = await apiGet<ExperimentSummaryListResponse>('/experiments/summaries');
+  const response = await apiGet<ExperimentSummaryListResponse>(
+    "/experiments/summaries",
+  );
   const records = response.items.map((summary) => {
     const recordId = `api::${summary.experiment_key}`;
     const cachedSummary = apiHistorySummaryCache.get(recordId);
-    return cachedSummary ?? mapApiSummaryToHistoryRecord(summary, 'list');
+    return cachedSummary ?? mapApiSummaryToHistoryRecord(summary, "list");
   });
 
   if (!records.length) {
-    throw new Error('API returned no experiment summaries');
+    throw new Error("API returned no experiment summaries");
   }
 
   apiHistoryCache.clear();
@@ -843,17 +1105,21 @@ const loadHistoryFromApi = async (): Promise<HistoryListResponse> => {
   return {
     records,
     total: response.count,
-    source: 'api',
+    source: "api",
   };
 };
 
-const loadHistorySummaryFromApi = async (recordId: string): Promise<HistoryRecord> => {
+const loadHistorySummaryFromApi = async (
+  recordId: string,
+): Promise<HistoryRecord> => {
   const experimentKey = extractExperimentKeyFromRecordId(recordId);
   if (!experimentKey) {
     throw new Error(`Record ${recordId} is not an API-backed history item`);
   }
 
-  const response = await apiGet<ExperimentSummaryResponse>(`/experiments/${encodeURIComponent(experimentKey)}/summary`);
+  const response = await apiGet<ExperimentSummaryResponse>(
+    `/experiments/${encodeURIComponent(experimentKey)}/summary`,
+  );
   const csvConfig = await loadHistoryCsvConfigFromApi(experimentKey);
   const upgradedResult = apiHistoryResultCache.get(recordId);
   if (upgradedResult) {
@@ -867,7 +1133,7 @@ const loadHistorySummaryFromApi = async (recordId: string): Promise<HistoryRecor
       relative_path: response.relative_path,
       ...response.summary,
     },
-    'summary',
+    "summary",
     csvConfig,
   );
 
@@ -877,20 +1143,27 @@ const loadHistorySummaryFromApi = async (recordId: string): Promise<HistoryRecor
   return record;
 };
 
-const loadHistoryResultFromApi = async (recordId: string): Promise<HistoryRecord> => {
+const loadHistoryResultFromApi = async (
+  recordId: string,
+): Promise<HistoryRecord> => {
   const experimentKey = extractExperimentKeyFromRecordId(recordId);
   if (!experimentKey) {
     throw new Error(`Record ${recordId} is not an API-backed history item`);
   }
 
-  const response = await apiGet<ExperimentResultResponse>(`/experiments/${encodeURIComponent(experimentKey)}/result`);
+  const response = await apiGet<ExperimentResultResponse>(
+    `/experiments/${encodeURIComponent(experimentKey)}/result`,
+  );
   const csvConfig = await loadHistoryCsvConfigFromApi(experimentKey);
-  const record = mapApiResultToHistoryRecord({
-    experiment_key: response.experiment_key,
-    file_name: response.file_name,
-    relative_path: response.relative_path,
-    ...response.result,
-  }, csvConfig);
+  const record = mapApiResultToHistoryRecord(
+    {
+      experiment_key: response.experiment_key,
+      file_name: response.file_name,
+      relative_path: response.relative_path,
+      ...response.result,
+    },
+    csvConfig,
+  );
 
   apiHistoryResultCache.set(record.id, record);
   apiHistoryCache.set(record.id, record);
@@ -903,12 +1176,15 @@ export const getHistoryList = async (): Promise<HistoryListResponse> => {
     return await loadHistoryFromApi();
   } catch (error) {
     return simulateRequest(() => {
-      const records = mockStore.getHistoryRecords().map((record) => ({...record, dataSource: 'mock' as const}));
+      const records = mockStore
+        .getHistoryRecords()
+        .map((record) => ({ ...record, dataSource: "mock" as const }));
       return {
         records,
         total: records.length,
-        source: 'mock' as const,
-        fallbackReason: error instanceof Error ? error.message : 'API unavailable',
+        source: "mock" as const,
+        fallbackReason:
+          error instanceof Error ? error.message : "API unavailable",
       };
     });
   }
@@ -917,28 +1193,38 @@ export const getHistoryList = async (): Promise<HistoryListResponse> => {
 export const downloadHistoryCsv = async (id: string): Promise<void> => {
   const experimentKey = extractExperimentKeyFromRecordId(id);
   if (!experimentKey) {
-    throw new Error('Mock 记录暂无真实 CSV 原始数据。');
+    throw new Error("Mock 记录暂无真实 CSV 原始数据。");
   }
 
-  const response = await fetch(buildApiUrl(`/experiments/${encodeURIComponent(experimentKey)}/csv`), {
-    headers: {
-      Accept: 'text/csv',
+  const response = await fetch(
+    buildApiUrl(`/experiments/${encodeURIComponent(experimentKey)}/csv`),
+    {
+      headers: {
+        Accept: "text/csv",
+      },
     },
-  });
+  );
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`CSV 下载失败：${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`);
+    throw new Error(
+      `CSV 下载失败：${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`,
+    );
   }
 
   const blob = await response.blob();
-  const keyParts = experimentKey.split('__');
-  const fallbackName = `${keyParts[keyParts.length - 1] || 'experiment'}.csv`;
-  const fileName = getCsvFileNameFromHeader(response.headers.get('content-disposition'), fallbackName);
+  const keyParts = experimentKey.split("__");
+  const fallbackName = `${keyParts[keyParts.length - 1] || "experiment"}.csv`;
+  const fileName = getCsvFileNameFromHeader(
+    response.headers.get("content-disposition"),
+    fallbackName,
+  );
   triggerBrowserDownload(blob, fileName);
 };
 
-export const getHistorySummaryPreview = async (id: string): Promise<HistoryRecord> => {
+export const getHistorySummaryPreview = async (
+  id: string,
+): Promise<HistoryRecord> => {
   const cachedResultRecord = apiHistoryResultCache.get(id);
   if (cachedResultRecord) {
     return structuredClone(cachedResultRecord);
@@ -949,7 +1235,7 @@ export const getHistorySummaryPreview = async (id: string): Promise<HistoryRecor
     return structuredClone(cachedApiRecord);
   }
 
-  if (id.startsWith('api::')) {
+  if (id.startsWith("api::")) {
     try {
       const record = await loadHistorySummaryFromApi(id);
       return structuredClone(record);
@@ -969,17 +1255,19 @@ export const getHistorySummaryPreview = async (id: string): Promise<HistoryRecor
       throw new Error(`未找到历史实验 ${id}`);
     }
 
-    return {...record, dataSource: 'mock' as const};
+    return { ...record, dataSource: "mock" as const };
   });
 };
 
-export const getHistoryResultPreview = async (id: string): Promise<HistoryRecord> => {
+export const getHistoryResultPreview = async (
+  id: string,
+): Promise<HistoryRecord> => {
   const cachedResultRecord = apiHistoryResultCache.get(id);
   if (cachedResultRecord) {
     return structuredClone(cachedResultRecord);
   }
 
-  if (id.startsWith('api::')) {
+  if (id.startsWith("api::")) {
     const record = await loadHistoryResultFromApi(id);
     return structuredClone(record);
   }
@@ -990,23 +1278,30 @@ export const getHistoryResultPreview = async (id: string): Promise<HistoryRecord
       throw new Error(`未找到历史实验 ${id}`);
     }
 
-    return {...record, dataSource: 'mock' as const};
+    return { ...record, dataSource: "mock" as const };
   });
 };
 
-export const deleteHistory = async (id: string): Promise<{success: boolean; id: string}> => {
+export const deleteHistory = async (
+  id: string,
+): Promise<{ success: boolean; id: string }> => {
   return simulateRequest(() => {
     apiHistoryCache.delete(id);
     apiHistorySummaryCache.delete(id);
     apiHistoryResultCache.delete(id);
     mockStore.deleteHistoryRecord(id);
-    return {success: true, id};
+    return { success: true, id };
   });
 };
 
-export const reuseHistoryConfig = async (id: string): Promise<ReuseHistoryResponse> => {
+export const reuseHistoryConfig = async (
+  id: string,
+): Promise<ReuseHistoryResponse> => {
   return simulateRequest(() => {
-    const apiRecord = apiHistoryResultCache.get(id) ?? apiHistorySummaryCache.get(id) ?? apiHistoryCache.get(id);
+    const apiRecord =
+      apiHistoryResultCache.get(id) ??
+      apiHistorySummaryCache.get(id) ??
+      apiHistoryCache.get(id);
     if (apiRecord) {
       return {
         success: true,

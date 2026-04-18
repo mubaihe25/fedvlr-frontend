@@ -1,4 +1,4 @@
-export type ExperimentMetricName = 'recall' | 'ndcg';
+export type ExperimentMetricName = "recall" | "ndcg";
 export type ExperimentMetricCutoff = 20 | 50;
 
 interface BestMetricInput {
@@ -11,14 +11,14 @@ interface BestMetricInput {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const asFiniteNumber = (value: unknown) => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     const parsed = Number(value.trim());
     return Number.isFinite(parsed) ? parsed : undefined;
   }
@@ -26,7 +26,8 @@ const asFiniteNumber = (value: unknown) => {
   return undefined;
 };
 
-const normalizeMetricKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+const normalizeMetricKey = (key: string) =>
+  key.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 export const readExperimentMetricValue = (
   source: unknown,
@@ -63,23 +64,25 @@ const readNested = (source: unknown, path: string[]) =>
     return current[key];
   }, source);
 
-export const getExplicitMainMetricKey = (metadata?: Record<string, unknown>) => {
+export const getExplicitMainMetricKey = (
+  metadata?: Record<string, unknown>,
+) => {
   const candidatePaths = [
-    ['valid_metric'],
-    ['validMetric'],
-    ['training_config', 'valid_metric'],
-    ['training_config', 'validMetric'],
-    ['trainingConfig', 'valid_metric'],
-    ['trainingConfig', 'validMetric'],
-    ['mapped_config', 'valid_metric'],
-    ['mapped_config', 'validMetric'],
-    ['config', 'valid_metric'],
-    ['config', 'validMetric'],
+    ["valid_metric"],
+    ["validMetric"],
+    ["training_config", "valid_metric"],
+    ["training_config", "validMetric"],
+    ["trainingConfig", "valid_metric"],
+    ["trainingConfig", "validMetric"],
+    ["mapped_config", "valid_metric"],
+    ["mapped_config", "validMetric"],
+    ["config", "valid_metric"],
+    ["config", "validMetric"],
   ];
 
   for (const path of candidatePaths) {
     const value = readNested(metadata, path);
-    if (typeof value === 'string' && value.trim()) {
+    if (typeof value === "string" && value.trim()) {
       return value.trim();
     }
   }
@@ -94,13 +97,16 @@ const collectMetricFromSources = (
 ) =>
   sources
     .map((source) => readExperimentMetricValue(source, metric, cutoff))
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    .filter(
+      (value): value is number =>
+        typeof value === "number" && Number.isFinite(value),
+    );
 
 const collectRoundMetricValues = (
   roundMetrics: unknown[] | undefined,
   metric: ExperimentMetricName,
   cutoff: ExperimentMetricCutoff,
-  kind: 'test' | 'valid',
+  kind: "test" | "valid",
 ) => {
   const values: number[] = [];
 
@@ -110,13 +116,22 @@ const collectRoundMetricValues = (
     }
 
     const extra = isRecord(round.extra) ? round.extra : undefined;
-    const sources = kind === 'test'
-      ? [round.test_result, round.best_test_result, extra?.test_result, extra?.best_test_result]
-      : [round.valid_result, round.best_valid_result, extra?.valid_result, extra?.best_valid_result];
+    const sources =
+      kind === "test"
+        ? [
+            round.test_result,
+            round.best_test_result,
+            extra?.test_result,
+            extra?.best_test_result,
+          ]
+        : [
+            round.valid_result,
+            round.best_valid_result,
+            extra?.valid_result,
+            extra?.best_valid_result,
+          ];
 
-    values.push(
-      ...collectMetricFromSources(sources, metric, cutoff),
-    );
+    values.push(...collectMetricFromSources(sources, metric, cutoff));
   }
 
   return values;
@@ -127,10 +142,10 @@ const collectRoundSummaryScoreValues = (
   roundSummaries: unknown[] | undefined,
   metric: ExperimentMetricName,
   cutoff: ExperimentMetricCutoff,
-  kind: 'test' | 'valid',
+  kind: "test" | "valid",
 ) => {
   const explicitMetric = getExplicitMainMetricKey(metadata);
-  if (normalizeMetricKey(explicitMetric ?? '') !== `${metric}${cutoff}`) {
+  if (normalizeMetricKey(explicitMetric ?? "") !== `${metric}${cutoff}`) {
     return [];
   }
 
@@ -139,9 +154,14 @@ const collectRoundSummaryScoreValues = (
       if (!isRecord(round)) {
         return [];
       }
-      return [asFiniteNumber(kind === 'test' ? round.test_score : round.valid_score)];
+      return [
+        asFiniteNumber(kind === "test" ? round.test_score : round.valid_score),
+      ];
     })
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    .filter(
+      (value): value is number =>
+        typeof value === "number" && Number.isFinite(value),
+    );
 };
 
 export const getBestExperimentMetric = ({
@@ -153,19 +173,13 @@ export const getBestExperimentMetric = ({
   cutoff,
 }: BestMetricInput) => {
   const testExplicitValues = collectMetricFromSources(
-    [
-      metadata?.best_test_result,
-      metadata?.bestTestResult,
-    ],
+    [metadata?.best_test_result, metadata?.bestTestResult],
     metric,
     cutoff,
   );
 
   const validExplicitValues = collectMetricFromSources(
-    [
-      metadata?.best_valid_result,
-      metadata?.bestValidResult,
-    ],
+    [metadata?.best_valid_result, metadata?.bestValidResult],
     metric,
     cutoff,
   );
@@ -181,10 +195,32 @@ export const getBestExperimentMetric = ({
     cutoff,
   );
 
-  const testRoundValues = collectRoundMetricValues(roundMetrics, metric, cutoff, 'test');
-  const validRoundValues = collectRoundMetricValues(roundMetrics, metric, cutoff, 'valid');
-  const testSummaryValues = collectRoundSummaryScoreValues(metadata, roundSummaries, metric, cutoff, 'test');
-  const validSummaryValues = collectRoundSummaryScoreValues(metadata, roundSummaries, metric, cutoff, 'valid');
+  const testRoundValues = collectRoundMetricValues(
+    roundMetrics,
+    metric,
+    cutoff,
+    "test",
+  );
+  const validRoundValues = collectRoundMetricValues(
+    roundMetrics,
+    metric,
+    cutoff,
+    "valid",
+  );
+  const testSummaryValues = collectRoundSummaryScoreValues(
+    metadata,
+    roundSummaries,
+    metric,
+    cutoff,
+    "test",
+  );
+  const validSummaryValues = collectRoundSummaryScoreValues(
+    metadata,
+    roundSummaries,
+    metric,
+    cutoff,
+    "valid",
+  );
 
   const finalValues = collectMetricFromSources(
     [
@@ -197,12 +233,20 @@ export const getBestExperimentMetric = ({
     cutoff,
   );
 
-  const testValues = [...testExplicitValues, ...testRoundValues, ...testSummaryValues];
+  const testValues = [
+    ...testExplicitValues,
+    ...testRoundValues,
+    ...testSummaryValues,
+  ];
   if (testValues.length) {
     return Math.max(...testValues);
   }
 
-  const validValues = [...validExplicitValues, ...validRoundValues, ...validSummaryValues];
+  const validValues = [
+    ...validExplicitValues,
+    ...validRoundValues,
+    ...validSummaryValues,
+  ];
   if (validValues.length) {
     return Math.max(...validValues);
   }
