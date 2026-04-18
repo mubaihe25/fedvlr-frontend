@@ -825,17 +825,11 @@ const enrichSummaryRecordWithResultMetrics = async (
 
 const loadHistoryFromApi = async (): Promise<HistoryListResponse> => {
   const response = await apiGet<ExperimentSummaryListResponse>('/experiments/summaries');
-  const records = await Promise.all(response.items.map(async (summary) => {
+  const records = response.items.map((summary) => {
     const recordId = `api::${summary.experiment_key}`;
-    const cachedResult = apiHistoryResultCache.get(recordId);
-    if (cachedResult) {
-      return cachedResult;
-    }
-
     const cachedSummary = apiHistorySummaryCache.get(recordId);
-    const record = cachedSummary ?? mapApiSummaryToHistoryRecord(summary, 'list');
-    return enrichSummaryRecordWithResultMetrics(summary, record);
-  }));
+    return cachedSummary ?? mapApiSummaryToHistoryRecord(summary, 'list');
+  });
 
   if (!records.length) {
     throw new Error('API returned no experiment summaries');
