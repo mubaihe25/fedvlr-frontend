@@ -100,6 +100,7 @@ const collectRoundMetricValues = (
   roundMetrics: unknown[] | undefined,
   metric: ExperimentMetricName,
   cutoff: ExperimentMetricCutoff,
+  kind: 'test' | 'valid',
 ) => {
   const values: number[] = [];
 
@@ -109,23 +110,12 @@ const collectRoundMetricValues = (
     }
 
     const extra = isRecord(round.extra) ? round.extra : undefined;
+    const sources = kind === 'test'
+      ? [round.test_result, round.best_test_result, extra?.test_result, extra?.best_test_result]
+      : [round.valid_result, round.best_valid_result, extra?.valid_result, extra?.best_valid_result];
+
     values.push(
-      ...collectMetricFromSources(
-        [
-          round,
-          round.valid_result,
-          round.test_result,
-          round.best_valid_result,
-          round.best_test_result,
-          extra,
-          extra?.valid_result,
-          extra?.test_result,
-          extra?.best_valid_result,
-          extra?.best_test_result,
-        ],
-        metric,
-        cutoff,
-      ),
+      ...collectMetricFromSources(sources, metric, cutoff),
     );
   }
 
@@ -137,6 +127,7 @@ const collectRoundSummaryScoreValues = (
   roundSummaries: unknown[] | undefined,
   metric: ExperimentMetricName,
   cutoff: ExperimentMetricCutoff,
+  kind: 'test' | 'valid',
 ) => {
   const explicitMetric = getExplicitMainMetricKey(metadata);
   if (normalizeMetricKey(explicitMetric ?? '') !== `${metric}${cutoff}`) {
@@ -148,7 +139,7 @@ const collectRoundSummaryScoreValues = (
       if (!isRecord(round)) {
         return [];
       }
-      return [asFiniteNumber(round.valid_score), asFiniteNumber(round.test_score)];
+      return [asFiniteNumber(kind === 'test' ? round.test_score : round.valid_score)];
     })
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
 };
@@ -161,12 +152,26 @@ export const getBestExperimentMetric = ({
   metric,
   cutoff,
 }: BestMetricInput) => {
-  const explicitBestValues = collectMetricFromSources(
+  const testExplicitValues = collectMetricFromSources(
     [
       metadata?.best_test_result,
       metadata?.bestTestResult,
+    ],
+    metric,
+    cutoff,
+  );
+
+  const validExplicitValues = collectMetricFromSources(
+    [
       metadata?.best_valid_result,
       metadata?.bestValidResult,
+    ],
+    metric,
+    cutoff,
+  );
+
+  const genericExplicitValues = collectMetricFromSources(
+    [
       metadata?.best_result,
       metadata?.bestResult,
       metadata?.final_result,
@@ -176,21 +181,10 @@ export const getBestExperimentMetric = ({
     cutoff,
   );
 
-  const roundValues = [
-    ...collectRoundMetricValues(roundMetrics, metric, cutoff),
-    ...collectRoundSummaryScoreValues(metadata, roundSummaries, metric, cutoff),
-  ];
-
-  // Round-level metrics are the source of truth for "best over the whole run".
-  // Some result files expose final/best snapshots that can be stale or not the
-  // maximum round value, so compare them instead of trusting the first snapshot.
-  if (roundValues.length) {
-    return Math.max(...roundValues, ...explicitBestValues);
-  }
-
-  if (explicitBestValues.length) {
-    return Math.max(...explicitBestValues);
-  }
+  const testRoundValues = collectRoundMetricValues(roundMetrics, metric, cutoff, 'test');
+  const validRoundValues = collectRoundMetricValues(roundMetrics, metric, cutoff, 'valid');
+  const testSummaryValues = collectRoundSummaryScoreValues(metadata, roundSummaries, metric, cutoff, 'test');
+  const validSummaryValues = collectRoundSummaryScoreValues(metadata, roundSummaries, metric, cutoff, 'valid');
 
   const finalValues = collectMetricFromSources(
     [
@@ -202,6 +196,20 @@ export const getBestExperimentMetric = ({
     metric,
     cutoff,
   );
+
+  const testValues = [...testExplicitValues, ...testRoundValues, ...testSummaryValues];
+  if (testValues.length) {
+    return Math.max(...testValues);
+  }
+
+  const validValues = [...validExplicitValues, ...validRoundValues, ...validSummaryValues];
+  if (validValues.length) {
+    return Math.max(...validValues);
+  }
+
+  if (genericExplicitValues.length) {
+    return Math.max(...genericExplicitValues);
+  }
 
   return finalValues.length ? Math.max(...finalValues) : undefined;
 };
