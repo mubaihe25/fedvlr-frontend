@@ -1,7 +1,7 @@
 export type ExperimentMetricName = "recall" | "ndcg";
 export type ExperimentMetricCutoff = 20 | 50;
 
-interface BestMetricInput {
+interface ExperimentMetricInput {
   finalEval?: unknown;
   metadata?: Record<string, unknown>;
   roundSummaries?: unknown[];
@@ -102,6 +102,42 @@ const collectMetricFromSources = (
         typeof value === "number" && Number.isFinite(value),
     );
 
+const readFirstMetricFromSources = (
+  sources: unknown[],
+  metric: ExperimentMetricName,
+  cutoff: ExperimentMetricCutoff,
+) => {
+  for (const source of sources) {
+    const value = readExperimentMetricValue(source, metric, cutoff);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+const tailWindowSize = (totalRounds: number) => {
+  if (totalRounds >= 100) {
+    return 20;
+  }
+  return Math.max(1, Math.ceil(totalRounds * 0.2));
+};
+
+const mean = (values: number[]) => {
+  if (!values.length) {
+    return undefined;
+  }
+  return values.reduce((total, value) => total + value, 0) / values.length;
+};
+
+const tailMean = (values: number[], totalRounds: number) => {
+  if (!values.length) {
+    return undefined;
+  }
+  const windowSize = Math.min(values.length, tailWindowSize(totalRounds || values.length));
+  return mean(values.slice(-windowSize));
+};
+
 const collectRoundMetricValues = (
   roundMetrics: unknown[] | undefined,
   metric: ExperimentMetricName,
@@ -131,7 +167,10 @@ const collectRoundMetricValues = (
             extra?.best_valid_result,
           ];
 
-    values.push(...collectMetricFromSources(sources, metric, cutoff));
+    const value = readFirstMetricFromSources(sources, metric, cutoff);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      values.push(value);
+    }
   }
 
   return values;
@@ -164,14 +203,14 @@ const collectRoundSummaryScoreValues = (
     );
 };
 
-export const getBestExperimentMetric = ({
+export const getTailMeanExperimentMetric = ({
   finalEval,
   metadata,
   roundSummaries,
   roundMetrics,
   metric,
   cutoff,
-}: BestMetricInput) => {
+}: ExperimentMetricInput) => {
   const testExplicitValues = collectMetricFromSources(
     [metadata?.best_test_result, metadata?.bestTestResult],
     metric,
@@ -221,6 +260,9 @@ export const getBestExperimentMetric = ({
     cutoff,
     "valid",
   );
+  const totalRoundCount =
+    Math.max(roundMetrics?.length ?? 0, roundSummaries?.length ?? 0) ||
+    Math.max(testRoundValues.length, validRoundValues.length, testSummaryValues.length, validSummaryValues.length);
 
   const finalValues = collectMetricFromSources(
     [
@@ -233,27 +275,29 @@ export const getBestExperimentMetric = ({
     cutoff,
   );
 
-  const testValues = [
-    ...testExplicitValues,
-    ...testRoundValues,
-    ...testSummaryValues,
-  ];
-  if (testValues.length) {
-    return Math.max(...testValues);
+  const testRoundLikeValues = testRoundValues.length ? testRoundValues : testSummaryValues;
+  if (testRoundLikeValues.length) {
+    return tailMean(testRoundLikeValues, totalRoundCount);
   }
 
-  const validValues = [
-    ...validExplicitValues,
-    ...validRoundValues,
-    ...validSummaryValues,
-  ];
-  if (validValues.length) {
-    return Math.max(...validValues);
+  const validRoundLikeValues = validRoundValues.length ? validRoundValues : validSummaryValues;
+  if (validRoundLikeValues.length) {
+    return tailMean(validRoundLikeValues, totalRoundCount);
+  }
+
+  if (testExplicitValues.length) {
+    return testExplicitValues[0];
+  }
+
+  if (validExplicitValues.length) {
+    return validExplicitValues[0];
   }
 
   if (genericExplicitValues.length) {
-    return Math.max(...genericExplicitValues);
+    return genericExplicitValues[0];
   }
 
-  return finalValues.length ? Math.max(...finalValues) : undefined;
+  return finalValues.length ? finalValues[0] : undefined;
 };
+
+export const getBestExperimentMetric = getTailMeanExperimentMetric;

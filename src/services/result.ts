@@ -1,6 +1,6 @@
 import {mockAnalysisData} from '../mock/analysis';
 import {buildTrainConfigSummary, defaultTrainConfig} from '../mock/configuration';
-import {getBestExperimentMetric} from '../lib/experimentMetrics';
+import {getTailMeanExperimentMetric} from '../lib/experimentMetrics';
 import {formatAttackSemanticGroups, formatDefenseSemanticGroups, formatModuleChain, getModuleLabel, getScenarioLabel} from '../lib/experimentLabels';
 import type {AttackTaxonomyMap} from '../lib/experimentLabels';
 import {apiGet} from './api';
@@ -138,7 +138,7 @@ const readEvalMetric = (
   roundSummaries?: ExperimentRoundSummary[],
   roundMetrics?: ExperimentResultRoundMetric[],
 ) => {
-  return getBestExperimentMetric({
+  return getTailMeanExperimentMetric({
     finalEval,
     metadata,
     roundSummaries,

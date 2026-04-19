@@ -2,7 +2,7 @@ import {
   buildTrainConfigSummary,
   defaultTrainConfig,
 } from "../mock/configuration";
-import { getBestExperimentMetric } from "../lib/experimentMetrics";
+import { getTailMeanExperimentMetric } from "../lib/experimentMetrics";
 import {
   formatAttackSemanticGroups,
   formatDefenseSemanticGroups,
@@ -520,7 +520,7 @@ const readEvalMetric = (
   roundSummaries?: ExperimentRoundSummary[],
   roundMetrics?: ExperimentResultRoundMetric[],
 ) => {
-  return getBestExperimentMetric({
+  return getTailMeanExperimentMetric({
     finalEval,
     metadata,
     roundSummaries,
