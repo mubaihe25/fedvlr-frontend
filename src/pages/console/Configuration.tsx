@@ -62,6 +62,9 @@ const sanitizeConfig = (config: TrainConfig): TrainConfig => {
   next.advanced = {
     ...next.advanced,
     useGpu: next.advanced.useGpu ?? true,
+    earlyStop: false,
+    stoppingStep: 100000,
+    tol: 0.0,
   };
   return next;
 };

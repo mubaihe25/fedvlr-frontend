@@ -52,6 +52,9 @@ export interface TrainAdvancedConfig {
   useGpu?: boolean;
   weightDecay: number;
   localEpochs: number;
+  earlyStop?: boolean;
+  stoppingStep?: number;
+  tol?: number;
   gradientClip: number;
   differentialPrivacyEpsilon?: number | null;
   secureAggregation: boolean;
