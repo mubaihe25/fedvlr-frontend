@@ -9,11 +9,50 @@ export interface HomeHeroData {
   backgroundImage: string;
 }
 
-export interface HomeOverviewNode {
+export interface HomePipelineInput {
   title: string;
   subtitle: string;
-  detail: string;
-  tone: 'primary' | 'secondary' | 'tertiary' | 'error' | 'success';
+  tone: 'primary' | 'secondary' | 'tertiary';
+}
+
+export interface HomePipelineView {
+  title: string;
+  subtitle: string;
+  tone: 'primary' | 'secondary' | 'tertiary' | 'success';
+}
+
+export interface HomePipelineClient {
+  title: string;
+  subtitle: string;
+  emphasis: string;
+  focus: 'visual' | 'text' | 'collab';
+}
+
+export interface HomePipelineData {
+  title: string;
+  subtitle: string;
+  inputs: HomePipelineInput[];
+  core: {
+    title: string;
+    subtitle: string;
+  };
+  views: HomePipelineView[];
+  clients: HomePipelineClient[];
+  security: {
+    title: string;
+    subtitle: string;
+    items: string[];
+  };
+  aggregator: {
+    title: string;
+    subtitle: string;
+  };
+  output: {
+    title: string;
+    subtitle: string;
+    experimentModes: string[];
+    metricLabels: string[];
+  };
 }
 
 export interface HomeMechanismCard {
@@ -48,43 +87,45 @@ export const mockHomeData = {
     backgroundImage:
       'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2000&auto=format&fit=crop',
   } satisfies HomeHeroData,
-  overview: {
-    title: '平台核心能力总览',
-    description:
-      '本平台以多模态联邦推荐为主体，在统一建模图像、文本与协同 ID 信息的基础上，引入投毒攻击、鲁棒防御与结果对比分析，形成从推荐建模到安全验证的一体化实验闭环。',
-    nodes: [
-      {
-        title: '多模态输入',
-        subtitle: '图像 / 文本 / 协同 ID',
-        detail: '统一接收视觉内容、文本语义与交互协同信号，作为联邦推荐建模的多模态输入基础。',
-        tone: 'primary',
-      },
-      {
-        title: '服务端多视图融合',
-        subtitle: '预融合多模态视图生成',
-        detail: '服务端承担高开销的全局表征构建任务，预先生成多种可供下游路由使用的融合视图。',
-        tone: 'secondary',
-      },
-      {
-        title: '客户端个性化路由',
-        subtitle: '结合本地交互历史进行细粒度加权',
-        detail: '客户端利用本地交互行为自适应调整多视图权重，形成用户特定的个性化融合表示。',
-        tone: 'tertiary',
-      },
-      {
-        title: '联邦聚合与安全增强',
-        subtitle: '投毒攻击 / 鲁棒防御 / 风险观测',
-        detail: '在联邦更新链路中统一接入投毒攻击、鲁棒防御和风险观测模块，支撑可验证的安全实验。',
-        tone: 'error',
-      },
-      {
-        title: '实验输出与对比分析',
-        subtitle: '结果分析 / 历史实验 / 对比分析',
-        detail: '统一输出轮次结果、历史记录与多实验对比摘要，形成论文图示与答辩展示所需的数据闭环。',
-        tone: 'success',
-      },
-    ] satisfies HomeOverviewNode[],
-  },
+  pipeline: {
+    title: '核心技术链路演示',
+    subtitle: '从多模态表征到安全联邦聚合的动态实验链路',
+    inputs: [
+      {title: '图像', subtitle: '视觉内容输入', tone: 'primary'},
+      {title: '文本', subtitle: '语义描述输入', tone: 'secondary'},
+      {title: '协同 ID', subtitle: '交互协同信号', tone: 'tertiary'},
+    ],
+    core: {
+      title: '多模态嵌入核心',
+      subtitle: '共享多模态表示',
+    },
+    views: [
+      {title: '视觉增强视图', subtitle: '突出视觉信息', tone: 'primary'},
+      {title: '文本增强视图', subtitle: '突出语义信息', tone: 'secondary'},
+      {title: '协同融合视图', subtitle: '突出交互关系', tone: 'tertiary'},
+      {title: '综合预融合视图', subtitle: '统一全局表示', tone: 'success'},
+    ],
+    clients: [
+      {title: '客户端 A', subtitle: '视觉偏好更强', emphasis: '视觉权重更高', focus: 'visual'},
+      {title: '客户端 B', subtitle: '文本依赖更高', emphasis: '文本视图优先', focus: 'text'},
+      {title: '客户端 C', subtitle: '协同信号更敏感', emphasis: '协同权重更强', focus: 'collab'},
+    ],
+    security: {
+      title: '安全增强层',
+      subtitle: '异常更新削弱、过滤与观测',
+      items: ['投毒攻击', '鲁棒防御', '风险观测'],
+    },
+    aggregator: {
+      title: '联邦聚合中心',
+      subtitle: '鲁棒聚合与全局同步',
+    },
+    output: {
+      title: '实验输出与对比分析',
+      subtitle: '统一输出关键场景结果摘要',
+      experimentModes: ['基线', '投毒', '攻防对比'],
+      metricLabels: ['Recall@50', 'NDCG@50'],
+    },
+  } satisfies HomePipelineData,
   mechanisms: [
     {
       title: '多模态信息嵌入',

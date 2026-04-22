@@ -1,16 +1,7 @@
 import React from 'react';
 import {motion} from 'motion/react';
-import {
-  ArrowRight,
-  Cloud,
-  Microscope,
-  Network,
-  Plus,
-  Shield,
-  ShieldCheck,
-  Swords,
-  TrendingUp,
-} from 'lucide-react';
+import {Cloud, Microscope, Network, Plus, Shield, ShieldCheck, TrendingUp} from 'lucide-react';
+import {AnimatedPipeline} from '../components/home/AnimatedPipeline';
 import {mockHomeData} from '../mock/home';
 import type {PageType} from '../types/common';
 
@@ -46,8 +37,6 @@ const toneClasses = {
   },
 } as const;
 
-const overviewIcons = [Network, Cloud, Microscope, Swords, TrendingUp] as const;
-
 const mechanismIcons = {
   primary: Network,
   secondary: Cloud,
@@ -56,7 +45,7 @@ const mechanismIcons = {
 } as const;
 
 export const Home: React.FC<HomeProps> = ({onPageChange}) => {
-  const {hero, overview, mechanisms, fusionRationale, snapshotMetrics, snapshotChart, capabilities} = mockHomeData;
+  const {hero, pipeline, mechanisms, fusionRationale, snapshotMetrics, snapshotChart, capabilities} = mockHomeData;
 
   return (
     <div className="relative space-y-24 pb-12">
@@ -118,48 +107,7 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
         </div>
       </section>
 
-      <section className="w-full">
-        <div className="mb-16 max-w-5xl">
-          <h2 className="mb-4 text-3xl font-bold">{overview.title}</h2>
-          <div className="mb-6 h-1 w-16 bg-primary" />
-          <p className="text-lg leading-relaxed text-on-surface-variant">{overview.description}</p>
-        </div>
-
-        <div className="relative">
-          <div className="pointer-events-none absolute left-12 right-12 top-16 hidden h-px bg-gradient-to-r from-primary/0 via-primary/20 to-primary/0 xl:block" />
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-5">
-            {overview.nodes.map((node, index) => {
-              const tone = toneClasses[node.tone];
-              const Icon = overviewIcons[index] ?? TrendingUp;
-
-              return (
-                <div key={node.title} className="relative">
-                  <div
-                    className={`group relative z-10 h-full rounded-3xl border border-outline-variant/10 bg-surface-container-low p-6 transition-all duration-500 ${tone.border}`}
-                  >
-                    <div className="mb-4 flex items-center justify-between">
-                      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tone.badge}`}>
-                        <Icon className="h-6 w-6" />
-                      </div>
-                      <div className="text-xs font-bold uppercase tracking-[0.24em] text-on-surface-variant/60">
-                        0{index + 1}
-                      </div>
-                    </div>
-                    <h3 className="mb-2 text-lg font-bold text-on-surface">{node.title}</h3>
-                    <p className="mb-3 text-sm font-medium text-primary">{node.subtitle}</p>
-                    <p className="text-sm leading-relaxed text-on-surface-variant">{node.detail}</p>
-                  </div>
-                  {index < overview.nodes.length - 1 ? (
-                    <div className="hidden xl:flex absolute -right-4 top-12 z-20 h-8 w-8 items-center justify-center rounded-full border border-outline-variant/20 bg-surface-container-highest text-outline-variant">
-                      <ArrowRight className="h-4 w-4" />
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+      <AnimatedPipeline pipeline={pipeline} snapshotMetrics={snapshotMetrics} snapshotChart={snapshotChart} />
 
       <section className="w-full">
         <div className="mb-10 flex flex-col items-start">
@@ -188,32 +136,32 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
       </section>
 
       <section className="w-full">
-        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.85fr)]">
-          <div className="rounded-3xl border border-outline-variant/10 bg-surface-container-low p-8 md:p-10">
-            <div className="mb-6 inline-flex rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-primary">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.9fr)]">
+          <div className="rounded-3xl border border-outline-variant/10 bg-surface-container-low p-7 md:p-8">
+            <div className="mb-5 inline-flex rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-primary">
               双层融合机制
             </div>
             <h2 className="mb-4 text-3xl font-bold">{fusionRationale.title}</h2>
-            <p className="text-lg leading-relaxed text-on-surface-variant">{fusionRationale.description}</p>
+            <p className="leading-relaxed text-on-surface-variant md:text-lg">{fusionRationale.description}</p>
           </div>
 
-          <div className="rounded-3xl border border-outline-variant/10 bg-surface-container-low p-6 md:p-8">
-            <div className="space-y-4">
+          <div className="rounded-3xl border border-outline-variant/10 bg-surface-container-low p-5 md:p-6">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {fusionRationale.personas.map((persona, index) => {
                 const tone = toneClasses[persona.tone];
 
                 return (
                   <div
                     key={persona.title}
-                    className={`flex items-center gap-4 rounded-2xl border ${tone.ring} bg-surface-container-high p-4`}
+                    className={`rounded-2xl border ${tone.ring} bg-surface-container-high p-4`}
                   >
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone.badge}`}>
-                      <span className="text-sm font-bold">{index < 3 ? index + 1 : 4}</span>
-                    </div>
-                    <div>
+                    <div className="mb-3 flex items-center gap-3">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tone.badge}`}>
+                        <span className="text-sm font-bold">{index < 3 ? index + 1 : 4}</span>
+                      </div>
                       <div className="text-sm font-bold text-on-surface">{persona.title}</div>
-                      <div className="text-sm text-on-surface-variant">{persona.description}</div>
                     </div>
+                    <div className="text-sm text-on-surface-variant">{persona.description}</div>
                   </div>
                 );
               })}
