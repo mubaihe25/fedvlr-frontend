@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Cloud,
   Microscope,
-  MonitorSmartphone,
   Network,
   Plus,
   Shield,
@@ -19,23 +18,45 @@ interface HomeProps {
   onPageChange?: (page: PageType) => void;
 }
 
-const highlightToneClasses = {
+const toneClasses = {
   primary: {
     badge: 'bg-primary/10 text-primary',
     border: 'hover:border-primary/30',
+    ring: 'border-primary/20',
   },
-  error: {
-    badge: 'bg-error/10 text-error',
-    border: 'hover:border-error/30',
+  secondary: {
+    badge: 'bg-secondary/10 text-secondary',
+    border: 'hover:border-secondary/30',
+    ring: 'border-secondary/20',
   },
   tertiary: {
     badge: 'bg-tertiary/10 text-tertiary',
     border: 'hover:border-tertiary/30',
+    ring: 'border-tertiary/20',
+  },
+  error: {
+    badge: 'bg-error/10 text-error',
+    border: 'hover:border-error/30',
+    ring: 'border-error/20',
+  },
+  success: {
+    badge: 'bg-success/10 text-success',
+    border: 'hover:border-success/30',
+    ring: 'border-success/20',
   },
 } as const;
 
+const overviewIcons = [Network, Cloud, Microscope, Swords, TrendingUp] as const;
+
+const mechanismIcons = {
+  primary: Network,
+  secondary: Cloud,
+  tertiary: Microscope,
+  error: ShieldCheck,
+} as const;
+
 export const Home: React.FC<HomeProps> = ({onPageChange}) => {
-  const {hero, flow, highlights, snapshotMetrics, snapshotChart, capabilities} = mockHomeData;
+  const {hero, overview, mechanisms, fusionRationale, snapshotMetrics, snapshotChart, capabilities} = mockHomeData;
 
   return (
     <div className="relative space-y-24 pb-12">
@@ -98,104 +119,68 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
       </section>
 
       <section className="w-full">
-        <div className="mb-16 flex flex-col items-start">
-          <h2 className="mb-4 text-3xl font-bold">系统流程可视化</h2>
-          <div className="h-1 w-16 bg-primary" />
+        <div className="mb-16 max-w-5xl">
+          <h2 className="mb-4 text-3xl font-bold">{overview.title}</h2>
+          <div className="mb-6 h-1 w-16 bg-primary" />
+          <p className="text-lg leading-relaxed text-on-surface-variant">{overview.description}</p>
         </div>
-        <div className="relative grid grid-cols-1 items-center gap-4 lg:grid-cols-5">
-          <div className="space-y-4">
-            {flow.clients.map((client, index) => (
-              <div
-                key={client.title}
-                className={`rounded-xl border border-outline-variant/10 bg-surface-container-low p-6 text-center ${
-                  index === flow.clients.length - 1 ? 'opacity-60' : ''
-                }`}
-              >
-                <MonitorSmartphone className="mx-auto mb-2 h-10 w-10 text-primary" />
-                <div className="text-sm font-bold">{client.title}</div>
-                <div className="mt-1 text-xs text-on-surface-variant">{client.subtitle}</div>
-              </div>
-            ))}
-          </div>
 
-          <div className="hidden justify-center lg:flex">
-            <ArrowRight className="h-12 w-12 text-outline-variant/40" />
-          </div>
+        <div className="relative">
+          <div className="pointer-events-none absolute left-12 right-12 top-16 hidden h-px bg-gradient-to-r from-primary/0 via-primary/20 to-primary/0 xl:block" />
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-5">
+            {overview.nodes.map((node, index) => {
+              const tone = toneClasses[node.tone];
+              const Icon = overviewIcons[index] ?? TrendingUp;
 
-          <div className="flex flex-col gap-6">
-            <div className="group relative overflow-hidden rounded-2xl border-2 border-primary/20 bg-surface-container-highest p-8 shadow-2xl">
-              <div className="absolute right-0 top-0 p-2 opacity-20">
-                <Cloud className="h-16 w-16" />
-              </div>
-              <h3 className="mb-2 text-lg font-bold text-primary">{flow.aggregator.title}</h3>
-              <p className="text-xs text-on-surface-variant">{flow.aggregator.subtitle}</p>
-            </div>
-
-            <div className="flex items-center gap-3 rounded-xl border border-error/30 bg-error/10 p-4">
-              <Swords className="h-6 w-6 text-error" />
-              <div>
-                <div className="text-xs font-bold text-error">{flow.attack.title}</div>
-                <div className="text-[10px] text-on-surface opacity-60">{flow.attack.subtitle}</div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 rounded-xl border border-tertiary/30 bg-tertiary/10 p-4">
-              <Shield className="h-6 w-6 text-tertiary" />
-              <div>
-                <div className="text-xs font-bold text-tertiary">{flow.defense.title}</div>
-                <div className="text-[10px] text-on-surface opacity-60">{flow.defense.subtitle}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden justify-center lg:flex">
-            <ArrowRight className="h-12 w-12 text-outline-variant/40" />
-          </div>
-
-          <div className="h-full">
-            <div className="flex h-full flex-col justify-center rounded-2xl border border-primary/10 bg-surface-container-high p-8">
-              <h3 className="mb-4 text-lg font-bold">{flow.output.title}</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs opacity-60">{flow.output.scoreLabel}</span>
-                  <span className="font-bold text-primary">{flow.output.scoreValue}</span>
+              return (
+                <div key={node.title} className="relative">
+                  <div
+                    className={`group relative z-10 h-full rounded-3xl border border-outline-variant/10 bg-surface-container-low p-6 transition-all duration-500 ${tone.border}`}
+                  >
+                    <div className="mb-4 flex items-center justify-between">
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tone.badge}`}>
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <div className="text-xs font-bold uppercase tracking-[0.24em] text-on-surface-variant/60">
+                        0{index + 1}
+                      </div>
+                    </div>
+                    <h3 className="mb-2 text-lg font-bold text-on-surface">{node.title}</h3>
+                    <p className="mb-3 text-sm font-medium text-primary">{node.subtitle}</p>
+                    <p className="text-sm leading-relaxed text-on-surface-variant">{node.detail}</p>
+                  </div>
+                  {index < overview.nodes.length - 1 ? (
+                    <div className="hidden xl:flex absolute -right-4 top-12 z-20 h-8 w-8 items-center justify-center rounded-full border border-outline-variant/20 bg-surface-container-highest text-outline-variant">
+                      <ArrowRight className="h-4 w-4" />
+                    </div>
+                  ) : null}
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-container">
-                  <div className="h-full w-[98%] bg-primary" />
-                </div>
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-xs opacity-60">{flow.output.latencyLabel}</span>
-                  <span className="font-bold text-tertiary">{flow.output.latencyValue}</span>
-                </div>
-              </div>
-            </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
       <section className="w-full">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
-          {highlights.map((highlight) => {
-            const tone = highlightToneClasses[highlight.tone];
-            const icon =
-              highlight.tone === 'primary' ? (
-                <Network className="h-8 w-8" />
-              ) : highlight.tone === 'error' ? (
-                <Microscope className="h-8 w-8" />
-              ) : (
-                <ShieldCheck className="h-8 w-8" />
-              );
+        <div className="mb-10 flex flex-col items-start">
+          <h2 className="mb-4 text-3xl font-bold">核心机制能力</h2>
+          <div className="h-1 w-16 bg-primary" />
+        </div>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+          {mechanisms.map((mechanism) => {
+            const tone = toneClasses[mechanism.tone];
+            const Icon = mechanismIcons[mechanism.tone];
 
             return (
               <div
-                key={highlight.title}
-                className={`group rounded-3xl border border-outline-variant/10 bg-surface-container-low p-10 transition-all duration-500 ${tone.border}`}
+                key={mechanism.title}
+                className={`group rounded-3xl border border-outline-variant/10 bg-surface-container-low p-8 transition-all duration-500 ${tone.border}`}
               >
-                <div className={`mb-8 flex h-14 w-14 items-center justify-center rounded-2xl ${tone.badge} transition-transform group-hover:scale-110`}>
-                  {icon}
+                <div className={`mb-6 flex h-14 w-14 items-center justify-center rounded-2xl ${tone.badge} transition-transform group-hover:scale-110`}>
+                  <Icon className="h-7 w-7" />
                 </div>
-                <h3 className="mb-4 text-2xl font-bold text-on-surface">{highlight.title}</h3>
-                <p className="leading-relaxed text-on-surface-variant">{highlight.description}</p>
+                <h3 className="mb-4 text-2xl font-bold text-on-surface">{mechanism.title}</h3>
+                <p className="leading-relaxed text-on-surface-variant">{mechanism.description}</p>
               </div>
             );
           })}
@@ -203,10 +188,47 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
       </section>
 
       <section className="w-full">
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.85fr)]">
+          <div className="rounded-3xl border border-outline-variant/10 bg-surface-container-low p-8 md:p-10">
+            <div className="mb-6 inline-flex rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-primary">
+              双层融合机制
+            </div>
+            <h2 className="mb-4 text-3xl font-bold">{fusionRationale.title}</h2>
+            <p className="text-lg leading-relaxed text-on-surface-variant">{fusionRationale.description}</p>
+          </div>
+
+          <div className="rounded-3xl border border-outline-variant/10 bg-surface-container-low p-6 md:p-8">
+            <div className="space-y-4">
+              {fusionRationale.personas.map((persona, index) => {
+                const tone = toneClasses[persona.tone];
+
+                return (
+                  <div
+                    key={persona.title}
+                    className={`flex items-center gap-4 rounded-2xl border ${tone.ring} bg-surface-container-high p-4`}
+                  >
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone.badge}`}>
+                      <span className="text-sm font-bold">{index < 3 ? index + 1 : 4}</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-on-surface">{persona.title}</div>
+                      <div className="text-sm text-on-surface-variant">{persona.description}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="w-full">
         <div className="mb-16 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h2 className="mb-4 text-3xl font-bold">代表性实验结果</h2>
-            <p className="text-on-surface-variant">固定展示代表性联邦推荐安全实验结果，用于说明平台支持的典型输出形式与对比方式。</p>
+          <div className="max-w-3xl">
+            <h2 className="mb-4 text-3xl font-bold">实验闭环输出</h2>
+            <p className="text-on-surface-variant">
+              平台支持基线、攻击与攻防对比三类实验结果的统一展示，可直观观察模型在正常训练、恶意更新注入与鲁棒恢复过程中的性能变化。
+            </p>
           </div>
           <div className="flex flex-wrap gap-4 text-xs">
             {capabilities.map((capability) => (
@@ -237,23 +259,23 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
             <div className="mb-4 flex flex-1 items-end justify-around gap-4">
               {snapshotChart.map((point, index) => {
                 const toneClass =
-                  index === 0 ? 'bg-outline-variant/20' : index === 1 ? 'bg-error/40' : 'bg-tertiary/60';
+                  index === 0 ? 'bg-outline-variant/20' : index === 1 ? 'bg-error/45' : 'bg-tertiary/65';
                 const labelClass =
                   index === 0 ? 'text-on-surface-variant' : index === 1 ? 'text-error' : 'text-tertiary';
 
                 return (
                   <div key={point.label} className="flex h-full flex-1 flex-col items-center justify-end">
                     <div
-                      className={`w-full max-w-[80px] rounded-t-lg transition-all ${toneClass}`}
+                      className={`w-full max-w-[88px] rounded-t-lg transition-all ${toneClass}`}
                       style={{height: `${point.value}%`}}
                     />
-                    <div className={`mt-2 text-[10px] ${labelClass}`}>{point.label}</div>
+                    <div className={`mt-3 text-xs font-medium ${labelClass}`}>{point.label}</div>
                   </div>
                 );
               })}
             </div>
             <div className="text-center text-xs italic text-on-surface-variant">
-              基线、攻击与防御场景下的推荐性能对比（NDCG）
+              基线、投毒与攻防对比场景下的代表性性能变化
             </div>
           </div>
         </div>
