@@ -1,17 +1,27 @@
+# Dependencies / build outputs
 node_modules/
 build/
 dist/
 coverage/
 
-.DS_Store
-Thumbs.db
-
-*.log
-
+# Environment / secrets
 .env
 .env.local
-.env*
+.env.*
 !.env.example
 
+# Logs / temp
+*.log
+logs/
+tmp/
+temp/
+
+# IDE / editor
 .idea/
 .vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
