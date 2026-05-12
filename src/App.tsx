@@ -2,6 +2,11 @@ import React, {useCallback, useEffect, useState} from 'react';
 import {MainLayout} from './layouts/MainLayout';
 import {mockConfigurationData} from './mock/configuration';
 import {Architecture} from './pages/Architecture';
+import {AttackDefenseRange} from './pages/AttackDefenseRange';
+import {ClientPersonalization} from './pages/ClientPersonalization';
+import {DataFusion} from './pages/DataFusion';
+import {DeliveryReport} from './pages/DeliveryReport';
+import {ExperimentResults, type ExperimentResultsView} from './pages/ExperimentResults';
 import {Home} from './pages/Home';
 import {Console} from './pages/console/Console';
 import type {ExperimentConfigurationSource} from './services/experiment';
@@ -11,7 +16,33 @@ import type {LaunchExperimentOptions, LaunchExperimentRecord, LaunchExperimentRe
 
 const cloneConfig = (config: TrainConfig) => structuredClone(config);
 const CONSOLE_SESSION_STORAGE_KEY = 'fedvlr.console.session.v1';
-const RESTORABLE_PAGES: PageType[] = ['home', 'console', 'monitoring', 'analysis', 'comparison', 'history', 'architecture'];
+const RESTORABLE_PAGES: PageType[] = [
+  'home',
+  'architecture',
+  'dataFusion',
+  'clientPersonalization',
+  'attackDefenseRange',
+  'experimentResults',
+  'deliveryReport',
+  'console',
+  'monitoring',
+  'analysis',
+  'comparison',
+  'history',
+];
+
+const getExperimentResultsView = (page: PageType): ExperimentResultsView => {
+  switch (page) {
+    case 'history':
+      return 'history';
+    case 'comparison':
+      return 'comparison';
+    case 'analysis':
+    case 'experimentResults':
+    default:
+      return 'analysis';
+  }
+};
 
 const createMockContext = (): ConsoleExperimentContext => ({
   source: 'mock',
@@ -310,11 +341,16 @@ const App: React.FC = () => {
         return <Home onPageChange={setCurrentPage} />;
       case 'architecture':
         return <Architecture />;
+      case 'dataFusion':
+        return <DataFusion />;
+      case 'clientPersonalization':
+        return <ClientPersonalization />;
+      case 'attackDefenseRange':
+        return <AttackDefenseRange />;
+      case 'deliveryReport':
+        return <DeliveryReport />;
       case 'console':
       case 'monitoring':
-      case 'analysis':
-      case 'comparison':
-      case 'history':
         return (
           <Console
             currentPage={currentPage}
@@ -323,6 +359,20 @@ const App: React.FC = () => {
             onDraftConfigChange={handleDraftConfigChange}
             onStartTrain={handleStartTrain}
             onLaunchStatusChange={handleLaunchStatusChange}
+            onOpenAnalysis={handleOpenAnalysis}
+            onAddComparisonSelection={handleAddComparisonSelection}
+            onOpenComparison={() => setCurrentPage('comparison')}
+            onReuseConfig={handleReuseConfig}
+          />
+        );
+      case 'experimentResults':
+      case 'analysis':
+      case 'comparison':
+      case 'history':
+        return (
+          <ExperimentResults
+            initialView={getExperimentResultsView(currentPage)}
+            session={consoleSession}
             onOpenAnalysis={handleOpenAnalysis}
             onAddComparisonSelection={handleAddComparisonSelection}
             onOpenComparison={() => setCurrentPage('comparison')}
@@ -340,16 +390,26 @@ const App: React.FC = () => {
         return '联邦推荐安全实验平台 - 首页';
       case 'architecture':
         return '系统架构';
+      case 'dataFusion':
+        return '数据与融合';
+      case 'clientPersonalization':
+        return '客户端个性化';
+      case 'attackDefenseRange':
+        return '攻防靶场';
+      case 'experimentResults':
+        return '实验结果';
+      case 'deliveryReport':
+        return '交付报告';
       case 'console':
         return '训练控制台';
       case 'monitoring':
         return '运行监控';
       case 'analysis':
-        return '结果分析';
+        return '实验结果 - 单次结果';
       case 'comparison':
-        return '对比分析';
+        return '实验结果 - 横向对比';
       case 'history':
-        return '历史实验';
+        return '实验结果 - 历史实验';
       default:
         return '联邦推荐安全实验平台';
     }

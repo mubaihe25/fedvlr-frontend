@@ -1,6 +1,18 @@
 import type {LaunchExperimentRecord, TrainConfig} from './train';
 
-export type PageType = 'home' | 'console' | 'monitoring' | 'analysis' | 'comparison' | 'history' | 'architecture';
+export type PageType =
+  | 'home'
+  | 'architecture'
+  | 'dataFusion'
+  | 'clientPersonalization'
+  | 'attackDefenseRange'
+  | 'experimentResults'
+  | 'deliveryReport'
+  | 'console'
+  | 'monitoring'
+  | 'analysis'
+  | 'comparison'
+  | 'history';
 
 export type Nullable<T> = T | null;
 

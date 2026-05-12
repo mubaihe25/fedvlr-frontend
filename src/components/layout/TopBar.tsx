@@ -12,12 +12,9 @@ export const TopBar: React.FC<TopBarProps> = ({ currentPage, onPageChange, title
   const tabs = [
     { id: 'console', label: '实验配置' },
     { id: 'monitoring', label: '运行监控' },
-    { id: 'analysis', label: '结果分析' },
-    { id: 'comparison', label: '对比分析' },
-    { id: 'history', label: '历史实验' },
   ];
 
-  const isConsolePage = ['console', 'monitoring', 'analysis', 'comparison', 'history'].includes(currentPage);
+  const isConsolePage = ['console', 'monitoring'].includes(currentPage);
 
   return (
     <header className="sticky top-0 right-0 z-30 flex items-center px-8 w-full h-16 bg-surface/80 backdrop-blur-xl border-b border-surface-container-highest/50 font-sans font-medium">

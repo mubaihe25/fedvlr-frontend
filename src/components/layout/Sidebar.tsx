@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cpu, Home, Shield, Terminal } from 'lucide-react';
+import { BarChart3, Cpu, Database, FileText, Home, Shield, Swords, Terminal, Users } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { PageType } from '../../types/common';
 
@@ -11,8 +11,13 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) => {
   const navItems = [
     { id: 'home', label: '首页', icon: Home },
-    { id: 'console', label: '训练控制台', icon: Terminal },
     { id: 'architecture', label: '系统架构', icon: Cpu },
+    { id: 'dataFusion', label: '数据与融合', icon: Database },
+    { id: 'clientPersonalization', label: '客户端个性化', icon: Users },
+    { id: 'attackDefenseRange', label: '攻防靶场', icon: Swords },
+    { id: 'experimentResults', label: '实验结果', icon: BarChart3 },
+    { id: 'deliveryReport', label: '交付报告', icon: FileText },
+    { id: 'console', label: '训练控制台', icon: Terminal },
   ];
 
   return (
@@ -22,11 +27,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) =
         <p className="text-[10px] text-on-surface-variant mt-1 opacity-60">联邦推荐安全实验平台</p>
       </div>
       
-      <nav className="flex-1 px-4 space-y-2">
+      <nav className="flex-1 px-4 space-y-2 overflow-y-auto no-scrollbar">
         {navItems.map((item) => {
-          const isActive = item.id === 'console' 
-            ? ['console', 'monitoring', 'analysis', 'comparison', 'history'].includes(currentPage)
-            : currentPage === item.id;
+          const isActive =
+            item.id === 'console'
+              ? ['console', 'monitoring'].includes(currentPage)
+              : item.id === 'experimentResults'
+                ? ['experimentResults', 'analysis', 'comparison', 'history'].includes(currentPage)
+                : currentPage === item.id;
 
           return (
             <button
