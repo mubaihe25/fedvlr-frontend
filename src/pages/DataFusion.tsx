@@ -1,9 +1,10 @@
 import React from 'react';
 import {ArrowRight, CheckCircle2, Database, FileText, Image, Info, Layers, Network} from 'lucide-react';
 import {ModalityWeightBar} from '../components/showcase/ModalityWeightBar';
+import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
 import {VectorPreview} from '../components/showcase/VectorPreview';
 import {cn} from '../lib/utils';
-import {datasetProfile, modalityEmbeddings, sampleItems, serverViews, type ModalityKey} from '../mock/showcase';
+import {datasetProfile, modalityEmbeddings, sampleItems, serverViews, showcaseSampleNotice, type ModalityKey} from '../mock/showcase';
 
 const modalityLabels: Record<ModalityKey, string> = {
   image: '图像',
@@ -34,17 +35,13 @@ const typeLabels = {
 export const DataFusion: React.FC = () => {
   return (
     <div className="space-y-8 pb-12">
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
-          <Layers className="h-3.5 w-3.5" />
-          多模态输入与服务端融合
-        </div>
-        <h2 className="font-headline text-4xl font-bold tracking-tight text-on-surface">数据与多模态融合</h2>
-        <p className="mt-4 max-w-4xl text-sm leading-7 text-on-surface-variant">
-          展示用户交互、物品图像/文本/协同 ID 如何转化为多模态表征，并在服务端形成多个可供客户端选择的融合视图。
-          这里不是简单拼接三类特征，而是先构造不同解释视角的服务端视图，再交给客户端个性化路由使用。
-        </p>
-      </section>
+      <ShowcasePageHeader
+        eyebrow="选拔赛展示链路"
+        title="数据与多模态融合"
+        description="展示图像、文本和协同 ID 如何转化为 embedding，并在服务端形成多个融合视图。"
+        chips={['图像 / 文本 / 协同 ID → embedding', '服务端融合视图 G1-G4', '后续交给客户端 router 加权']}
+        icon={Database}
+      />
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         {[
@@ -195,7 +192,20 @@ export const DataFusion: React.FC = () => {
         </div>
         <div className="mt-5 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-on-surface">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <p>当前页面展示结构可替换真实数据集样本；后续接入 showcase artifacts 后，可用真实图片、文本和融合视图证据替换占位内容。</p>
+          <p>{showcaseSampleNotice}</p>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-primary/20 bg-primary/10 p-6">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">下一步</p>
+            <h3 className="mt-2 text-xl font-bold text-on-surface">客户端个性化路由</h3>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              继续查看客户端如何基于本地交互历史，对服务端 G1-G4 视图进行个性化加权。
+            </p>
+          </div>
+          <ArrowRight className="h-6 w-6 text-primary" />
         </div>
       </section>
     </div>

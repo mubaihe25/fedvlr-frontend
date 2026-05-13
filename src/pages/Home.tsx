@@ -1,6 +1,6 @@
 import React from 'react';
 import {motion} from 'motion/react';
-import {Cloud, Microscope, Network, Plus, Shield, ShieldCheck, TrendingUp} from 'lucide-react';
+import {ArrowRight, Cloud, Microscope, Network, Route, Shield, ShieldCheck, TrendingUp} from 'lucide-react';
 import {AnimatedPipeline} from '../components/home/AnimatedPipeline';
 import {mockHomeData} from '../mock/home';
 import type {PageType} from '../types/common';
@@ -44,6 +44,15 @@ const mechanismIcons = {
   error: ShieldCheck,
 } as const;
 
+const demoRoute: Array<{step: string; title: string; description: string; page: PageType}> = [
+  {step: '01', title: '系统架构', description: '先看数据、融合、个性化、联邦训练和攻防评估的完整链路。', page: 'architecture'},
+  {step: '02', title: '数据与融合', description: '看图像 / 文本 / 协同 ID 如何形成服务端多视图。', page: 'dataFusion'},
+  {step: '03', title: '客户端个性化', description: '看本地历史如何决定 G1-G4 router 权重。', page: 'clientPersonalization'},
+  {step: '04', title: '攻防靶场', description: '看投毒如何造成推荐偏移，鲁棒防御如何恢复。', page: 'attackDefenseRange'},
+  {step: '05', title: '实验结果', description: '看 Recall@50、NDCG@50、攻击降幅和防御恢复率。', page: 'experimentResults'},
+  {step: '06', title: '交付报告', description: '看最终总结、限制说明和后续 artifacts 接入计划。', page: 'deliveryReport'},
+];
+
 export const Home: React.FC<HomeProps> = ({onPageChange}) => {
   const {hero, pipeline, mechanisms, fusionRationale, snapshotMetrics, snapshotChart, capabilities} = mockHomeData;
 
@@ -67,7 +76,7 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
             className="kinetic-glow mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-primary"
           >
             <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-            {hero.badge}
+            选拔赛展示链路
           </motion.div>
           <motion.h1
             initial={{opacity: 0, y: 20}}
@@ -75,7 +84,7 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
             transition={{delay: 0.1}}
             className="mb-6 bg-gradient-to-br from-white via-primary to-secondary bg-clip-text text-5xl font-bold leading-[1.1] tracking-tight text-transparent md:text-7xl"
           >
-            {hero.title}
+            多模态联邦推荐安全实验平台
           </motion.h1>
           <motion.p
             initial={{opacity: 0, y: 20}}
@@ -83,7 +92,7 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
             transition={{delay: 0.2}}
             className="mx-auto mb-10 max-w-2xl text-xl leading-relaxed text-on-surface-variant"
           >
-            {hero.subtitle}
+            围绕“服务端多视图融合 + 客户端个性化路由”构建可解释展示链路，并串联联邦训练、投毒攻击、鲁棒防御和结果对比分析。
           </motion.p>
           <motion.div
             initial={{opacity: 0, y: 20}}
@@ -92,18 +101,49 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
             className="flex flex-col items-center justify-center gap-4 sm:flex-row"
           >
             <button
-              onClick={() => onPageChange?.('console')}
+              onClick={() => onPageChange?.('architecture')}
               className="rounded-lg bg-gradient-to-r from-primary to-secondary px-8 py-4 font-bold text-surface shadow-[0_8px_32px_rgba(129,236,255,0.25)] transition-all hover:-translate-y-1 hover:shadow-[0_12px_48px_rgba(129,236,255,0.4)] active:scale-95"
             >
-              {hero.primaryAction}
+              开始演示路线
             </button>
             <button
-              onClick={() => onPageChange?.('architecture')}
+              onClick={() => onPageChange?.('console')}
               className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-8 py-4 font-bold text-on-surface transition-all hover:bg-surface-container-highest active:scale-95"
             >
-              {hero.secondaryAction}
+              打开训练控制台
             </button>
           </motion.div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-primary/20 bg-surface-container-low p-6">
+        <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
+              <Route className="h-3.5 w-3.5" />
+              推荐演示路径
+            </div>
+            <h2 className="text-2xl font-bold text-on-surface">从机制到验证再到交付总结</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant">
+              建议录屏或答辩按以下顺序展开：先讲完整链路，再解释双层融合机制，最后展示攻防验证和交付结论。
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {demoRoute.map((item) => (
+            <button
+              key={item.step}
+              onClick={() => onPageChange?.(item.page)}
+              className="group rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/30"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <span className="font-mono text-xs font-bold text-primary">{item.step}</span>
+                <ArrowRight className="h-4 w-4 text-on-surface-variant transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+              </div>
+              <h3 className="font-bold text-on-surface">{item.title}</h3>
+              <p className="mt-2 text-xs leading-5 text-on-surface-variant">{item.description}</p>
+            </button>
+          ))}
         </div>
       </section>
 
@@ -247,9 +287,6 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
         </div>
       </footer>
 
-      <button className="fixed bottom-8 right-8 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-surface shadow-[0_0_20px_rgba(129,236,255,0.4)] transition-all hover:scale-110 active:scale-95">
-        <Plus className="h-6 w-6" />
-      </button>
     </div>
   );
 };

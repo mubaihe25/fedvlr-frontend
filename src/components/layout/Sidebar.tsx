@@ -23,8 +23,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) =
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col z-40 bg-surface w-64 border-r border-surface-container-highest/30 shadow-[0_0_40px_rgba(129,236,255,0.04)] font-headline tracking-tight">
       <div className="p-8">
-        <h1 className="text-xl font-bold text-primary tracking-widest uppercase">联邦推荐平台</h1>
-        <p className="text-[10px] text-on-surface-variant mt-1 opacity-60">联邦推荐安全实验平台</p>
+        <h1 className="text-lg font-bold text-primary tracking-widest uppercase">联邦推荐安全实验平台</h1>
+        <p className="text-[10px] text-on-surface-variant mt-1 opacity-60">服务端多视图融合 + 客户端路由</p>
       </div>
       
       <nav className="flex-1 px-4 space-y-2 overflow-y-auto no-scrollbar">

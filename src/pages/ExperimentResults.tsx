@@ -1,8 +1,9 @@
 import React, {useEffect, useState} from 'react';
 import {BarChart3, Clock, FileText, ShieldCheck, Swords, TrendingUp} from 'lucide-react';
 import {ScenarioMetricCard} from '../components/showcase/ScenarioMetricCard';
+import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
 import {cn} from '../lib/utils';
-import {attackDefenseCases} from '../mock/showcase';
+import {attackDefenseCases, showcaseSampleNotice} from '../mock/showcase';
 import type {ConsoleSessionState} from '../types/common';
 import type {TrainConfig} from '../types/train';
 import {Analysis} from './console/Analysis';
@@ -97,16 +98,13 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
 
   return (
     <div className="space-y-8 pb-12">
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
-          <BarChart3 className="h-3.5 w-3.5" />
-          结果、历史与对比聚合
-        </div>
-        <h2 className="font-headline text-4xl font-bold tracking-tight text-on-surface">实验结果</h2>
-        <p className="mt-4 max-w-4xl text-sm leading-7 text-on-surface-variant">
-          整合现有单次结果分析、历史实验和横向对比能力。本页仅调整入口和承载结构，结果读取逻辑继续复用原有页面与 services。
-        </p>
-      </section>
+      <ShowcasePageHeader
+        eyebrow="选拔赛展示链路"
+        title="实验结果"
+        description="整合单次结果、历史实验和横向对比，量化基线、攻击和防御效果。"
+        chips={['Recall@50 / NDCG@50', '攻击降幅 / 防御恢复率', '单次结果 / 历史实验 / 横向对比']}
+        icon={BarChart3}
+      />
 
       <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
         <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
@@ -117,7 +115,7 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
             </div>
             <h3 className="text-2xl font-bold text-on-surface">Showcase 攻防摘要</h3>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-on-surface-variant">
-              以下摘要来自 showcase 示例数据，用于串联攻防靶场与结果页。单次结果、历史实验、横向对比仍继续复用原有真实读取逻辑。
+              以下摘要来自 showcase 示例数据，用于串联攻防靶场与结果页。单次结果、历史实验、横向对比仍继续复用原有真实读取逻辑。{showcaseSampleNotice}
             </p>
           </div>
           <div className="rounded-full border border-outline-variant/10 bg-surface-container-high px-3 py-1 text-xs font-bold text-on-surface-variant">
@@ -167,8 +165,8 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8">
-        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {tabs.map((tab) => {
             const isActive = activeView === tab.id;
 
@@ -195,6 +193,19 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
       </section>
 
       {renderActiveView()}
+
+      <section className="rounded-2xl border border-primary/20 bg-primary/10 p-6">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">下一步</p>
+            <h3 className="mt-2 text-xl font-bold text-on-surface">交付报告</h3>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              继续查看数据、机制、攻防、指标、限制和后续计划的选拔赛总结。
+            </p>
+          </div>
+          <TrendingUp className="h-6 w-6 text-primary" />
+        </div>
+      </section>
     </div>
   );
 };

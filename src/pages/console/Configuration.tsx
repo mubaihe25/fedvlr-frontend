@@ -1273,11 +1273,11 @@ export const Configuration: React.FC<ConfigurationProps> = ({
           <p className="mb-4 text-xs text-on-surface-variant">以下功能保留为路线提示，当前不会随实验启动提交给后端启动器。</p>
           <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
             <div className="rounded-lg bg-surface-container-low p-3">
-              <p className="font-semibold text-on-surface">差分隐私 ε</p>
+              <p className="font-semibold text-on-surface">差分隐私 ε（规划）</p>
               <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.differentialPrivacyEpsilon ?? '未设置'}，当前不生效。</p>
             </div>
             <div className="rounded-lg bg-surface-container-low p-3">
-              <p className="font-semibold text-on-surface">安全聚合</p>
+              <p className="font-semibold text-on-surface">安全聚合（规划）</p>
               <p className="mt-1 text-xs text-on-surface-variant">当前值：{formConfig.advanced.secureAggregation ? '占位开启' : '未启用'}，当前不生效。</p>
             </div>
             <div className="rounded-lg bg-surface-container-low p-3">

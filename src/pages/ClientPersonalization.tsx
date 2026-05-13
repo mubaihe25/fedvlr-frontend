@@ -1,8 +1,9 @@
 import React, {useMemo, useState} from 'react';
-import {Activity, Database, Info, Layers, Lock, Server, TrendingUp, Upload, Users} from 'lucide-react';
+import {Activity, ArrowRight, Database, Info, Layers, Lock, Server, TrendingUp, Upload, Users} from 'lucide-react';
 import {ModalityWeightBar} from '../components/showcase/ModalityWeightBar';
+import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
 import {cn} from '../lib/utils';
-import {clientCases, federatedBoundary, serverViews, type ServerViewId} from '../mock/showcase';
+import {clientCases, federatedBoundary, serverViews, showcaseSampleNotice, type ServerViewId} from '../mock/showcase';
 
 const viewTone: Record<ServerViewId, 'primary' | 'secondary' | 'tertiary' | 'error'> = {
   G1: 'primary',
@@ -37,17 +38,14 @@ export const ClientPersonalization: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12">
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-tertiary/20 bg-tertiary/10 px-3 py-1 text-xs font-bold text-tertiary">
-          <Users className="h-3.5 w-3.5" />
-          客户端本地偏好与个性化路由
-        </div>
-        <h2 className="font-headline text-4xl font-bold tracking-tight text-on-surface">客户端个性化路由</h2>
-        <p className="mt-4 max-w-4xl text-sm leading-7 text-on-surface-variant">
-          展示客户端如何基于本地交互历史，对服务端多视图进行个性化加权，形成用户特定推荐表示。
-          不同用户对 G1-G4 视图的权重不同，这是 FedVLR 区别于简单多模态融合的关键。
-        </p>
-      </section>
+      <ShowcasePageHeader
+        eyebrow="选拔赛展示链路"
+        title="客户端个性化路由"
+        description="展示客户端如何基于本地交互历史，对服务端多视图进行个性化加权。"
+        chips={['本地历史不直接上传', '个性化表示 = Σ router_weight × server_view', '不同客户端产生不同 Top-K 推荐']}
+        icon={Users}
+        tone="tertiary"
+      />
 
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {clientCases.map((client) => {
@@ -200,7 +198,20 @@ export const ClientPersonalization: React.FC = () => {
         </div>
         <div className="mt-5 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-on-surface">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <p>客户端个性化展示强调本地数据不直接上传；服务端接收共享更新、风险观测指标和必要训练统计，用于聚合和下一轮下发。</p>
+          <p>客户端个性化展示强调本地数据不直接上传；服务端接收共享更新、风险观测指标和必要训练统计，用于聚合和下一轮下发。{showcaseSampleNotice}</p>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-primary/20 bg-primary/10 p-6">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">下一步</p>
+            <h3 className="mt-2 text-xl font-bold text-on-surface">攻防靶场</h3>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              继续查看投毒攻击如何造成推荐偏移，以及鲁棒防御如何削弱异常更新影响。
+            </p>
+          </div>
+          <ArrowRight className="h-6 w-6 text-primary" />
         </div>
       </section>
     </div>

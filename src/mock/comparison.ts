@@ -50,7 +50,7 @@ export const mockComparisonData = {
         status: 'Restored',
         accent: 'tertiary',
         attackLabel: '标签翻转（20%）',
-        defenseLabel: 'Cyber-Shield',
+        defenseLabel: '鲁棒防御',
         metrics: {
           recall10: 0.942,
           recall20: 0.926,
@@ -64,20 +64,20 @@ export const mockComparisonData = {
     ],
     summary: '防御组已基本恢复到基线性能水平，并显著优于受攻击模型。',
     findings: [
-      '攻击组在 Recall@10 与 NDCG@10 上均出现明显下降。',
+      '攻击组在 Recall@50 与 NDCG@50 上均出现明显下降。',
       '防御组在保持较低 loss 的同时，恢复了主要推荐指标。',
       '对比结果适合作为比赛展示中的攻防恢复示例。',
     ],
     metricComparison: [
-      {name: 'Baseline', recall: 0.921, ndcg: 0.851, loss: 0.12},
-      {name: 'Attack', recall: 0.654, ndcg: 0.521, loss: 0.45},
-      {name: 'Defense', recall: 0.942, ndcg: 0.885, loss: 0.14},
+      {name: 'Baseline', recall: 0.888, ndcg: 0.824, loss: 0.12},
+      {name: 'Attack', recall: 0.582, ndcg: 0.488, loss: 0.45},
+      {name: 'Defense', recall: 0.914, ndcg: 0.861, loss: 0.14},
     ],
     configDiff: [
       {label: '算法模型', baseline: 'FedAvg', attack: 'FedAvg', defense: 'FedAvg'},
       {label: '攻击策略', baseline: '无', attack: '标签翻转（20%）', defense: '标签翻转（20%）'},
-      {label: '防御机制', baseline: '无', attack: '无', defense: 'Cyber-Shield v2'},
-      {label: '隐私强度', baseline: '∞', attack: '∞', defense: '2.5'},
+      {label: '防御机制', baseline: '无', attack: '无', defense: '鲁棒防御'},
+      {label: '规划隐私能力', baseline: '当前未正式实现', attack: '当前未正式实现', defense: '当前未正式实现'},
     ],
     stages: [
       {stage: '阶段 1：初始收敛', status: 'Stable', tone: 'tertiary'},

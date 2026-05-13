@@ -46,8 +46,8 @@ export const createExperimentResult = (
     metricCards:
       overrides.metricCards ??
       [
-        {label: 'Recall@10', value: '0.942', change: '+2.4%', tone: 'primary'},
-        {label: 'NDCG@10', value: '0.885', change: '+1.8%', tone: 'secondary'},
+        {label: 'Recall@50', value: '0.928', change: '+2.1%', tone: 'primary'},
+        {label: 'NDCG@50', value: '0.861', change: '+1.6%', tone: 'secondary'},
         {label: '训练总时长', value: '2h 44m', change: '-12m', tone: 'neutral'},
         {label: '收敛轮次', value: '82', change: '稳定', tone: 'tertiary'},
       ],
@@ -101,9 +101,9 @@ export const createExperimentResult = (
       overrides.summaryText ??
       {
         headline: '本次实验验证了防御模块在非 IID 数据场景下的有效性。',
-        conclusion: `在 ${formatAttackLabel(config.attackType, config.attackEnabled)} 场景中，${formatDefenseLabel(config.defenseType, config.defenseEnabled)} 将 Recall@10 提升至 0.942。`,
+        conclusion: `在 ${formatAttackLabel(config.attackType, config.attackEnabled)} 场景中，${formatDefenseLabel(config.defenseType, config.defenseEnabled)} 将 Recall@50 提升至 0.928。`,
         securityAssessment: '系统通过异常检测与鲁棒聚合有效抑制恶意更新，攻击影响被控制在较低范围内。',
-        recommendation: '建议下一阶段追加差分隐私强度测试，进一步平衡精度与隐私保护收益。',
+        recommendation: '后续扩展可评估差分隐私强度测试；当前未正式实现差分隐私能力。',
       },
     defenseEfficiencyScore: overrides.defenseEfficiencyScore ?? 94.2,
     defenseEfficiencyLabel: overrides.defenseEfficiencyLabel ?? '卓越',
@@ -111,7 +111,7 @@ export const createExperimentResult = (
       overrides.referenceComparison ??
       {
         title: '参考实验对比',
-        description: '相较历史基线实验，当前实验在 Recall@10 上提升约 8.4%，同时保持较低 loss。',
+        description: '相较历史基线实验，当前实验在 Recall@50 上提升约 8.4%，同时保持较低 loss。',
       },
   };
 };
@@ -130,7 +130,7 @@ export const mockAnalysisData = {
     timestamp: '2026-03-24 21:18',
     summaryText: {
       headline: '当前任务尚未产出可视化结果，已回退到最近一次完成的历史实验。',
-      conclusion: '历史实验显示防御组相比攻击组在 NDCG@10 上有明显恢复。',
+      conclusion: '历史实验显示防御组相比攻击组在 NDCG@50 上有明显恢复。',
       securityAssessment: 'Trimmed Mean 在 20% 投毒比例下仍保持稳定聚合结果。',
       recommendation: '可继续运行当前任务，或在历史页选择已完成实验查看详情。',
     },

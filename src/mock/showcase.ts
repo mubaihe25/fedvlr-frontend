@@ -123,6 +123,9 @@ export interface DeliverySummary {
   nextSteps: string[];
 }
 
+export const showcaseSampleNotice =
+  '当前为展示样本结构，后续可替换为 FedVLR 导出的真实 artifacts 或更完整多模态数据集。';
+
 export const datasetProfile: ShowcaseDatasetProfile = {
   name: 'KU / Showcase',
   source: 'NineRec-style short-video multimodal recommendation sample',
@@ -425,6 +428,7 @@ export const deliverySummary: DeliverySummary = {
 };
 
 export const showcaseData = {
+  showcaseSampleNotice,
   datasetProfile,
   sampleItems,
   modalityEmbeddings,

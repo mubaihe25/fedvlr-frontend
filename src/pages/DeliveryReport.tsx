@@ -1,7 +1,21 @@
 import React from 'react';
-import {AlertTriangle, BarChart3, Copy, Database, Download, FileText, Layers, ShieldCheck, Swords, Users} from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  Copy,
+  Database,
+  Download,
+  FileText,
+  Home,
+  ShieldCheck,
+  Swords,
+  Terminal,
+  Users,
+} from 'lucide-react';
 import {ScenarioMetricCard} from '../components/showcase/ScenarioMetricCard';
-import {attackDefenseCases, datasetProfile, deliverySummary} from '../mock/showcase';
+import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
+import {attackDefenseCases, datasetProfile, deliverySummary, showcaseSampleNotice} from '../mock/showcase';
 
 const formatMetric = (value: number) => value.toFixed(4);
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
@@ -44,17 +58,22 @@ export const DeliveryReport: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12">
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-xs font-bold text-secondary">
-          <Layers className="h-3.5 w-3.5" />
-          选拔赛交付视角
-        </div>
-        <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
+      <ShowcasePageHeader
+        eyebrow="选拔赛展示链路"
+        title="交付报告"
+        description="汇总数据、机制、攻防、指标、限制和后续计划。"
+        chips={['系统能力摘要', 'Recall@50 / NDCG@50 / tail mean', '当前未正式实现 DP / HE / 安全聚合']}
+        icon={FileText}
+        tone="secondary"
+      />
+
+      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
+        <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div>
-            <h2 className="font-headline text-4xl font-bold tracking-tight text-on-surface">交付报告</h2>
-            <p className="mt-4 max-w-4xl text-sm leading-7 text-on-surface-variant">
-              汇总系统能力、六层架构、机制解释、核心指标、攻防结果、限制说明和后续计划。当前为 showcase 总结页，
-              后续可接入真实 FedVLR 导出的 artifacts。
+            <p className="text-xs font-bold uppercase tracking-widest text-secondary">报告摘要</p>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-on-surface-variant">
+              作为选拔赛收尾页，本页集中呈现“服务端多视图融合 + 客户端个性化路由”的机制主线，以及投毒攻击与鲁棒防御验证结果。
+              {showcaseSampleNotice}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -68,13 +87,10 @@ export const DeliveryReport: React.FC = () => {
             </button>
           </div>
         </div>
-      </section>
-
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {[
-            {label: '系统名称', value: 'FedVLR Showcase 展示平台'},
-            {label: '当前展示场景', value: '多模态联邦推荐攻防验证链路'},
+            {label: '系统名称', value: '多模态联邦推荐安全实验平台'},
+            {label: '当前展示场景', value: '服务端多视图融合 + 客户端个性化路由'},
             {label: '数据集 / 客户端', value: `${datasetProfile.name} / ${caseData.clientId}`},
             {label: '生成时间', value: 'Showcase snapshot / 2026-05'},
           ].map((item) => (
@@ -172,6 +188,29 @@ export const DeliveryReport: React.FC = () => {
           本页作为评审展示入口，帮助快速理解 FedVLR 的数据融合、客户端个性化和攻防验证链路。
           “复制摘要”和“导出报告”为展示占位按钮，当前不执行复杂导出逻辑。
         </p>
+      </section>
+
+      <section className="rounded-2xl border border-primary/20 bg-primary/10 p-6">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">下一步</p>
+            <h3 className="mt-2 text-xl font-bold text-on-surface">训练控制台 或 回到首页</h3>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              交付总结后，可进入训练控制台查看实验配置与运行监控，也可以回到首页重新开始完整演示路线。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <span className="inline-flex items-center gap-2 rounded-lg border border-primary/20 bg-surface-container-high px-4 py-2 text-sm font-bold text-primary">
+              <Terminal className="h-4 w-4" />
+              训练控制台
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-lg border border-outline-variant/20 bg-surface-container-high px-4 py-2 text-sm font-bold text-on-surface">
+              <Home className="h-4 w-4" />
+              回到首页
+            </span>
+            <ArrowRight className="hidden h-6 w-6 text-primary lg:block" />
+          </div>
+        </div>
       </section>
     </div>
   );

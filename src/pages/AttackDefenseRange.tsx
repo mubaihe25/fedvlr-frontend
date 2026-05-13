@@ -3,7 +3,8 @@ import {ArrowRight, BarChart3, Info, Network, ShieldCheck, Swords, Users} from '
 import {DefenseTraceCard} from '../components/showcase/DefenseTraceCard';
 import {RecommendationList} from '../components/showcase/RecommendationList';
 import {ScenarioMetricCard} from '../components/showcase/ScenarioMetricCard';
-import {attackDefenseCases} from '../mock/showcase';
+import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
+import {attackDefenseCases, showcaseSampleNotice} from '../mock/showcase';
 
 const formatMetric = (value: number) => value.toFixed(4);
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
@@ -53,24 +54,21 @@ export const AttackDefenseRange: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12">
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-error/20 bg-error/10 px-3 py-1 text-xs font-bold text-error">
-          <Swords className="h-3.5 w-3.5" />
-          投毒攻击与鲁棒防御验证
-        </div>
-        <h2 className="font-headline text-4xl font-bold tracking-tight text-on-surface">攻防靶场</h2>
-        <p className="mt-4 max-w-4xl text-sm leading-7 text-on-surface-variant">
-          展示投毒攻击如何改变客户端推荐结果，以及鲁棒防御如何削弱异常更新并恢复推荐效果。
-          当前为 showcase 示例链路，不改变训练逻辑，也不引入差分隐私、同态加密或安全聚合已实现表述。
-        </p>
-      </section>
+      <ShowcasePageHeader
+        eyebrow="选拔赛展示链路"
+        title="攻防靶场"
+        description="展示投毒攻击造成的推荐偏移，以及鲁棒防御带来的恢复效果。"
+        chips={['投毒攻击 → 异常更新影响聚合', '鲁棒防御处理 → 推荐效果恢复', 'Recall@50 / NDCG@50 / 攻击降幅 / 防御恢复率']}
+        icon={Swords}
+        tone="error"
+      />
 
       <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
         <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-start">
           <div>
             <p className="mb-2 font-mono text-xs font-bold text-primary">{caseData.caseId}</p>
             <h3 className="text-2xl font-bold text-on-surface">{caseData.title}</h3>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-on-surface-variant">{caseData.note}</p>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-on-surface-variant">{caseData.note} {showcaseSampleNotice}</p>
           </div>
           <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
             showcase 示例
@@ -186,6 +184,19 @@ export const AttackDefenseRange: React.FC = () => {
       </section>
 
       <DefenseTraceCard trace={caseData.defenseTrace} />
+
+      <section className="rounded-2xl border border-primary/20 bg-primary/10 p-6">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">下一步</p>
+            <h3 className="mt-2 text-xl font-bold text-on-surface">实验结果</h3>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              继续查看基线、攻击和防御三组指标摘要，并进入单次结果、历史实验与横向对比。
+            </p>
+          </div>
+          <ArrowRight className="h-6 w-6 text-primary" />
+        </div>
+      </section>
     </div>
   );
 };

@@ -4,7 +4,6 @@ import {
   Activity,
   ArrowRight,
   BarChart3,
-  Cpu,
   Database,
   Download,
   FileText,
@@ -15,6 +14,7 @@ import {
   Upload,
   Users,
 } from 'lucide-react';
+import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
 import {cn} from '../lib/utils';
 
 const architectureLayers = [
@@ -138,26 +138,13 @@ export const Architecture: React.FC = () => {
 
   return (
     <div className="space-y-10 pb-16">
-      <section className="relative overflow-hidden rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8">
-        <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-primary/5 blur-[80px]" />
-        <div className="relative z-10 max-w-5xl">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
-            <Cpu className="h-3.5 w-3.5" />
-            FedVLR 六层机制主线
-          </div>
-          <motion.h2
-            initial={{opacity: 0, y: 16}}
-            animate={{opacity: 1, y: 0}}
-            className="font-headline text-5xl font-bold tracking-tight text-on-surface"
-          >
-            系统<span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">架构</span>
-          </motion.h2>
-          <p className="mt-5 max-w-4xl text-sm leading-7 text-on-surface-variant">
-            以“数据接入 → 多模态表征 → 服务端多视图融合 → 客户端个性化路由 → 联邦训练通信 → 安全增强与实验评估”为主线，
-            解释 FedVLR 多模态联邦推荐从样本到个性化推荐输出的完整展示过程。
-          </p>
-        </div>
-      </section>
+      <ShowcasePageHeader
+        eyebrow="选拔赛展示链路"
+        title="系统架构"
+        description="从数据接入、多模态表征、服务端多视图、客户端个性化、联邦训练到攻防评估的完整链路。"
+        chips={['服务端多视图融合 + 客户端个性化路由', '客户端本地训练 → 上传共享更新 → 服务端聚合', '投毒攻击 → 鲁棒防御处理 → 推荐效果恢复']}
+        icon={Network}
+      />
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
@@ -285,6 +272,19 @@ export const Architecture: React.FC = () => {
             <FileText className="h-5 w-5 text-secondary" />
             <span className="text-sm text-on-surface">结果沉淀到实验结果页</span>
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-primary/20 bg-primary/10 p-6">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">下一步</p>
+            <h3 className="mt-2 text-xl font-bold text-on-surface">数据与融合</h3>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              继续查看图像 / 文本 / 协同 ID 如何进入 embedding，并在服务端形成 G1-G4 融合视图。
+            </p>
+          </div>
+          <ArrowRight className="h-6 w-6 text-primary" />
         </div>
       </section>
     </div>
