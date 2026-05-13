@@ -1,5 +1,6 @@
 export type ModalityKey = 'image' | 'text' | 'collaborative_id';
 export type ServerViewId = 'G1' | 'G2' | 'G3' | 'G4';
+export type RecommendationStatus = 'stable' | 'shifted' | 'injected' | 'recovered' | 'suppressed';
 
 export interface ShowcaseDatasetProfile {
   name: string;
@@ -56,6 +57,70 @@ export interface ShowcaseFederatedBoundary {
   localKept: string[];
   uploaded: string[];
   serverAggregates: string[];
+}
+
+export interface AttackDefenseMetrics {
+  recall50: number;
+  ndcg50: number;
+}
+
+export interface AttackDefenseImpact {
+  recallDrop: number;
+  ndcgDrop: number;
+}
+
+export interface AttackDefenseRecommendation {
+  rank: number;
+  itemTitle: string;
+  score: number;
+  reason: string;
+  mainModality: string;
+  status: RecommendationStatus;
+  rankChange?: string;
+}
+
+export interface RecommendationComparison {
+  baselineRecommendations: AttackDefenseRecommendation[];
+  attackedRecommendations: AttackDefenseRecommendation[];
+  defendedRecommendations: AttackDefenseRecommendation[];
+}
+
+export interface DefenseTrace {
+  totalClients: number;
+  maliciousClients: number;
+  clippedClients: number;
+  filteredClients: number;
+  trimmedUpdates: number;
+  aggregationRule: string;
+  notes: string[];
+}
+
+export interface AttackDefenseCase {
+  caseId: string;
+  title: string;
+  clientId: string;
+  dataset: string;
+  attackType: string;
+  defenseType: string;
+  maliciousRatio: number;
+  baselineMetrics: AttackDefenseMetrics;
+  attackMetrics: AttackDefenseMetrics;
+  defenseMetrics: AttackDefenseMetrics;
+  attackImpact: AttackDefenseImpact;
+  recoveryRate: number;
+  recommendationComparison: RecommendationComparison;
+  defenseTrace: DefenseTrace;
+  note: string;
+}
+
+export interface DeliverySummary {
+  systemSummary: string;
+  modelSummary: string;
+  dataSummary: string;
+  securitySummary: string;
+  metricsSummary: string;
+  limitations: string[];
+  nextSteps: string[];
 }
 
 export const datasetProfile: ShowcaseDatasetProfile = {
@@ -193,6 +258,172 @@ export const federatedBoundary: ShowcaseFederatedBoundary = {
   serverAggregates: ['客户端更新', '鲁棒防御处理结果', '全局参数更新', '下一轮下发的服务端多视图表示'],
 };
 
+export const attackDefenseCases: AttackDefenseCase[] = [
+  {
+    caseId: 'showcase-poisoning-robust-001',
+    title: 'Client-A 投毒攻击与鲁棒防御展示案例',
+    clientId: 'Client-A',
+    dataset: datasetProfile.name,
+    attackType: 'poisoning_attack / model_replacement showcase',
+    defenseType: 'robust_defense / trimmed_mean showcase',
+    maliciousRatio: 0.2,
+    baselineMetrics: {recall50: 0.2481, ndcg50: 0.1856},
+    attackMetrics: {recall50: 0.1624, ndcg50: 0.1192},
+    defenseMetrics: {recall50: 0.2268, ndcg50: 0.1694},
+    attackImpact: {recallDrop: 0.345, ndcgDrop: 0.358},
+    recoveryRate: 0.751,
+    recommendationComparison: {
+      baselineRecommendations: [
+        {
+          rank: 1,
+          itemTitle: '雨夜跑步鞋实测',
+          score: 0.91,
+          reason: '与客户端近期夜跑和装备历史稳定匹配。',
+          mainModality: '图像',
+          status: 'stable',
+        },
+        {
+          rank: 2,
+          itemTitle: '城市跑步路线 vlog',
+          score: 0.87,
+          reason: '与运动路线浏览历史和协同信号一致。',
+          mainModality: '协同 ID',
+          status: 'stable',
+        },
+        {
+          rank: 3,
+          itemTitle: '反光运动背心清单',
+          score: 0.84,
+          reason: '文本标签覆盖 running / wearable。',
+          mainModality: '文本',
+          status: 'stable',
+        },
+        {
+          rank: 4,
+          itemTitle: '轻量跑步腰包测评',
+          score: 0.79,
+          reason: '与装备类短视频主题接近。',
+          mainModality: '文本',
+          status: 'stable',
+        },
+      ],
+      attackedRecommendations: [
+        {
+          rank: 1,
+          itemTitle: '异常推广物品 X-17',
+          score: 0.88,
+          reason: '投毒更新抬高了与目标物品相关的异常表示。',
+          mainModality: '协同 ID',
+          status: 'injected',
+          rankChange: 'new',
+        },
+        {
+          rank: 2,
+          itemTitle: '雨夜跑步鞋实测',
+          score: 0.76,
+          reason: '正常兴趣仍相关，但排名受到异常更新挤压。',
+          mainModality: '图像',
+          status: 'shifted',
+          rankChange: '-1',
+        },
+        {
+          rank: 3,
+          itemTitle: '异常推广物品 Z-44',
+          score: 0.73,
+          reason: '目标物品被注入到相似用户候选集合中。',
+          mainModality: '协同 ID',
+          status: 'injected',
+          rankChange: 'new',
+        },
+        {
+          rank: 4,
+          itemTitle: '城市跑步路线 vlog',
+          score: 0.69,
+          reason: '正常推荐被推低，但仍保留在 Top-K 范围。',
+          mainModality: '协同 ID',
+          status: 'shifted',
+          rankChange: '-2',
+        },
+      ],
+      defendedRecommendations: [
+        {
+          rank: 1,
+          itemTitle: '雨夜跑步鞋实测',
+          score: 0.86,
+          reason: '鲁棒处理削弱异常更新后恢复到首位。',
+          mainModality: '图像',
+          status: 'recovered',
+          rankChange: '+1',
+        },
+        {
+          rank: 2,
+          itemTitle: '城市跑步路线 vlog',
+          score: 0.81,
+          reason: '协同兴趣恢复，重新进入前二。',
+          mainModality: '协同 ID',
+          status: 'recovered',
+          rankChange: '+2',
+        },
+        {
+          rank: 3,
+          itemTitle: '反光运动背心清单',
+          score: 0.78,
+          reason: '文本标签相关内容恢复到 Top-K。',
+          mainModality: '文本',
+          status: 'recovered',
+          rankChange: 'return',
+        },
+        {
+          rank: 4,
+          itemTitle: '异常推广物品 X-17',
+          score: 0.42,
+          reason: '异常影响被裁剪和截尾处理压制，排名回落。',
+          mainModality: '协同 ID',
+          status: 'suppressed',
+          rankChange: '-3',
+        },
+      ],
+    },
+    defenseTrace: {
+      totalClients: 40,
+      maliciousClients: 8,
+      clippedClients: 6,
+      filteredClients: 3,
+      trimmedUpdates: 5,
+      aggregationRule: 'trimmed_mean showcase aggregation',
+      notes: [
+        '根据更新范数和坐标分布识别异常方向。',
+        '裁剪高幅度更新，降低模型替换类投毒的放大效果。',
+        '截尾聚合压低异常客户端对全局表示的影响。',
+      ],
+    },
+    note: '当前为 showcase 示例数据，用于解释投毒攻击与鲁棒防御链路；后续可替换为真实 FedVLR 导出的 artifacts。',
+  },
+];
+
+export const deliverySummary: DeliverySummary = {
+  systemSummary:
+    'FedVLR-Frontend 当前展示首页、六层系统架构、数据与融合、客户端个性化、攻防靶场、实验结果和交付报告的选拔赛演示闭环。',
+  modelSummary:
+    '展示主线围绕服务端 G1-G4 多视图融合与客户端 router 个性化权重展开，强调不同客户端对多模态信号的差异化使用。',
+  dataSummary:
+    '展示数据采用 KU / Showcase 样本结构，包含图像、文本和协同 ID 三类模态占位，可替换为更完整的多模态数据集 artifacts。',
+  securitySummary:
+    '攻防展示聚焦投毒攻击、鲁棒防御和风险观测，说明异常更新如何影响推荐列表，以及鲁棒处理如何帮助恢复正常推荐。',
+  metricsSummary:
+    '核心展示指标为 Recall@50、NDCG@50、攻击降幅和防御恢复率，历史与对比摘要优先保持 tail mean 口径。',
+  limitations: [
+    '当前未正式实现差分隐私、同态加密、安全聚合。',
+    '当前 showcase 页面部分为展示结构，不代表完整真实实验数据。',
+    '真实训练、监控、结果读取仍以既有 API services 和后端导出文件为准。',
+  ],
+  nextSteps: [
+    '接入真实 FedVLR 导出的 showcase artifacts。',
+    '接入更完整多模态数据集，包括原始图片、文本、视频封面等。',
+    '把攻防靶场与实验结果页的摘要卡绑定到真实 baseline / attack / defense 对比数据。',
+  ],
+};
+
 export const showcaseData = {
   datasetProfile,
   sampleItems,
@@ -200,4 +431,6 @@ export const showcaseData = {
   serverViews,
   clientCases,
   federatedBoundary,
+  attackDefenseCases,
+  deliverySummary,
 };
