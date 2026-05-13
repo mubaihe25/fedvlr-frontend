@@ -1,98 +1,208 @@
-import React from 'react';
-import {Activity, FileText, Info, Layers, TrendingUp} from 'lucide-react';
+import React, {useMemo, useState} from 'react';
+import {Activity, Database, Info, Layers, Lock, Server, TrendingUp, Upload, Users} from 'lucide-react';
+import {ModalityWeightBar} from '../components/showcase/ModalityWeightBar';
+import {cn} from '../lib/utils';
+import {clientCases, federatedBoundary, serverViews, type ServerViewId} from '../mock/showcase';
 
-const personalizationCards = [
-  {
-    title: '客户端本地交互历史',
-    description: '占位展示客户端本地点击、浏览、评分或收藏序列。',
-    icon: Activity,
-  },
-  {
-    title: 'View G1/G2/G3/G4 权重',
-    description: '占位展示本地 router 对四个服务端融合视图的偏好分配。',
-    icon: TrendingUp,
-  },
-  {
-    title: '个性化融合表示',
-    description: '占位展示客户端根据本地历史生成的个性化多模态表示。',
-    icon: Layers,
-  },
-  {
-    title: 'Top-K 推荐列表',
-    description: '占位展示个性化融合后输出的候选推荐结果。',
-    icon: FileText,
-  },
-];
+const viewTone: Record<ServerViewId, 'primary' | 'secondary' | 'tertiary' | 'error'> = {
+  G1: 'primary',
+  G2: 'secondary',
+  G3: 'tertiary',
+  G4: 'error',
+};
 
-const viewWeights = [
-  {label: 'G1', value: '32%', tone: 'bg-primary'},
-  {label: 'G2', value: '21%', tone: 'bg-secondary'},
-  {label: 'G3', value: '29%', tone: 'bg-tertiary'},
-  {label: 'G4', value: '18%', tone: 'bg-error'},
-];
+const modalityBadgeClasses: Record<string, string> = {
+  图像: 'bg-primary/10 text-primary',
+  文本: 'bg-secondary/10 text-secondary',
+  '协同 ID': 'bg-tertiary/10 text-tertiary',
+};
 
 export const ClientPersonalization: React.FC = () => {
+  const [selectedClientId, setSelectedClientId] = useState(clientCases[0]?.clientId ?? '');
+  const selectedClient = clientCases.find((client) => client.clientId === selectedClientId) ?? clientCases[0];
+
+  const routerItems = useMemo(
+    () =>
+      (Object.entries(selectedClient.routerWeights) as Array<[ServerViewId, number]>).map(([viewId, value]) => {
+        const view = serverViews.find((item) => item.id === viewId);
+        return {
+          key: viewId,
+          label: `${viewId} ${view?.name.replace('解释视图', '') ?? ''}`,
+          value,
+          tone: viewTone[viewId],
+        };
+      }),
+    [selectedClient.routerWeights],
+  );
+
   return (
     <div className="space-y-8 pb-12">
       <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-8">
         <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-tertiary/20 bg-tertiary/10 px-3 py-1 text-xs font-bold text-tertiary">
-          <Activity className="h-3.5 w-3.5" />
-          本地偏好建模
+          <Users className="h-3.5 w-3.5" />
+          客户端本地偏好与个性化路由
         </div>
-        <h2 className="font-headline text-4xl font-bold tracking-tight text-on-surface">客户端个性化</h2>
+        <h2 className="font-headline text-4xl font-bold tracking-tight text-on-surface">客户端个性化路由</h2>
         <p className="mt-4 max-w-4xl text-sm leading-7 text-on-surface-variant">
-          展示客户端本地历史、router 权重、个性化融合表示和推荐列表。当前页面先承载展示骨架，
-          后续接入客户端路由权重和真实推荐结果。
+          展示客户端如何基于本地交互历史，对服务端多视图进行个性化加权，形成用户特定推荐表示。
+          不同用户对 G1-G4 视图的权重不同，这是 FedVLR 区别于简单多模态融合的关键。
         </p>
       </section>
 
-      <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-        {personalizationCards.map((card) => (
-          <div key={card.title} className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
-            <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-xl border border-tertiary/20 bg-tertiary/10 text-tertiary">
-              <card.icon className="h-6 w-6" />
-            </div>
-            <h3 className="text-lg font-bold text-on-surface">{card.title}</h3>
-            <p className="mt-3 text-sm leading-6 text-on-surface-variant">{card.description}</p>
-          </div>
-        ))}
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {clientCases.map((client) => {
+          const isSelected = client.clientId === selectedClient.clientId;
+
+          return (
+            <button
+              key={client.clientId}
+              onClick={() => setSelectedClientId(client.clientId)}
+              className={cn(
+                'rounded-2xl border p-5 text-left transition-all duration-300 hover:-translate-y-0.5',
+                isSelected
+                  ? 'border-tertiary/30 bg-tertiary/10 text-tertiary'
+                  : 'border-outline-variant/10 bg-surface-container-low text-on-surface hover:border-tertiary/20',
+              )}
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="font-mono text-sm font-bold">{client.clientId}</span>
+                <Activity className="h-4 w-4" />
+              </div>
+              <p className="text-sm leading-6 text-on-surface-variant">{client.profileHint}</p>
+            </button>
+          );
+        })}
       </section>
 
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(280px,0.9fr)_minmax(340px,1fr)_minmax(360px,1fr)]">
         <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
-          <h3 className="mb-5 text-xl font-bold text-on-surface">View 权重占位</h3>
-          <div className="space-y-4">
-            {viewWeights.map((item) => (
-              <div key={item.label}>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span className="font-mono font-bold text-on-surface">{item.label}</span>
-                  <span className="text-on-surface-variant">{item.value}</span>
-                </div>
-                <div className="h-2 rounded-full bg-surface-container-highest">
-                  <div className={`h-2 rounded-full ${item.tone}`} style={{width: item.value}} />
-                </div>
-              </div>
-            ))}
+          <div className="mb-5 flex items-center gap-3">
+            <Database className="h-5 w-5 text-primary" />
+            <h3 className="text-xl font-bold text-on-surface">本地历史</h3>
           </div>
-        </div>
-
-        <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
-          <h3 className="mb-5 text-xl font-bold text-on-surface">Top-K 推荐列表</h3>
+          <div className="mb-5 rounded-xl border border-primary/10 bg-primary/10 p-4">
+            <p className="font-mono text-sm font-bold text-primary">{selectedClient.clientId}</p>
+            <p className="mt-2 text-sm leading-6 text-on-surface">{selectedClient.profileHint}</p>
+          </div>
           <div className="space-y-3">
-            {['Item-042', 'Item-117', 'Item-203', 'Item-318', 'Item-429'].map((item, index) => (
-              <div key={item} className="flex items-center justify-between rounded-xl bg-surface-container-high px-4 py-3">
-                <span className="font-mono text-sm text-primary">#{index + 1}</span>
-                <span className="text-sm font-semibold text-on-surface">{item}</span>
+            {selectedClient.localHistory.map((item, index) => (
+              <div key={item} className="flex items-center gap-3 rounded-xl bg-surface-container-high px-4 py-3">
+                <span className="font-mono text-xs text-primary">H{index + 1}</span>
+                <span className="text-sm text-on-surface">{item}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 flex items-start gap-3 rounded-xl border border-tertiary/20 bg-tertiary/10 px-4 py-3 text-sm text-on-surface">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
+            <p>用户原始交互历史不直接上传，主要用于本地 router 权重和个性化表示计算。</p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <TrendingUp className="h-5 w-5 text-tertiary" />
+            <h3 className="text-xl font-bold text-on-surface">Router 权重</h3>
+          </div>
+          <ModalityWeightBar items={routerItems} />
+          <div className="mt-6 rounded-xl border border-outline-variant/10 bg-surface-container-high p-5">
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-on-surface-variant">个性化融合公式</p>
+            <p className="font-mono text-sm leading-7 text-primary">
+              personalized_representation = Σ router_weight × server_view
+            </p>
+            <p className="mt-3 text-sm leading-6 text-on-surface-variant">
+              同一组服务端 G1-G4 视图会被不同客户端赋予不同权重，因此推荐输出随本地历史而变化。
+            </p>
+          </div>
+          <div className="mt-5 space-y-3">
+            {serverViews.map((view) => (
+              <div key={view.id} className="rounded-xl bg-surface-container-high px-4 py-3">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="font-mono text-sm font-bold text-on-surface">{view.id}</span>
+                  <span className={cn('rounded-full px-2 py-0.5 text-[10px]', viewTone[view.id] === 'error' ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary')}>
+                    {Math.round(selectedClient.routerWeights[view.id] * 100)}%
+                  </span>
+                </div>
+                <p className="text-xs leading-5 text-on-surface-variant">{view.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <Layers className="h-5 w-5 text-secondary" />
+            <h3 className="text-xl font-bold text-on-surface">个性化推荐列表</h3>
+          </div>
+          <div className="space-y-4">
+            {selectedClient.recommendationList.map((recommendation, index) => (
+              <div key={recommendation.title} className="rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4">
+                <div className="mb-3 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-mono text-xs text-primary">Top {index + 1}</p>
+                    <h4 className="mt-1 font-bold text-on-surface">{recommendation.title}</h4>
+                  </div>
+                  <span className="rounded-full bg-surface-container-highest px-3 py-1 font-mono text-xs text-tertiary">
+                    {recommendation.score.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-sm leading-6 text-on-surface-variant">{recommendation.reason}</p>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-xs text-on-surface-variant">主导信号</span>
+                  <span className={cn('rounded-full px-2.5 py-1 text-xs font-bold', modalityBadgeClasses[recommendation.mainModality] ?? 'bg-primary/10 text-primary')}>
+                    {recommendation.mainModality}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <div className="flex items-start gap-3 rounded-xl border border-tertiary/20 bg-tertiary/10 px-5 py-4 text-sm text-on-surface">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
-        <p>当前为展示结构占位，后续接入客户端路由权重和推荐结果。</p>
-      </div>
+      <section className="rounded-2xl border border-primary/20 bg-[#0c141b] p-6">
+        <div className="mb-5 flex items-center gap-3">
+          <Server className="h-5 w-5 text-primary" />
+          <h3 className="text-xl font-bold text-on-surface">联邦边界说明</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl bg-surface-container-high p-5">
+            <div className="mb-4 flex items-center gap-2 text-tertiary">
+              <Lock className="h-4 w-4" />
+              <h4 className="font-bold">本地保留</h4>
+            </div>
+            <div className="space-y-2">
+              {federatedBoundary.localKept.map((item) => (
+                <p key={item} className="rounded-lg bg-surface-container-highest px-3 py-2 text-sm text-on-surface">{item}</p>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-surface-container-high p-5">
+            <div className="mb-4 flex items-center gap-2 text-primary">
+              <Upload className="h-4 w-4" />
+              <h4 className="font-bold">上传给服务端</h4>
+            </div>
+            <div className="space-y-2">
+              {federatedBoundary.uploaded.map((item) => (
+                <p key={item} className="rounded-lg bg-surface-container-highest px-3 py-2 text-sm text-on-surface">{item}</p>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-surface-container-high p-5">
+            <div className="mb-4 flex items-center gap-2 text-secondary">
+              <Server className="h-4 w-4" />
+              <h4 className="font-bold">服务端聚合</h4>
+            </div>
+            <div className="space-y-2">
+              {federatedBoundary.serverAggregates.map((item) => (
+                <p key={item} className="rounded-lg bg-surface-container-highest px-3 py-2 text-sm text-on-surface">{item}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-on-surface">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p>客户端个性化展示强调本地数据不直接上传；服务端接收共享更新、风险观测指标和必要训练统计，用于聚合和下一轮下发。</p>
+        </div>
+      </section>
     </div>
   );
 };
