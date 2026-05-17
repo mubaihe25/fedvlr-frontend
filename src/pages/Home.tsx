@@ -1,7 +1,9 @@
 import React from 'react';
 import {motion} from 'motion/react';
-import {ArrowRight, Cloud, Microscope, Network, Route, Shield, ShieldCheck, TrendingUp} from 'lucide-react';
+import {AlertTriangle, ArrowRight, Cloud, Database, Microscope, Network, Route, Shield, ShieldCheck, TrendingUp} from 'lucide-react';
 import {AnimatedPipeline} from '../components/home/AnimatedPipeline';
+import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
+import {getDatasetLabel} from '../lib/showcaseFormat';
 import {mockHomeData} from '../mock/home';
 import type {PageType} from '../types/common';
 
@@ -55,6 +57,11 @@ const demoRoute: Array<{step: string; title: string; description: string; page: 
 
 export const Home: React.FC<HomeProps> = ({onPageChange}) => {
   const {hero, pipeline, mechanisms, fusionRationale, snapshotMetrics, snapshotChart, capabilities} = mockHomeData;
+  const {bundle, isLoading} = useShowcaseBundle();
+  const findScenario = (keyword: string) =>
+    bundle.scenarios.find((scenario) => [scenario.name, scenario.dataset, ...(scenario.tags ?? [])].join(' ').toLowerCase().includes(keyword));
+  const kuScenario = findScenario('ku') ?? findScenario('mmfedrap');
+  const amazonScenario = findScenario('amazon');
 
   return (
     <div className="relative space-y-24 pb-12">
@@ -144,6 +151,68 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => {
               <p className="mt-2 text-xs leading-5 text-on-surface-variant">{item.description}</p>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-secondary/20 bg-surface-container-low p-6">
+        <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-xs font-bold text-secondary">
+              <Database className="h-3.5 w-3.5" />
+              Showcase artifact 状态
+            </div>
+            <h2 className="text-2xl font-bold text-on-surface">真实场景入口</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant">
+              首页首屏保持原录屏结构；下方展示 FedVLR-API showcase artifacts 的当前读取状态。API 不可用时自动使用 mock fallback。
+            </p>
+          </div>
+          <div className="rounded-full border border-outline-variant/10 bg-surface-container-high px-3 py-1 text-xs font-bold text-on-surface">
+            {isLoading ? '读取中' : bundle.dataSource === 'api' ? 'API artifact' : bundle.dataSource === 'mixed' ? 'API + fallback' : 'mock fallback'}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-high p-5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">当前 artifact</p>
+            <h3 className="mt-2 text-lg font-bold text-on-surface">{bundle.selectedScenario.name}</h3>
+            <p className="mt-2 text-sm leading-6 text-on-surface-variant">
+              {getDatasetLabel(bundle.report.datasetProfile)} / {bundle.selectedScenario.model ?? bundle.report.model ?? '暂无 / 不适用'}
+            </p>
+            {bundle.fallbackReason ? (
+              <div className="mt-4 flex items-start gap-2 rounded-xl border border-error/20 bg-error/10 px-3 py-2 text-xs leading-5 text-on-surface">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-error" />
+                <span className="break-words">{bundle.fallbackReason}</span>
+              </div>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {[
+              {title: 'KU / MMFedRAP', scenario: kuScenario, page: 'attackDefenseRange' as PageType},
+              {title: 'Amazon Beauty', scenario: amazonScenario, page: 'dataFusion' as PageType},
+            ].map((item) => (
+              <button
+                key={item.title}
+                onClick={() => onPageChange?.(item.page)}
+                className="group rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4 text-left transition-all hover:-translate-y-0.5 hover:border-secondary/30"
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="font-bold text-on-surface">{item.title}</h3>
+                  <ArrowRight className="h-4 w-4 text-on-surface-variant transition-transform group-hover:translate-x-1 group-hover:text-secondary" />
+                </div>
+                <p className="text-xs leading-5 text-on-surface-variant">
+                  {item.scenario
+                    ? `${item.scenario.name} / ${item.scenario.dataset ?? '暂无 / 不适用'}`
+                    : '当前 API/mock 未返回该数据集场景。'}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {(item.scenario?.tags ?? ['showcase']).slice(0, 4).map((tag) => (
+                    <span key={tag} className="rounded-full bg-secondary/10 px-2 py-1 text-[10px] font-bold text-secondary">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 

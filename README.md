@@ -18,6 +18,11 @@ It presents the multimodal federated recommendation workflow, experiment configu
 
 - Home: project positioning, multimodal recommendation pipeline, attack-defense loop, and representative metrics.
 - Architecture: frontend/API/training-core structure and attack-defense insertion points.
+- Data Fusion: showcase dataset profile, modality fields, feature-method notes, and the existing fusion-view explanation.
+- Client Personalization: client-side router and G1-G4 personalized view weighting.
+- Attack Defense Range: API-backed showcase scenarios, metrics, recommendations, target-rank manipulation, defense trace, and boundary notes.
+- Experiment Results: API-backed showcase artifact summary plus the existing Analysis, History, and Comparison views.
+- Delivery Report: report-style summary generated from the current showcase artifact and its limitations.
 - Training Console: experiment configuration and launch controls.
 - Monitoring: validate-only/dry-run/async launch status display.
 - Analysis: single experiment result analysis.
@@ -36,11 +41,21 @@ The frontend prefers real data from `FedVLR-API`:
 - `/experiments/{experiment_key}/summary`
 - `/experiments/{experiment_key}/result`
 - `/experiments/{experiment_key}/csv`
-- `/showcase/comparison`
+- `/showcase/scenarios`
+- `/showcase/scenarios/{scenario_id}/report`
+- `/showcase/scenarios/{scenario_id}/dataset`
+- `/showcase/scenarios/{scenario_id}/metrics`
+- `/showcase/scenarios/{scenario_id}/recommendations`
+- `/showcase/scenarios/{scenario_id}/security`
+- `/showcase/scenarios/{scenario_id}/privacy`
 
-Mock data under `src/mock` is a fallback for offline demos and UI continuity. Mock-only text or placeholder options must not be treated as real implemented capabilities.
+Showcase pages use `src/services/showcase.ts` and `src/types/showcase.ts` to read the API first, then fall back to `src/mock/showcase.ts` if the API or an artifact endpoint is unavailable. The selector on showcase pages exposes the scenario source (`API artifact`, `mock fallback`, or mixed endpoint fallback), dataset/model metadata, tags, warnings, and flags such as `smoke`, `proxy`, `demo_only`, and `unavailable`.
+
+Mock data under `src/mock` is a fallback for offline demos and UI continuity. Mock-only text, placeholder options, `proxy`, `demo`, or `smoke` artifacts must not be treated as real implemented capabilities.
 
 In particular, differential privacy, homomorphic encryption, and secure aggregation are not formally implemented in the current FedVLR training chain. If mentioned, they should be described only as future extensions or planning placeholders.
+
+For Amazon showcase artifacts, `image_features` may be a URL-hash placeholder. The frontend must label that as a placeholder and not as a real visual embedding.
 
 ## Metric Convention
 

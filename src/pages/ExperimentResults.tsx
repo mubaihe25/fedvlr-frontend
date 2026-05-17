@@ -2,8 +2,10 @@ import React, {useEffect, useState} from 'react';
 import {BarChart3, Clock, FileText, ShieldCheck, Swords, TrendingUp} from 'lucide-react';
 import {ScenarioMetricCard} from '../components/showcase/ScenarioMetricCard';
 import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
+import {ShowcaseScenarioSelector} from '../components/showcase/ShowcaseScenarioSelector';
+import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
 import {cn} from '../lib/utils';
-import {attackDefenseCases, showcaseSampleNotice} from '../mock/showcase';
+import {formatMetricValue, formatPercentValue, getRecommendationCounts, summarizeArtifactValue} from '../lib/showcaseFormat';
 import type {ConsoleSessionState} from '../types/common';
 import type {TrainConfig} from '../types/train';
 import {Analysis} from './console/Analysis';
@@ -47,9 +49,6 @@ const tabs: Array<{
   },
 ];
 
-const formatMetric = (value: number) => value.toFixed(4);
-const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
-
 export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
   initialView,
   session,
@@ -59,7 +58,10 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
   onReuseConfig,
 }) => {
   const [activeView, setActiveView] = useState<ExperimentResultsView>(initialView);
-  const showcaseCase = attackDefenseCases[0];
+  const {bundle, isLoading, setSelectedScenarioId} = useShowcaseBundle();
+  const report = bundle.report;
+  const metrics = report.metricsSummary;
+  const recommendationCounts = getRecommendationCounts(report.recommendationComparison);
 
   useEffect(() => {
     setActiveView(initialView);
@@ -101,10 +103,12 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
       <ShowcasePageHeader
         eyebrow="选拔赛展示链路"
         title="实验结果"
-        description="整合单次结果、历史实验和横向对比，量化基线、攻击和防御效果。"
-        chips={['Recall@50 / NDCG@50', '攻击降幅 / 防御恢复率', '单次结果 / 历史实验 / 横向对比']}
+        description="整合 showcase 真实 artifact 摘要、单次结果、历史实验和横向对比，量化基线、攻击和防御效果。"
+        chips={['metrics_summary / attack_defense_summary', 'privacy_risk_summary', '保留 Analysis / History / Comparison 原逻辑']}
         icon={BarChart3}
       />
+
+      <ShowcaseScenarioSelector bundle={bundle} isLoading={isLoading} onScenarioChange={setSelectedScenarioId} />
 
       <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
         <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
@@ -113,45 +117,46 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
               <TrendingUp className="h-3.5 w-3.5" />
               实验结果总览
             </div>
-            <h3 className="text-2xl font-bold text-on-surface">Showcase 攻防摘要</h3>
+            <h3 className="text-2xl font-bold text-on-surface">真实 artifact 摘要</h3>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-on-surface-variant">
-              以下摘要来自 showcase 示例数据，用于串联攻防靶场与结果页。单次结果、历史实验、横向对比仍继续复用原有真实读取逻辑。{showcaseSampleNotice}
+              顶部摘要优先读取 FedVLR-API showcase report；单次结果、历史实验、横向对比仍继续复用原有真实读取逻辑。
+              当前数据来源：{bundle.dataSource === 'api' ? 'API artifact' : bundle.dataSource === 'mixed' ? 'API + fallback' : 'mock fallback'}。
             </p>
           </div>
           <div className="rounded-full border border-outline-variant/10 bg-surface-container-high px-3 py-1 text-xs font-bold text-on-surface-variant">
-            {showcaseCase.caseId}
+            {bundle.selectedScenario.scenarioId}
           </div>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <ScenarioMetricCard
             label="基线效果"
-            value={formatMetric(showcaseCase.baselineMetrics.recall50)}
-            description={`NDCG@50 ${formatMetric(showcaseCase.baselineMetrics.ndcg50)}，正常推荐列表作为对照。`}
+            value={formatMetricValue(metrics?.baseline?.recall50)}
+            description={`NDCG@50 ${formatMetricValue(metrics?.baseline?.ndcg50)}，正常推荐列表作为对照。`}
             tone="primary"
           />
           <ScenarioMetricCard
-            label="投毒影响"
-            value={formatPercent(showcaseCase.attackImpact.recallDrop)}
-            description={`Attack Recall@50 ${formatMetric(showcaseCase.attackMetrics.recall50)}，异常物品进入 Top-K。`}
+            label="投毒 / 操纵影响"
+            value={formatPercentValue(metrics?.recallDrop)}
+            description={`Attack Recall@50 ${formatMetricValue(metrics?.attack?.recall50)}；target_hit_rate=0 时不写成攻击成功。`}
             tone="error"
           />
           <ScenarioMetricCard
             label="防御恢复"
-            value={formatPercent(showcaseCase.recoveryRate)}
-            description={`Defense Recall@50 ${formatMetric(showcaseCase.defenseMetrics.recall50)}，正常推荐部分回升。`}
+            value={formatPercentValue(metrics?.recoveryRate)}
+            description={`Defense Recall@50 ${formatMetricValue(metrics?.defense?.recall50)}，字段缺失时显示暂无 / 不适用。`}
             tone="tertiary"
           />
           <ScenarioMetricCard
-            label="对比分析"
-            value="3 组"
-            description="基线、攻击、防御三组指标和推荐列表可横向解释。"
+            label="推荐对比"
+            value={`${recommendationCounts.baseline}/${recommendationCounts.attack}/${recommendationCounts.defense}`}
+            description="baseline / attack / defense 三组推荐摘要。"
             tone="secondary"
           />
         </div>
         <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
           {[
             {label: '基线', icon: BarChart3, text: '正常客户端兴趣稳定保留', tone: 'text-primary'},
-            {label: '攻击', icon: Swords, text: '异常推荐被推入前列', tone: 'text-error'},
+            {label: '攻击', icon: Swords, text: '观察异常推荐排名变化', tone: 'text-error'},
             {label: '防御', icon: ShieldCheck, text: '异常影响被削弱，结果恢复', tone: 'text-tertiary'},
           ].map((item) => (
             <div key={item.label} className="flex items-center gap-3 rounded-xl bg-surface-container-high px-4 py-3">
@@ -160,6 +165,18 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
                 <p className="text-sm font-bold text-on-surface">{item.label}</p>
                 <p className="text-xs text-on-surface-variant">{item.text}</p>
               </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {[
+            {label: 'attack_defense_summary', value: report.attackDefenseSummary},
+            {label: 'privacy_risk_summary', value: report.privacyRiskSummary},
+            {label: 'recommendation_comparison', value: report.recommendationComparison?.warnings?.length ? report.recommendationComparison.warnings : recommendationCounts},
+          ].map((item) => (
+            <div key={item.label} className="rounded-xl border border-outline-variant/10 bg-surface-container-high p-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{item.label}</p>
+              <p className="mt-2 break-words text-xs leading-5 text-on-surface">{summarizeArtifactValue(item.value)}</p>
             </div>
           ))}
         </div>

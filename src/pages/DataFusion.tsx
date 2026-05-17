@@ -2,9 +2,12 @@ import React from 'react';
 import {ArrowRight, CheckCircle2, Database, FileText, Image, Info, Layers, Network} from 'lucide-react';
 import {ModalityWeightBar} from '../components/showcase/ModalityWeightBar';
 import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
+import {ShowcaseScenarioSelector} from '../components/showcase/ShowcaseScenarioSelector';
 import {VectorPreview} from '../components/showcase/VectorPreview';
+import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
+import {formatPlainValue, getDatasetLabel, hasAmazonUrlHashPlaceholder} from '../lib/showcaseFormat';
 import {cn} from '../lib/utils';
-import {datasetProfile, modalityEmbeddings, sampleItems, serverViews, showcaseSampleNotice, type ModalityKey} from '../mock/showcase';
+import {modalityEmbeddings, sampleItems, serverViews, showcaseSampleNotice, type ModalityKey} from '../mock/showcase';
 
 const modalityLabels: Record<ModalityKey, string> = {
   image: '图像',
@@ -33,27 +36,34 @@ const typeLabels = {
 } as const;
 
 export const DataFusion: React.FC = () => {
+  const {bundle, isLoading, setSelectedScenarioId} = useShowcaseBundle();
+  const datasetProfile = bundle.report.datasetProfile;
+  const isAmazonPlaceholder = hasAmazonUrlHashPlaceholder(datasetProfile, bundle.selectedScenario);
+  const modalities = datasetProfile?.modalities?.length ? datasetProfile.modalities : ['image', 'text', 'collaborative_id'];
+
   return (
     <div className="space-y-8 pb-12">
       <ShowcasePageHeader
         eyebrow="选拔赛展示链路"
         title="数据与多模态融合"
-        description="展示图像、文本和协同 ID 如何转化为 embedding，并在服务端形成多个融合视图。"
-        chips={['图像 / 文本 / 协同 ID → embedding', '服务端融合视图 G1-G4', '后续交给客户端 router 加权']}
+        description="优先读取 showcase dataset_profile，展示数据规模、划分、稀疏度、多模态字段和特征方法。"
+        chips={['dataset_profile API 优先', 'train / valid / test / sparsity', 'Amazon image_features URL-hash placeholder 明确标注']}
         icon={Database}
       />
 
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+      <ShowcaseScenarioSelector bundle={bundle} isLoading={isLoading} onScenarioChange={setSelectedScenarioId} />
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         {[
-          {label: '数据集', value: datasetProfile.name},
-          {label: '用户数', value: datasetProfile.users},
-          {label: '物品数', value: datasetProfile.items},
-          {label: '交互数', value: datasetProfile.interactions},
-          {label: '稀疏度', value: datasetProfile.sparsity},
+          {label: '数据集', value: getDatasetLabel(datasetProfile)},
+          {label: '用户数', value: datasetProfile?.users},
+          {label: '物品数', value: datasetProfile?.items},
+          {label: '交互数', value: datasetProfile?.interactions},
+          {label: '稀疏度', value: datasetProfile?.sparsity},
         ].map((metric) => (
           <div key={metric.label} className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-5">
             <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{metric.label}</p>
-            <p className="mt-3 text-xl font-bold text-on-surface">{metric.value}</p>
+            <p className="mt-3 break-words text-xl font-bold text-on-surface">{formatPlainValue(metric.value)}</p>
           </div>
         ))}
       </section>
@@ -61,18 +71,45 @@ export const DataFusion: React.FC = () => {
       <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-5">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
-            <h3 className="text-lg font-bold text-on-surface">{datasetProfile.source}</h3>
-            <p className="mt-2 text-sm leading-6 text-on-surface-variant">{datasetProfile.note}</p>
+            <h3 className="text-lg font-bold text-on-surface">{formatPlainValue(datasetProfile?.source ?? bundle.selectedScenario.name)}</h3>
+            <p className="mt-2 text-sm leading-6 text-on-surface-variant">
+              {formatPlainValue(datasetProfile?.note)}
+              {isAmazonPlaceholder ? ' Amazon image_features 是 URL-hash placeholder，不是真实视觉 embedding。' : ''}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {datasetProfile.modalities.map((modality) => (
+            {modalities.map((modality) => (
               <span key={modality} className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
-                {modalityLabels[modality]}
+                {modalityLabels[modality as ModalityKey] ?? modality}
               </span>
             ))}
           </div>
         </div>
       </section>
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {[
+          {label: 'train', value: datasetProfile?.train},
+          {label: 'valid', value: datasetProfile?.valid},
+          {label: 'test', value: datasetProfile?.test},
+          {label: 'text_feature_method', value: datasetProfile?.textFeatureMethod},
+          {label: 'image_feature_method', value: datasetProfile?.imageFeatureMethod},
+        ].map((item) => (
+          <div key={item.label} className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-5">
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{item.label}</p>
+            <p className="mt-3 break-words text-sm font-bold text-on-surface">{formatPlainValue(item.value)}</p>
+          </div>
+        ))}
+      </section>
+
+      {isAmazonPlaceholder ? (
+        <section className="rounded-2xl border border-secondary/20 bg-secondary/10 p-5">
+          <div className="flex items-start gap-3 text-sm leading-6 text-on-surface">
+            <Info className="mt-1 h-4 w-4 shrink-0 text-secondary" />
+            <p>Amazon Beauty 场景中的 image_features 是 URL-hash placeholder，用于 artifact 对齐和页面展示，不是真实视觉 embedding。</p>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.75fr)_minmax(360px,0.9fr)]">
         <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
