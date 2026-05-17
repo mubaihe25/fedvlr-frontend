@@ -9,6 +9,8 @@ interface RecommendationListProps {
   tone: 'baseline' | 'attack' | 'defense';
 }
 
+const MAX_VISIBLE_ITEMS = 12;
+
 const toneClasses = {
   baseline: {
     icon: 'text-primary',
@@ -65,16 +67,22 @@ const getStatusClass = (status?: string | null) => {
 
 export const RecommendationList: React.FC<RecommendationListProps> = ({title, description, items, tone}) => {
   const toneClass = toneClasses[tone];
+  const visibleItems = items.slice(0, MAX_VISIBLE_ITEMS);
 
   return (
     <div className={cn('rounded-2xl border bg-surface-container-low p-5', toneClass.border)}>
       <div className="mb-5">
         <div className={cn('mb-2 inline-flex rounded-full px-3 py-1 text-xs font-bold', toneClass.badge)}>{title}</div>
         <p className="text-sm leading-6 text-on-surface-variant">{description}</p>
+        {items.length > MAX_VISIBLE_ITEMS ? (
+          <p className="mt-2 text-xs text-on-surface-variant">
+            当前 artifact 共 {items.length} 条，页面展示前 {MAX_VISIBLE_ITEMS} 条用于快速检查。
+          </p>
+        ) : null}
       </div>
       <div className="space-y-3">
         {items.length ? (
-          items.map((item, index) => {
+          visibleItems.map((item, index) => {
             const score = formatScore(item.score);
             const itemTitle = getItemTitle(item);
 

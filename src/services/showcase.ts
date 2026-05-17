@@ -168,6 +168,20 @@ const firstBoolean = (record: ShowcaseJsonRecord | undefined, keys: string[]) =>
 
 const firstStringList = (record: ShowcaseJsonRecord | undefined, keys: string[]) => toStringList(readField(record, keys));
 
+const inferFlagFromText = (record: ShowcaseJsonRecord, fragments: string[]) => {
+  const text = [
+    firstString(record, ['id', 'scenario_id', 'scenarioId', 'case_id', 'caseId']),
+    firstString(record, ['name', 'title', 'label', 'scenario_name', 'scenarioName']),
+    firstString(record, ['dataset', 'dataset_name', 'datasetName']),
+    ...firstStringList(record, ['tags', 'scenario_tags', 'scenarioTags']),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return fragments.some((fragment) => text.includes(fragment));
+};
+
 const normalizeScenario = (
   value: unknown,
   index: number,
@@ -190,10 +204,10 @@ const normalizeScenario = (
     dataSource,
     unavailable: firstBoolean(record, ['unavailable']),
     notAvailable: firstBoolean(record, ['not_available', 'notAvailable']),
-    smoke: firstBoolean(record, ['smoke', 'is_smoke', 'isSmoke']),
-    proxy: firstBoolean(record, ['proxy', 'is_proxy', 'isProxy']),
-    demo: firstBoolean(record, ['demo', 'is_demo', 'isDemo']),
-    demoOnly: firstBoolean(record, ['demo_only', 'demoOnly']),
+    smoke: firstBoolean(record, ['smoke', 'is_smoke', 'isSmoke']) ?? inferFlagFromText(record, ['smoke']),
+    proxy: firstBoolean(record, ['proxy', 'is_proxy', 'isProxy']) ?? inferFlagFromText(record, ['proxy']),
+    demo: firstBoolean(record, ['demo', 'is_demo', 'isDemo']) ?? inferFlagFromText(record, ['demo']),
+    demoOnly: firstBoolean(record, ['demo_only', 'demoOnly']) ?? inferFlagFromText(record, ['demo_only', 'demo-only', 'demo']),
     raw: isRecord(value) ? value : undefined,
   };
 };
@@ -248,7 +262,13 @@ const normalizeMetricSet = (payload: unknown): Record<string, unknown> => {
 const normalizeMetricsSummary = (payload: unknown): ShowcaseMetricsSummary => {
   const record = pickRecord(payload, ['metrics_summary', 'metricsSummary', 'metrics', 'summary']) ?? {};
   const attackImpact = pickRecord(record.attack_impact ?? record.attackImpact, ['attack_impact', 'attackImpact']);
-  const baseline = normalizeMetricSet(readField(record, ['baseline', 'baseline_metrics', 'baselineMetrics', 'clean']));
+  const manipulationRecord =
+    pickRecord(record.recommendation_manipulation ?? record.recommendationManipulation, [
+      'recommendation_manipulation',
+      'recommendationManipulation',
+    ]) ?? {};
+  const baselinePayload = readField(record, ['baseline', 'baseline_metrics', 'baselineMetrics', 'clean']) ?? record;
+  const baseline = normalizeMetricSet(baselinePayload);
   const attack = normalizeMetricSet(readField(record, ['attack', 'attack_metrics', 'attackMetrics', 'attacked']));
   const defense = normalizeMetricSet(readField(record, ['defense', 'defense_metrics', 'defenseMetrics', 'defended']));
   const recallDrop =
@@ -264,8 +284,24 @@ const normalizeMetricsSummary = (payload: unknown): ShowcaseMetricsSummary => {
     defense,
     recallDrop,
     ndcgDrop,
-    recoveryRate: firstNumber(record, ['recovery_rate', 'recoveryRate', 'defense_recovery_rate', 'defenseRecoveryRate']),
-    targetHitRate: firstNumber(record, ['target_hit_rate', 'targetHitRate']),
+    recoveryRate: firstNumber(record, [
+      'recovery_rate',
+      'recoveryRate',
+      'recall_recovery_rate',
+      'recallRecoveryRate',
+      'defense_recovery_rate',
+      'defenseRecoveryRate',
+    ]),
+    targetHitRate:
+      firstNumber(record, ['target_hit_rate', 'targetHitRate', 'target_hit_rate_attack', 'targetHitRateAttack']) ??
+      firstNumber(manipulationRecord, [
+        'target_hit_rate_attack',
+        'targetHitRateAttack',
+        'target_hit_rate_at_k_attack',
+        'targetHitRateAtKAttack',
+        'injected_target_hit_rate_attack',
+        'injectedTargetHitRateAttack',
+      ]),
     warnings: firstStringList(record, ['warnings', 'warning', 'notes']),
     unavailable: firstBoolean(record, ['unavailable', 'not_available', 'notAvailable']),
     raw: record,
@@ -328,30 +364,66 @@ const normalizeTargetRankEntry = (value: unknown): ShowcaseTargetRankEntry => {
   return {
     itemId: readField(record, ['item_id', 'itemId', 'target_item_id', 'targetItemId', 'id']) as string | number | null | undefined,
     title: firstString(record, ['title', 'target_title', 'targetTitle', 'name']),
-    baselineRank: firstNumber(record, ['baseline_rank', 'baselineRank', 'clean_rank', 'cleanRank']),
-    attackRank: firstNumber(record, ['attack_rank', 'attackRank', 'attacked_rank', 'attackedRank']),
+    baselineRank: firstNumber(record, [
+      'baseline_rank',
+      'baselineRank',
+      'clean_rank',
+      'cleanRank',
+      'baseline_best_unmasked_rank',
+      'baselineBestUnmaskedRank',
+      'baseline_mean_unmasked_rank',
+      'baselineMeanUnmaskedRank',
+    ]),
+    attackRank: firstNumber(record, [
+      'attack_rank',
+      'attackRank',
+      'attacked_rank',
+      'attackedRank',
+      'attack_best_unmasked_rank',
+      'attackBestUnmaskedRank',
+      'attack_mean_unmasked_rank',
+      'attackMeanUnmaskedRank',
+    ]),
     defenseRank: firstNumber(record, ['defense_rank', 'defenseRank', 'defended_rank', 'defendedRank']),
-    rankGain: firstNumber(record, ['rank_gain', 'rankGain', 'rank_delta', 'rankDelta']),
-    scoreGain: firstNumber(record, ['score_gain', 'scoreGain', 'score_delta', 'scoreDelta']),
+    rankGain: firstNumber(record, [
+      'rank_gain',
+      'rankGain',
+      'rank_delta',
+      'rankDelta',
+      'best_rank_shift_positive_is_better',
+      'bestRankShiftPositiveIsBetter',
+      'mean_rank_shift_positive_is_better',
+      'meanRankShiftPositiveIsBetter',
+    ]),
+    scoreGain: firstNumber(record, ['score_gain', 'scoreGain', 'score_delta', 'scoreDelta', 'best_score_gain', 'bestScoreGain', 'mean_score_gain', 'meanScoreGain']),
     targetHitRate: firstNumber(record, ['target_hit_rate', 'targetHitRate']),
-    inTop50: firstBoolean(record, ['in_top50', 'inTop50', 'top50_hit', 'top50Hit']),
+    inTop50: firstBoolean(record, ['in_top50', 'inTop50', 'top50_hit', 'top50Hit', 'entered_top50', 'enteredTop50']),
     raw: isRecord(value) ? value : undefined,
   };
 };
 
 const normalizeTargetRankSummary = (payload: unknown): ShowcaseTargetRankSummary => {
   const record = pickRecord(payload, ['target_rank_summary', 'targetRankSummary', 'target_rank_comparison', 'targetRankComparison']) ?? {};
+  const nestedRankScore = pickRecord(readField(record, ['target_rank_score', 'targetRankScore']), ['target_rank_score', 'targetRankScore']);
+  const sourceRecord = nestedRankScore ?? record;
   const entries =
-    pickArray(record, ['entries', 'items', 'targets', 'target_rank_comparison', 'targetRankComparison']) ??
-    (Array.isArray(record) ? record : []);
+    pickArray(sourceRecord, ['entries', 'items', 'targets', 'rows', 'target_rank_comparison', 'targetRankComparison']) ??
+    (Array.isArray(sourceRecord) ? sourceRecord : []);
 
   return {
     entries: entries.map(normalizeTargetRankEntry),
-    targetHitRate: firstNumber(record, ['target_hit_rate', 'targetHitRate']),
-    note: firstString(record, ['note', 'summary', 'description']),
-    warnings: firstStringList(record, ['warnings', 'warning', 'notes']),
-    unavailable: firstBoolean(record, ['unavailable', 'not_available', 'notAvailable']),
-    raw: record,
+    targetHitRate: firstNumber(sourceRecord, [
+      'target_hit_rate',
+      'targetHitRate',
+      'target_hit_rate_attack',
+      'targetHitRateAttack',
+      'target_hit_rate_at_k_attack',
+      'targetHitRateAtKAttack',
+    ]),
+    note: firstString(sourceRecord, ['note', 'summary', 'description']),
+    warnings: firstStringList(sourceRecord, ['warnings', 'warning', 'notes']),
+    unavailable: firstBoolean(sourceRecord, ['unavailable', 'not_available', 'notAvailable']),
+    raw: sourceRecord,
   };
 };
 
@@ -363,13 +435,19 @@ const normalizeDefenseTrace = (payload: unknown): ShowcaseDefenseTrace => {
   return {
     totalClients: firstNumber(record, ['total_clients', 'totalClients', 'clients']),
     maliciousClients: firstNumber(record, ['malicious_clients', 'maliciousClients', 'attack_clients', 'attackClients']),
-    clippedClients: firstNumber(record, ['clipped_clients', 'clippedClients']),
-    filteredClients: firstNumber(record, ['filtered_clients', 'filteredClients']),
+    clippedClients: firstNumber(record, ['clipped_clients', 'clippedClients', 'clipped_client_count', 'clippedClientCount']),
+    filteredClients: firstNumber(record, ['filtered_clients', 'filteredClients', 'filtered_client_count', 'filteredClientCount']),
     trimmedUpdates: firstNumber(record, ['trimmed_updates', 'trimmedUpdates']),
     aggregationRule: firstString(record, ['aggregation_rule', 'aggregationRule', 'aggregator', 'defense_type', 'defenseType']),
     notes: firstStringList(record, ['notes', 'warnings', 'summary']),
-    krumSelected: toIdList(readField(record, ['krum_selected', 'krumSelected', 'selected']) ?? readField(krumRecord, ['selected', 'selected_clients'])),
-    krumRejected: toIdList(readField(record, ['krum_rejected', 'krumRejected', 'rejected']) ?? readField(krumRecord, ['rejected', 'rejected_clients'])),
+    krumSelected: toIdList(
+      readField(record, ['krum_selected', 'krumSelected', 'selected', 'selected_indices', 'selectedIndices']) ??
+        readField(krumRecord, ['selected', 'selected_clients', 'selected_indices']),
+    ),
+    krumRejected: toIdList(
+      readField(record, ['krum_rejected', 'krumRejected', 'rejected', 'rejected_indices', 'rejectedIndices']) ??
+        readField(krumRecord, ['rejected', 'rejected_clients', 'rejected_indices']),
+    ),
     trimmedMean: readField(record, ['trimmed_mean', 'trimmedMean']),
     median: readField(record, ['median']),
     dpNoise: readField(record, ['dp_noise', 'dpNoise']),
@@ -385,6 +463,14 @@ const uniqueStrings = (values: string[]) => Array.from(new Set(values.filter(Boo
 const normalizeReport = (payload: unknown, scenario?: ShowcaseScenario): ShowcaseReport => {
   const record = pickRecord(payload, ['report', 'artifact', 'showcase_report', 'showcaseReport']) ?? {};
   const scenarioRecord = pickRecord(record.scenario, ['scenario']) ?? undefined;
+  const metricsSummaryPayload = readField(record, ['metrics_summary', 'metricsSummary', 'metrics']) ?? record;
+  const attackDefenseSummaryPayload = readField(record, ['attack_defense_summary', 'attackDefenseSummary']);
+  const metricsSummary = normalizeMetricsSummary(metricsSummaryPayload);
+  const attackDefenseMetrics = attackDefenseSummaryPayload ? normalizeMetricsSummary(attackDefenseSummaryPayload) : null;
+  const targetRankPayload =
+    readField(record, ['target_rank_summary', 'targetRankSummary', 'target_rank_comparison', 'targetRankComparison']) ??
+    attackDefenseSummaryPayload ??
+    record;
   const scenarioId =
     firstString(record, ['scenario_id', 'scenarioId', 'id', 'case_id', 'caseId']) ??
     firstString(scenarioRecord, ['scenario_id', 'scenarioId', 'id']) ??
@@ -402,13 +488,20 @@ const normalizeReport = (payload: unknown, scenario?: ShowcaseScenario): Showcas
     dataset: firstString(record, ['dataset', 'dataset_name', 'datasetName']) ?? scenario?.dataset,
     model: firstString(record, ['model', 'model_name', 'modelName']) ?? scenario?.model,
     datasetProfile: normalizeDatasetProfile(readField(record, ['dataset_profile', 'datasetProfile', 'dataset']) ?? record),
-    metricsSummary: normalizeMetricsSummary(readField(record, ['metrics_summary', 'metricsSummary', 'metrics']) ?? record),
-    attackDefenseSummary: readField(record, ['attack_defense_summary', 'attackDefenseSummary']),
+    metricsSummary: {
+      ...metricsSummary,
+      baseline: attackDefenseMetrics?.baseline ?? metricsSummary.baseline,
+      attack: attackDefenseMetrics?.attack ?? metricsSummary.attack,
+      defense: attackDefenseMetrics?.defense ?? metricsSummary.defense,
+      recallDrop: attackDefenseMetrics?.recallDrop ?? metricsSummary.recallDrop,
+      ndcgDrop: attackDefenseMetrics?.ndcgDrop ?? metricsSummary.ndcgDrop,
+      recoveryRate: attackDefenseMetrics?.recoveryRate ?? metricsSummary.recoveryRate,
+      targetHitRate: attackDefenseMetrics?.targetHitRate ?? metricsSummary.targetHitRate,
+    },
+    attackDefenseSummary: attackDefenseSummaryPayload,
     privacyRiskSummary: readField(record, ['privacy_risk_summary', 'privacyRiskSummary', 'privacy']),
     recommendationComparison: normalizeRecommendationComparison(readField(record, ['recommendation_comparison', 'recommendationComparison', 'recommendations']) ?? record),
-    targetRankSummary: normalizeTargetRankSummary(
-      readField(record, ['target_rank_summary', 'targetRankSummary', 'target_rank_comparison', 'targetRankComparison']) ?? record,
-    ),
+    targetRankSummary: normalizeTargetRankSummary(targetRankPayload),
     defenseTrace: normalizeDefenseTrace(readField(record, ['defense_trace', 'defenseTrace', 'security', 'security_matrix', 'securityMatrix']) ?? record),
     security: readField(record, ['security', 'security_matrix', 'securityMatrix']),
     privacy: readField(record, ['privacy']),
@@ -689,7 +782,7 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
     dataset: reportResult.data.dataset ?? selectedScenario.dataset,
     model: reportResult.data.model ?? selectedScenario.model,
     datasetProfile: datasetResult.source === 'api' ? datasetResult.data : reportResult.data.datasetProfile,
-    metricsSummary: metricsResult.source === 'api' ? metricsResult.data : reportResult.data.metricsSummary,
+    metricsSummary: reportResult.data.metricsSummary ?? (metricsResult.source === 'api' ? metricsResult.data : null),
     recommendationComparison:
       recommendationsResult.source === 'api' ? recommendationsResult.data : reportResult.data.recommendationComparison,
     defenseTrace: securityResult.source === 'api' ? securityResult.data.defenseTrace ?? null : reportResult.data.defenseTrace,

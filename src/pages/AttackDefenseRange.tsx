@@ -82,7 +82,7 @@ export const AttackDefenseRange: React.FC = () => {
         eyebrow="选拔赛展示链路"
         title="攻防靶场"
         description="优先读取 FedVLR-API showcase artifacts，展示 KU/MMFedRAP、Amazon 商品推荐安全 smoke、target rank 操纵和 Krum/security matrix 等攻防结果。"
-        chips={['API artifacts 优先，mock 兜底', 'Recall@50 / NDCG@50 / recall_drop / recovery_rate', 'target_hit_rate=0 不写成攻击成功']}
+        chips={['API artifacts 优先，mock 兜底', 'Recall@50 / NDCG@50 / recall_drop / recovery_rate', 'target_hit_rate=0 按未命中展示']}
         icon={Swords}
         tone="error"
       />
@@ -177,7 +177,7 @@ export const AttackDefenseRange: React.FC = () => {
         <ScenarioMetricCard
           label="recovery_rate"
           value={formatPercentValue(metrics?.recoveryRate)}
-          description="字段缺失或 null 时显示暂无 / 不适用。"
+          description="字段缺失或空值时显示暂无 / 不适用。"
           tone="tertiary"
         />
       </section>
@@ -191,7 +191,7 @@ export const AttackDefenseRange: React.FC = () => {
         />
         <RecommendationList
           title="attack"
-          description="攻击后推荐列表；score=null 时不展示假分数。"
+          description="攻击后推荐列表；score 缺失时不展示假分数。"
           items={recommendations?.attack ?? []}
           tone="attack"
         />
@@ -209,7 +209,7 @@ export const AttackDefenseRange: React.FC = () => {
           <div>
             <h3 className="text-xl font-bold text-on-surface">目标操纵区</h3>
             <p className="mt-2 text-sm leading-6 text-on-surface-variant">
-              展示 target_rank_summary / target_rank_comparison。rank 前移不等于进入 Top50；target_hit_rate=0 时不能写成攻击成功。
+              展示 target_rank_summary / target_rank_comparison。rank 前移不等于进入 Top50；target_hit_rate=0 时按未命中展示。
             </p>
           </div>
         </div>
@@ -217,7 +217,7 @@ export const AttackDefenseRange: React.FC = () => {
           <ScenarioMetricCard
             label="target_hit_rate"
             value={formatPercentValue(targetHitRate)}
-            description={targetHitRate === 0 ? '当前 artifact 显示 0，不应表述为攻击成功。' : '是否命中 Top50 以该字段为准。'}
+            description={targetHitRate === 0 ? '当前 artifact 显示 0，按未命中 Top50 展示。' : '是否命中 Top50 以该字段为准。'}
             tone={targetHitRate === 0 ? 'neutral' : 'error'}
           />
           <ScenarioMetricCard

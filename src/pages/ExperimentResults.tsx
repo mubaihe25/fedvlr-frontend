@@ -137,7 +137,7 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
           <ScenarioMetricCard
             label="投毒 / 操纵影响"
             value={formatPercentValue(metrics?.recallDrop)}
-            description={`Attack Recall@50 ${formatMetricValue(metrics?.attack?.recall50)}；target_hit_rate=0 时不写成攻击成功。`}
+            description={`Attack Recall@50 ${formatMetricValue(metrics?.attack?.recall50)}；target_hit_rate=0 时按未命中展示。`}
             tone="error"
           />
           <ScenarioMetricCard
