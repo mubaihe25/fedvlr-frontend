@@ -1,8 +1,8 @@
 import React from 'react';
-import { Sidebar } from '../components/layout/Sidebar';
-import { TopBar } from '../components/layout/TopBar';
-import { PageType } from '../types/common';
-import { motion, AnimatePresence } from 'motion/react';
+import {AnimatePresence, motion} from 'motion/react';
+import {Sidebar} from '../components/layout/Sidebar';
+import {TopBar} from '../components/layout/TopBar';
+import type {PageType} from '../types/common';
 
 interface MainLayoutProps {
   currentPage: PageType;
@@ -11,43 +11,28 @@ interface MainLayoutProps {
   children: React.ReactNode;
 }
 
-export const MainLayout: React.FC<MainLayoutProps> = ({
-  currentPage,
-  onPageChange,
-  title,
-  children,
-}) => {
-  return (
-    <div className="min-h-screen bg-surface text-on-surface selection:bg-primary/30 selection:text-primary">
-      <Sidebar currentPage={currentPage} onPageChange={onPageChange} />
-      
-      <main className="pl-64 min-h-screen flex flex-col">
-        <TopBar 
-          currentPage={currentPage} 
-          onPageChange={onPageChange} 
-          title={title}
-        />
-        
-        <div className="flex-1 p-8 overflow-y-auto no-scrollbar">
-          <div className="max-w-7xl mx-auto">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentPage}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
-              >
-                {children}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-      </main>
+export const MainLayout: React.FC<MainLayoutProps> = ({currentPage, onPageChange, title, children}) => (
+  <div className="min-h-screen bg-[linear-gradient(135deg,#020617_0%,#020617_42%,#08111f_100%)] text-on-surface selection:bg-cyan-300/30 selection:text-cyan-100">
+    <Sidebar currentPage={currentPage} onPageChange={onPageChange} />
 
-      {/* Global Background Accents */}
-      <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-primary/5 blur-[150px] rounded-full -z-10 pointer-events-none" />
-      <div className="fixed bottom-0 left-64 w-[300px] h-[300px] bg-secondary/5 blur-[120px] rounded-full -z-10 pointer-events-none" />
-    </div>
-  );
-};
+    <main className="flex min-h-screen flex-col pl-64">
+      <TopBar currentPage={currentPage} onPageChange={onPageChange} title={title} />
+
+      <div className="flex-1 overflow-y-auto p-6 no-scrollbar lg:p-8">
+        <div className="mx-auto max-w-[1680px]">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentPage}
+              initial={{opacity: 0, y: 10}}
+              animate={{opacity: 1, y: 0}}
+              exit={{opacity: 0, y: -10}}
+              transition={{duration: 0.25, ease: 'easeInOut'}}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+    </main>
+  </div>
+);

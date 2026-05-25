@@ -1,10 +1,8 @@
 # FedVLR-Frontend
 
-`FedVLR-Frontend` is the frontend application for the FedVLR competition demo: “面向多模态推荐场景的联邦隐私攻防一体化靶场平台”.
+`FedVLR-Frontend` 是 FedVLR 的前端展示与交互仓库，当前定位是“数字化联邦推荐攻防沙盘”。它面向评审演示和联调验收，优先展示 FedVLR-API 的只读 showcase artifacts，并在 API 不可用或单个 artifact 缺失时回退到本地 mock，保证页面不白屏。
 
-It presents the multimodal federated recommendation workflow, experiment configuration, launch monitoring, historical results, result analysis, and attack-defense comparison.
-
-## Tech Stack
+## 技术栈
 
 - React
 - TypeScript
@@ -14,33 +12,34 @@ It presents the multimodal federated recommendation workflow, experiment configu
 - recharts
 - lucide-react
 
-## Pages
+## 导航结构
 
-- Home: project positioning, multimodal recommendation pipeline, attack-defense loop, and representative metrics.
-- Architecture: frontend/API/training-core structure and attack-defense insertion points.
-- Data Fusion: showcase dataset profile, modality fields, feature-method notes, and the existing fusion-view explanation.
-- Client Personalization: client-side router and G1-G4 personalized view weighting.
-- Attack Defense Range: API-backed showcase scenarios, metrics, recommendations, target-rank manipulation, defense trace, and boundary notes.
-- Experiment Results: API-backed showcase artifact summary, model security capability matrix, V2.5 backend smoke summary, plus the existing Analysis, History, and Comparison views.
-- Delivery Report: report-style summary generated from the current showcase artifact and its limitations.
-- Training Console: experiment configuration and launch controls.
-- Monitoring: validate-only/dry-run/async launch status display.
-- Analysis: single experiment result analysis.
-- History: historical experiment list, details, CSV download, and config reuse.
-- Comparison: multi-experiment comparison and showcase comparison fallback.
+主侧边栏收束为 5 个评审主入口：
 
-## API and Mock Boundary
+- 系统总览
+- 攻防沙盘
+- 实验结果
+- 交付报告
+- 开发者控制台
 
-The frontend prefers real data from `FedVLR-API`:
+训练配置、运行监控、历史实验、横向对比、单次分析仍保留在代码中，但入口收纳到“开发者控制台”，避免评审主路径被后台管理功能打散。
 
-- `/capabilities`
-- `/experiment-schema`
-- `/experiments/launch`
-- `/experiments/launch/{launch_id}`
-- `/experiments/summaries`
-- `/experiments/{experiment_key}/summary`
-- `/experiments/{experiment_key}/result`
-- `/experiments/{experiment_key}/csv`
+## 页面与模块
+
+- `src/pages/Home.tsx`：系统总览第一屏，展示“联邦安全推荐数字沙盘”主视觉、中央服务器、客户端节点、商品/文本/交互数据流和动态飞线。
+- `src/pages/AttackDefenseRange.tsx`：核心攻防沙盘，包含左侧风琴式控制翼、中间联邦拓扑演练大屏、目标 rank 推进动画、右侧实时审计曲线，以及底部三列推荐商品对照。
+- `src/pages/ExperimentResults.tsx`：真实 artifact 摘要、Amazon V2.5 smoke 摘要、模型安全能力矩阵，以及原有 Analysis / History / Comparison 视图入口。
+- `src/pages/DeliveryReport.tsx`：评委结尾页，归纳已实现能力、可展示实验、当前边界、后续增强和适用场景。
+- `src/components/sandbox`：沙盘视觉组件，包括联邦拓扑飞线、风琴控制面板、目标 rank 舞台、实时审计 sparkline 和三列推荐对照。
+- `src/components/showcase`：showcase 场景选择、指标卡、能力矩阵、V2.5 摘要等复用展示组件。
+- `src/services/showcase.ts`：showcase API 读取、artifact 正规化、mock fallback 和本地图片 URL 处理。
+- `src/types/showcase.ts`：showcase artifact 类型定义，字段允许缺失。
+- `src/lib/showcaseFormat.ts`：中文 label map、指标格式化、边界说明和 artifact 摘要。
+
+## Showcase API
+
+前端优先读取 `FedVLR-API`：
+
 - `/showcase/scenarios`
 - `/showcase/scenarios/{scenario_id}/report`
 - `/showcase/scenarios/{scenario_id}/dataset`
@@ -50,41 +49,44 @@ The frontend prefers real data from `FedVLR-API`:
 - `/showcase/scenarios/{scenario_id}/privacy`
 - `/showcase/images/{dataset}/{item_id}`
 
-Showcase pages use `src/services/showcase.ts` and `src/types/showcase.ts` to read the API first, then fall back to `src/mock/showcase.ts` if the API or an artifact endpoint is unavailable. The selector on showcase pages exposes the scenario source (`API artifact`, `mock fallback`, or mixed endpoint fallback), dataset/model metadata, tags, warnings, and flags such as `smoke`, `proxy`, `demo_only`, and `unavailable`.
+Showcase 页面通过 `useShowcaseBundle` 和 `src/services/showcase.ts` 读取 API。API 整体不可用或部分 artifact endpoint 不可用时，允许回退到 `src/mock/showcase.ts`，并在场景选择器中显示 `API artifact`、`API + fallback` 或 `mock fallback` 来源。
 
-Mock data under `src/mock` is a fallback for offline demos and UI continuity. Mock-only text, placeholder options, `proxy`, `demo`, or `smoke` artifacts must not be treated as real implemented capabilities.
+## 当前已实现能力
 
-In particular, differential privacy, homomorphic encryption, and secure aggregation are not formally implemented in the current FedVLR training chain. If mentioned, they should be described only as future extensions or planning placeholders.
+- API 优先的 showcase artifact 读取和 mock fallback。
+- KU / MMFedRAP 多模态主展示结果。
+- Amazon Beauty 商品推荐展示，推荐卡优先使用 `local_image_url`，再回退到 `image_url`，最后显示占位图。
+- target promotion V2.5 摘要：未屏蔽排序可展示 `170 -> 3`，同时明确 masked Top50 hit 为 0 时不能写成攻击成功。
+- MIA、interaction reconstruction、Krum / Median / TrimmedMean、DP-style Noise、SecAgg demo 等 artifact 摘要展示。
+- model_security_capability_matrix 展示，状态中文化为已支持、部分支持、暂不支持、后续适配。
+- 首页和攻防沙盘的 SVG / CSS / motion 动态飞线，不引入 three.js。
 
-For Amazon showcase artifacts, `image_features` may be a URL-hash placeholder. The frontend must label that as a placeholder and not as a real visual embedding.
+## 当前边界
 
-Recommendation cards prefer `local_image_url` from the API, then `image_url`, then a rank placeholder. Local API image URLs are resolved through the same API base/proxy path and local filesystem paths such as drive-letter paths must not be rendered.
+- `smoke`、`proxy`、`demo_only`、`unavailable`、`not_available`、warnings 必须按边界说明展示，不要写成完整实现。
+- Amazon 的 `image_features` 如为 URL-hash placeholder，必须说明不是实际视觉 embedding。
+- `secure_aggregation_sim` 只能写成安全聚合模拟，不是生产级安全聚合协议。
+- `dp_noise` 只能写成差分隐私风格加噪，不是 formal DP；当前没有正式 privacy accountant。
+- `unsupported` / `future_adapter` 是模型适配边界，不是失败结论。
 
-The model security capability matrix scenario is displayed from `model_security_capability_matrix`, `supported_demos`, `unsupported_reasons`, and `recommended_frontend_labels`. The UI must keep the boundary wording clear: FedAvg + Amazon is the strongest attack/defense validation base, MMFedRAP + KU is the multimodal showcase model, FedAvg Amazon target rank movement does not generalize to every model, and `unsupported` / `future_adapter` indicates an adapter boundary rather than a failed implementation.
+## 指标口径
 
-The Amazon Beauty V2.5 backend smoke summary shows target-rank movement, masked TopK hit, interaction reconstruction availability, MIA AUC, SecAgg residual, and Opacus availability without turning proxy/demo evidence into a full implementation claim.
+- 页面展示优先使用 `Recall@50` 和 `NDCG@50`。
+- 历史和对比摘要优先使用 tail mean。
+- 不要把主要展示口径回退成单轮最大值。
+- 右侧实时曲线若由 artifact 摘要生成，必须标注为“展示曲线 / artifact 摘要”，不能伪造成完整训练全过程。
 
-## Metric Convention
+## 环境配置
 
-The current display convention prioritizes:
-
-- `Recall@50`
-- `NDCG@50`
-- tail mean over late training rounds
-
-Historical and comparison summaries should not silently fall back to a single best-round metric when tail mean data is available.
-
-## Environment
-
-Create a local `.env.local` if needed:
+本地联调可创建 `.env.local`：
 
 ```text
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-In Vite dev mode, local API targets are routed through `/api` proxy according to `vite.config.ts`.
+Vite dev mode 会按 `vite.config.ts` 将本地 API 请求代理到 `/api`。
 
-## Commands
+## 常用命令
 
 ```powershell
 npm install
@@ -94,4 +96,4 @@ npm run build
 npm run preview
 ```
 
-Do not commit `node_modules`, `dist`, `.env.local`, logs, or local build artifacts.
+不要提交 `node_modules`、`dist`、`.env.local`、日志或本地构建产物。

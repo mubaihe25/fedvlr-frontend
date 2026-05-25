@@ -1,23 +1,11 @@
 import React from 'react';
-import {
-  AlertTriangle,
-  ArrowRight,
-  BarChart3,
-  Copy,
-  Database,
-  Download,
-  FileText,
-  Home,
-  ShieldCheck,
-  Swords,
-  Terminal,
-  Users,
-} from 'lucide-react';
+import {AlertTriangle, BarChart3, BadgeCheck, Database, FileText, Layers3, Route, ShieldCheck, Target, Users} from 'lucide-react';
 import {ScenarioMetricCard} from '../components/showcase/ScenarioMetricCard';
 import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
 import {ShowcaseScenarioSelector} from '../components/showcase/ShowcaseScenarioSelector';
 import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
 import {
+  EMPTY_VALUE,
   formatMetricValue,
   formatPercentValue,
   formatPlainValue,
@@ -25,6 +13,7 @@ import {
   getDatasetLabel,
   getRecommendationCounts,
   summarizeArtifactValue,
+  toChineseLabel,
 } from '../lib/showcaseFormat';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -38,177 +27,219 @@ const readDeliveryText = (delivery: unknown, key: string) => {
   return typeof value === 'string' ? value : null;
 };
 
+const sourceLabel = (source: string) => {
+  if (source === 'api') {
+    return 'API artifact';
+  }
+  if (source === 'mixed') {
+    return 'API + fallback';
+  }
+  return 'mock fallback';
+};
+
 export const DeliveryReport: React.FC = () => {
   const {bundle, isLoading, setSelectedScenarioId} = useShowcaseBundle();
   const {report, selectedScenario} = bundle;
   const metrics = report.metricsSummary;
   const recommendationCounts = getRecommendationCounts(report.recommendationComparison);
+  const recommendationTotal = recommendationCounts.baseline + recommendationCounts.attack + recommendationCounts.defense;
   const boundaryItems = getBoundaryItems(report, selectedScenario);
-  const sectionCards = [
+  const v25 = report.v25Summary;
+  const targetEntry = report.targetRankSummary?.entries[0];
+  const targetRankBefore = v25?.targetRankBefore ?? targetEntry?.baselineRank;
+  const targetRankAfter = v25?.targetRankAfter ?? targetEntry?.attackRank;
+  const maskedTopkHitRate = v25?.maskedTopkHitRate ?? report.targetRankSummary?.targetHitRate ?? metrics?.targetHitRate;
+  const matrixCount = report.modelCapabilityMatrix?.entries.length ?? 0;
+
+  const implementedCapabilities = [
     {
-      title: '已实现能力',
+      title: '多模态联邦推荐展示',
+      description: 'KU / MMFedRAP 作为多模态主展示链路，展示文本、图像占位特征、交互数据和推荐指标摘要。',
+      icon: Layers3,
+    },
+    {
+      title: 'Amazon 商品推荐对照',
       description:
-        readDeliveryText(report.delivery, 'systemSummary') ??
-        '前端已接入只读 showcase artifacts，可展示 dataset_profile、metrics_summary、recommendation_comparison 和 security/privacy 摘要。',
+        recommendationTotal > 0
+          ? `当前场景可展示 ${recommendationTotal} 条推荐项，商品图优先使用 local_image_url，失败后再使用 image_url 或占位图。`
+          : '当前场景没有完整推荐列表时，页面显示暂无数据，不补假商品或假分数。',
       icon: Database,
-      tone: 'text-primary bg-primary/10 border-primary/20',
     },
     {
-      title: '可展示结果',
+      title: '攻防与隐私风险审计',
+      description: '展示投毒、目标排序、成员推断、交互候选还原、Krum / Median / TrimmedMean 等 artifact 摘要。',
+      icon: ShieldCheck,
+    },
+    {
+      title: '模型能力矩阵',
       description:
-        readDeliveryText(report.delivery, 'metricsSummary') ??
-        `当前场景可展示 baseline/attack/defense 推荐数 ${recommendationCounts.baseline}/${recommendationCounts.attack}/${recommendationCounts.defense}，以及 Recall@50 / NDCG@50 / recall_drop / recovery_rate。`,
-      icon: BarChart3,
-      tone: 'text-secondary bg-secondary/10 border-secondary/20',
-    },
-    {
-      title: '安全展示',
-      description:
-        readDeliveryText(report.delivery, 'securitySummary') ??
-        '按 artifact 展示投毒、目标 rank 对比、Krum/security matrix 和鲁棒防御链路；unavailable 时直接标注暂无 / 不适用。',
-      icon: Swords,
-      tone: 'text-error bg-error/10 border-error/20',
-    },
-    {
-      title: '当前边界',
-      description: boundaryItems.slice(0, 3).join(' / '),
-      icon: AlertTriangle,
-      tone: 'text-on-surface bg-surface-container-high border-outline-variant/20',
-    },
-    {
-      title: '后续扩展',
-      description:
-        readDeliveryText(report.delivery, 'nextSteps') ??
-        '后续可扩展真实视觉 embedding、正式 DP accountant、真实安全聚合协议和更完整的多数据集 artifact 导出。',
-      icon: Users,
-      tone: 'text-tertiary bg-tertiary/10 border-tertiary/20',
+        matrixCount > 0
+          ? `已读取 ${matrixCount} 条模型能力记录，用于区分已支持、部分支持、暂不支持和后续适配。`
+          : '模型能力矩阵作为独立 showcase 场景读取；当前场景未提供矩阵时不强行补结论。',
+      icon: BadgeCheck,
     },
   ];
+
+  const demonstrableExperiments = [
+    {
+      label: 'KU 主攻防结果',
+      value: `${formatMetricValue(metrics?.baseline?.recall50)} / ${formatMetricValue(metrics?.baseline?.ndcg50)}`,
+      detail: '以 Recall@50 / NDCG@50 为主口径展示，不回退成单轮最大值。',
+    },
+    {
+      label: 'Amazon target promotion V2.5',
+      value:
+        targetRankBefore !== null && targetRankBefore !== undefined && targetRankAfter !== null && targetRankAfter !== undefined
+          ? `${formatPlainValue(targetRankBefore)} -> ${formatPlainValue(targetRankAfter)}`
+          : EMPTY_VALUE,
+      detail: `最终 Top50 曝光：${maskedTopkHitRate === 0 ? '未命中' : formatPercentValue(maskedTopkHitRate)}。rank 前移不等于进入 Top50。`,
+    },
+    {
+      label: '交互候选还原',
+      value: [
+        `hit@10 ${formatPercentValue(v25?.interactionReconstructionHit10)}`,
+        `hit@20 ${formatPercentValue(v25?.interactionReconstructionHit20)}`,
+        `hit@50 ${formatPercentValue(v25?.interactionReconstructionHit50)}`,
+      ].join(' / '),
+      detail: '只展示 artifact 摘要，不声称完整隐私攻击覆盖所有模型。',
+    },
+    {
+      label: 'MIA / SecAgg / Opacus',
+      value: `AUC ${formatMetricValue(v25?.miaAuc)} / SecAgg ${formatMetricValue(v25?.secAggResidual)}`,
+      detail: `${formatPlainValue(v25?.opacusStatus ?? 'unavailable')}：${formatPlainValue(v25?.opacusBoundary ?? 'formal DP future work')}`,
+    },
+  ];
+
+  const futureWork = [
+    '补齐更多场景的商品 title、category、local_image_url 与真实视觉 embedding。',
+    '如需差分隐私，需要正式 privacy accountant 与训练参数审计；当前 dp_noise 只能写作差分隐私风格加噪。',
+    '如需安全聚合，需要真实协议链路；当前 secure_aggregation_sim 只能写作安全聚合模拟。',
+    '扩展模型适配器前，unsupported / future_adapter 应作为能力边界呈现，不写成失败结论。',
+  ];
+
+  const usageScenarios = ['竞赛评审快速演示', '攻防链路讲解', '前后端联调验收', '后续模型适配规划'];
 
   return (
     <div className="space-y-8 pb-12">
       <ShowcasePageHeader
-        eyebrow="选拔赛展示链路"
+        eyebrow="评委结尾页"
         title="交付报告"
-        description="汇总数据、机制、攻防、指标、限制和后续计划。"
-        chips={['基于 showcase report 生成', '不把 proxy/demo 写成完整实现', '当前未正式实现 DP / HE / 安全聚合']}
+        description="从当前 showcase artifact 生成可讲解的交付摘要：已实现能力、可展示实验、当前边界、后续增强和适用场景。"
+        chips={['中文化交付摘要', 'API artifact 优先', 'proxy / demo / smoke 不写成完整实现']}
         icon={FileText}
         tone="secondary"
       />
 
       <ShowcaseScenarioSelector bundle={bundle} isLoading={isLoading} onScenarioChange={setSelectedScenarioId} />
 
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
-        <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+      <section className="sandbox-panel p-6">
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-secondary">报告摘要</p>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-on-surface-variant">
-              作为选拔赛收尾页，本页基于当前 showcase report 汇总已实现能力、可展示结果、当前边界和后续扩展。
-              proxy、demo、smoke 和 unavailable 字段会按 artifact 原样展示，不写成完整实现。
+            <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">交付摘要</p>
+            <h2 className="mt-3 text-2xl font-bold text-white">基于真实 artifact 的联邦推荐攻防展示平台</h2>
+            <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">
+              {readDeliveryText(report.delivery, 'systemSummary') ??
+                '本页面面向评审收尾，汇总数据、模型、攻防、隐私风险、鲁棒防御和边界说明。所有缺失字段显示为暂无 / 不适用，不用 mock 或展示曲线伪装完整训练过程。'}
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button className="inline-flex items-center gap-2 rounded-lg border border-outline-variant/20 bg-surface-container-high px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:text-primary">
-              <Copy className="h-4 w-4" />
-              复制摘要
-            </button>
-            <button className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-surface transition-opacity hover:opacity-90">
-              <Download className="h-4 w-4" />
-              导出报告
-            </button>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              {label: '当前场景', value: selectedScenario.name},
+              {label: '数据集 / 模型', value: `${getDatasetLabel(report.datasetProfile)} / ${formatPlainValue(report.model ?? selectedScenario.model)}`},
+              {label: '数据来源', value: sourceLabel(bundle.dataSource)},
+              {label: '场景标记', value: selectedScenario.tags?.map(toChineseLabel).join(' / ') || EMPTY_VALUE},
+            ].map((item) => (
+              <div key={item.label} className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{item.label}</p>
+                <p className="mt-2 text-sm font-semibold text-slate-100">{item.value}</p>
+              </div>
+            ))}
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[
-            {label: '系统名称', value: '多模态联邦推荐安全实验平台'},
-            {label: '当前展示场景', value: selectedScenario.name},
-            {label: '数据集 / 模型', value: `${getDatasetLabel(report.datasetProfile)} / ${formatPlainValue(report.model ?? selectedScenario.model)}`},
-            {label: '数据来源', value: bundle.dataSource === 'api' ? 'API artifact' : bundle.dataSource === 'mixed' ? 'API + fallback' : 'mock fallback'},
-          ].map((item) => (
-            <div key={item.label} className="rounded-xl bg-surface-container-high p-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{item.label}</p>
-              <p className="mt-2 text-sm font-semibold text-on-surface">{item.value}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm leading-6 text-on-surface">
-          {summarizeArtifactValue(report.delivery) !== '暂无 / 不适用'
+        <div className="mt-5 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm leading-6 text-slate-200">
+          {summarizeArtifactValue(report.delivery) !== EMPTY_VALUE
             ? summarizeArtifactValue(report.delivery)
             : '当前 report 未提供 delivery 字段，页面根据 dataset、metrics、recommendations、security/privacy 和边界字段生成摘要。'}
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {sectionCards.map((card) => (
-          <div key={card.title} className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
-            <div className={`mb-5 inline-flex h-12 w-12 items-center justify-center rounded-xl border ${card.tone}`}>
-              <card.icon className="h-6 w-6" />
+      <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+        {implementedCapabilities.map((card) => (
+          <div key={card.title} className="sandbox-panel p-5 transition-transform duration-300 hover:-translate-y-1 hover:border-cyan-300/40">
+            <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-300/30 bg-cyan-300/10 text-cyan-200">
+              <card.icon className="h-5 w-5" />
             </div>
-            <h3 className="text-lg font-bold text-on-surface">{card.title}</h3>
-            <p className="mt-3 text-sm leading-6 text-on-surface-variant">{card.description}</p>
+            <h3 className="text-base font-bold text-white">{card.title}</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-300">{card.description}</p>
           </div>
         ))}
       </section>
 
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
+      <section className="sandbox-panel p-6">
         <div className="mb-5 flex items-center gap-3">
-          <BarChart3 className="h-5 w-5 text-primary" />
-          <h3 className="text-xl font-bold text-on-surface">指标摘要</h3>
+          <BarChart3 className="h-5 w-5 text-cyan-300" />
+          <h3 className="text-xl font-bold text-white">可展示实验</h3>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <ScenarioMetricCard
-            label="Baseline Recall@50"
-            value={formatMetricValue(metrics?.baseline?.recall50)}
-            description={`Baseline NDCG@50 ${formatMetricValue(metrics?.baseline?.ndcg50)}。`}
-            tone="primary"
-          />
-          <ScenarioMetricCard
-            label="Attack Recall@50"
-            value={formatMetricValue(metrics?.attack?.recall50)}
-            description={`Attack NDCG@50 ${formatMetricValue(metrics?.attack?.ndcg50)}。`}
-            tone="error"
-          />
-          <ScenarioMetricCard
-            label="Defense Recall@50"
-            value={formatMetricValue(metrics?.defense?.recall50)}
-            description={`Defense NDCG@50 ${formatMetricValue(metrics?.defense?.ndcg50)}。`}
-            tone="tertiary"
-          />
-          <ScenarioMetricCard
-            label="recovery_rate"
-            value={formatPercentValue(metrics?.recoveryRate)}
-            description="相对攻击造成的 Recall@50 缺口计算。"
-            tone="secondary"
-          />
+          {demonstrableExperiments.map((item) => (
+            <div key={item.label} className="rounded-2xl border border-slate-700/50 bg-slate-950/50 p-5">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{item.label}</p>
+              <p className="mt-3 text-2xl font-bold text-white">{item.value}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-400">{item.detail}</p>
+            </div>
+          ))}
         </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <ScenarioMetricCard
+          label="Baseline Recall@50"
+          value={formatMetricValue(metrics?.baseline?.recall50)}
+          description={`Baseline NDCG@50 ${formatMetricValue(metrics?.baseline?.ndcg50)}`}
+          tone="primary"
+        />
+        <ScenarioMetricCard
+          label="Attack Recall@50"
+          value={formatMetricValue(metrics?.attack?.recall50)}
+          description={`Attack NDCG@50 ${formatMetricValue(metrics?.attack?.ndcg50)}`}
+          tone="error"
+        />
+        <ScenarioMetricCard
+          label="Defense Recall@50"
+          value={formatMetricValue(metrics?.defense?.recall50)}
+          description={`Defense NDCG@50 ${formatMetricValue(metrics?.defense?.ndcg50)}`}
+          tone="tertiary"
+        />
+        <ScenarioMetricCard
+          label={toChineseLabel('recovery_rate')}
+          value={formatPercentValue(metrics?.recoveryRate)}
+          description="无 defense artifact 时显示为暂无 / 不适用。"
+          tone="secondary"
+        />
       </section>
 
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-error/20 bg-surface-container-low p-6">
-          <div className="mb-5 flex items-center gap-3 text-error">
+        <div className="sandbox-panel p-6">
+          <div className="mb-5 flex items-center gap-3 text-rose-300">
             <AlertTriangle className="h-5 w-5" />
-            <h3 className="text-xl font-bold">限制说明</h3>
+            <h3 className="text-xl font-bold">当前边界</h3>
           </div>
           <div className="space-y-3">
             {boundaryItems.map((item) => (
-              <p key={item} className="rounded-xl bg-surface-container-high px-4 py-3 text-sm leading-6 text-on-surface">
+              <p key={item} className="rounded-xl border border-slate-700/50 bg-slate-950/50 px-4 py-3 text-sm leading-6 text-slate-200">
                 {item}
               </p>
             ))}
           </div>
         </div>
-        <div className="rounded-2xl border border-tertiary/20 bg-surface-container-low p-6">
-          <div className="mb-5 flex items-center gap-3 text-tertiary">
-            <ShieldCheck className="h-5 w-5" />
-            <h3 className="text-xl font-bold">后续计划</h3>
+        <div className="sandbox-panel p-6">
+          <div className="mb-5 flex items-center gap-3 text-emerald-300">
+            <Route className="h-5 w-5" />
+            <h3 className="text-xl font-bold">后续增强</h3>
           </div>
           <div className="space-y-3">
-            {[
-              '补齐更多场景的 title/category/image_url 和真实视觉 embedding。',
-              '如需差分隐私，需要正式 privacy accountant 与参数审计。',
-              '如需安全聚合，需要真实协议链路，而不是 secure_agg_sim 展示字段。',
-            ].map((item) => (
-              <p key={item} className="rounded-xl bg-surface-container-high px-4 py-3 text-sm leading-6 text-on-surface">
+            {futureWork.map((item) => (
+              <p key={item} className="rounded-xl border border-slate-700/50 bg-slate-950/50 px-4 py-3 text-sm leading-6 text-slate-200">
                 {item}
               </p>
             ))}
@@ -216,37 +247,39 @@ export const DeliveryReport: React.FC = () => {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
-        <div className="mb-4 flex items-center gap-3">
-          <FileText className="h-5 w-5 text-secondary" />
-          <h3 className="text-xl font-bold text-on-surface">报告使用说明</h3>
+      <section className="sandbox-panel p-6">
+        <div className="mb-5 flex items-center gap-3">
+          <Target className="h-5 w-5 text-cyan-300" />
+          <h3 className="text-xl font-bold text-white">适用场景</h3>
         </div>
-        <p className="text-sm leading-7 text-on-surface-variant">
-          本页作为评审展示入口，帮助快速理解 FedVLR 的数据融合、客户端个性化和攻防验证链路。
-          “复制摘要”和“导出报告”为展示占位按钮，当前不执行复杂导出逻辑。
+        <div className="grid gap-3 md:grid-cols-4">
+          {usageScenarios.map((item) => (
+            <div key={item} className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-semibold text-cyan-100">
+              {item}
+            </div>
+          ))}
+        </div>
+        <p className="mt-5 text-sm leading-7 text-slate-400">
+          {readDeliveryText(report.delivery, 'nextSteps') ??
+            '结论页只归纳已经可展示的 artifact，不把 secure aggregation demo 写成生产级协议，也不把 Opacus unavailable 写成 formal DP 已实现。'}
         </p>
       </section>
 
-      <section className="rounded-2xl border border-primary/20 bg-primary/10 p-6">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-primary">下一步</p>
-            <h3 className="mt-2 text-xl font-bold text-on-surface">训练控制台 或 回到首页</h3>
-            <p className="mt-2 text-sm text-on-surface-variant">
-              交付总结后，可进入训练控制台查看实验配置与运行监控，也可以回到首页重新开始完整演示路线。
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <span className="inline-flex items-center gap-2 rounded-lg border border-primary/20 bg-surface-container-high px-4 py-2 text-sm font-bold text-primary">
-              <Terminal className="h-4 w-4" />
-              训练控制台
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-lg border border-outline-variant/20 bg-surface-container-high px-4 py-2 text-sm font-bold text-on-surface">
-              <Home className="h-4 w-4" />
-              回到首页
-            </span>
-            <ArrowRight className="hidden h-6 w-6 text-primary lg:block" />
-          </div>
+      <section className="sandbox-panel p-6">
+        <div className="mb-4 flex items-center gap-3">
+          <Users className="h-5 w-5 text-emerald-300" />
+          <h3 className="text-xl font-bold text-white">讲解口径</h3>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {[
+            'FedAvg + Amazon 是攻防强验证底座，用于讲清 target promotion、隐私风险和推荐对照。',
+            'MMFedRAP + KU 是多模态主展示模型，用于讲清文本、图像占位特征和客户端个性化推荐链路。',
+            'FedAvg Amazon 的 target rank 170 -> 3 不能泛化到所有模型；masked Top50 hit 为 0 时不能写成攻击成功。',
+          ].map((item) => (
+            <div key={item} className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4 text-sm leading-6 text-slate-200">
+              {item}
+            </div>
+          ))}
         </div>
       </section>
     </div>

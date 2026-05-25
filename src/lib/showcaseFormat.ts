@@ -7,6 +7,49 @@ import type {
 
 export const EMPTY_VALUE = '暂无 / 不适用';
 
+export const showcaseLabelMap: Record<string, string> = {
+  target_hit_rate_attack: '攻击后目标命中率',
+  target_exposure_gain: '目标曝光增益',
+  target_rank_summary: '目标排序诊断',
+  target_rank_comparison: '目标排序对照',
+  unmasked_rank: '未屏蔽排序',
+  'unmasked rank': '未屏蔽排序',
+  masked_topk: '最终推荐列表',
+  'masked TopK': '最终推荐列表',
+  proxy_only: '代理指标',
+  demo_only: '演示验证',
+  future_adapter: '后续适配',
+  not_available: '暂无数据',
+  unavailable: '暂无数据',
+  secure_aggregation_sim: '安全聚合模拟',
+  secure_agg_sim: '安全聚合模拟',
+  dp_noise: '差分隐私风格加噪',
+  interaction_reconstruction: '交互候选还原',
+  membership_inference: '成员推断攻击',
+  target_interaction_injection: '目标交互注入',
+  target_promotion_loss: '目标排序推动损失',
+  robust_aggregation: '鲁棒聚合防御',
+  krum: 'Krum 鲁棒防御',
+  median: 'Median 鲁棒防御',
+  trimmed_mean: 'TrimmedMean 鲁棒防御',
+  supported: '已支持',
+  partial: '部分支持',
+  unsupported: '暂不支持',
+  not_tested: '未测试',
+  baseline: '攻击前正常推荐',
+  attack: '攻击后无防御推荐',
+  defense: '防御后推荐',
+};
+
+export const toChineseLabel = (value?: string | number | null) => {
+  if (value === null || value === undefined || value === '') {
+    return EMPTY_VALUE;
+  }
+
+  const rawValue = String(value);
+  return showcaseLabelMap[rawValue] ?? showcaseLabelMap[rawValue.trim()] ?? rawValue.replaceAll('_', ' ');
+};
+
 export const formatMetricValue = (value?: number | null) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : EMPTY_VALUE;
 
@@ -33,7 +76,7 @@ export const summarizeArtifactValue = (value: unknown): string => {
   }
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>).slice(0, 4);
-    return entries.length ? entries.map(([key, item]) => `${key}: ${summarizeArtifactValue(item)}`).join(' / ') : EMPTY_VALUE;
+    return entries.length ? entries.map(([key, item]) => `${toChineseLabel(key)}：${summarizeArtifactValue(item)}`).join(' / ') : EMPTY_VALUE;
   }
 
   return EMPTY_VALUE;
@@ -57,7 +100,7 @@ export const getBoundaryItems = (report: ShowcaseReport, scenario?: ShowcaseScen
     items.push('smoke：只读安全冒烟验证结果，不能当作完整训练结论。');
   }
   if (hasFlag('proxy')) {
-    items.push('proxy：部分字段来自代理/替代 artifact，不代表完整实现链路。');
+    items.push('proxy：部分字段来自代理指标或替代 artifact，不代表完整实现链路。');
   }
   if (hasFlag('demo') || hasFlag('demoOnly')) {
     items.push('demo_only：用于展示结构和解释链路，不等同于生产级能力。');
@@ -66,7 +109,7 @@ export const getBoundaryItems = (report: ShowcaseReport, scenario?: ShowcaseScen
     items.push('not_available：当前场景未导出该模块 artifact。');
   }
   items.push('URL-hash placeholder：Amazon image_features 若标记为 URL-hash，仅是占位特征，不是真实视觉 embedding。');
-  items.push('secure aggregation simulation only：安全聚合如出现仅为模拟/占位说明，不是正式安全聚合实现。');
+  items.push('secure aggregation simulation only：安全聚合如出现仅为模拟/占位说明，不是正式安全聚合协议。');
   items.push('DP-style noise without formal accountant：DP 风格噪声没有正式隐私会计，不应写成差分隐私已实现。');
 
   return Array.from(new Set(items));

@@ -44,3 +44,57 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+.sandbox-panel {
+  @apply border border-slate-700/50 bg-slate-900/40 backdrop-blur-md;
+}
+
+.sandbox-glow {
+  box-shadow: 0 0 36px rgba(34, 211, 238, 0.14), inset 0 0 28px rgba(15, 23, 42, 0.38);
+}
+
+@keyframes sandbox-dash {
+  to {
+    stroke-dashoffset: -120;
+  }
+}
+
+@keyframes sandbox-pulse {
+  0%, 100% {
+    opacity: 0.28;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes sandbox-orbit {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -220;
+  }
+}
+
+.sandbox-flow {
+  stroke-dasharray: 9 18;
+  animation: sandbox-dash 2.4s linear infinite;
+}
+
+.sandbox-flow-fast {
+  stroke-dasharray: 8 16;
+  animation: sandbox-dash 1.25s linear infinite;
+}
+
+.sandbox-defense-ring {
+  animation: sandbox-pulse 2.2s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.sandbox-orbit {
+  stroke-dasharray: 14 18;
+  animation: sandbox-orbit 5s linear infinite;
+}

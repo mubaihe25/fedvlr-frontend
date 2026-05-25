@@ -196,6 +196,37 @@ const restoreConsoleState = (): {currentPage: PageType; consoleSession: ConsoleS
   }
 };
 
+const getPageTitle = (currentPage: PageType) => {
+  switch (currentPage) {
+    case 'home':
+      return '系统总览';
+    case 'attackDefenseRange':
+      return '攻防沙盘';
+    case 'experimentResults':
+      return '实验结果';
+    case 'deliveryReport':
+      return '交付报告';
+    case 'architecture':
+      return '系统架构';
+    case 'dataFusion':
+      return '数据与融合';
+    case 'clientPersonalization':
+      return '客户端个性化';
+    case 'console':
+      return '开发者控制台';
+    case 'monitoring':
+      return '开发者控制台 - 运行监控';
+    case 'analysis':
+      return '开发者控制台 - 单次分析';
+    case 'comparison':
+      return '开发者控制台 - 横向对比';
+    case 'history':
+      return '开发者控制台 - 历史实验';
+    default:
+      return '联邦推荐攻防沙盘';
+  }
+};
+
 const App: React.FC = () => {
   const [initialState] = useState(restoreConsoleState);
   const [currentPage, setCurrentPage] = useState<PageType>(initialState.currentPage);
@@ -384,39 +415,8 @@ const App: React.FC = () => {
     }
   };
 
-  const getPageTitle = () => {
-    switch (currentPage) {
-      case 'home':
-        return '联邦推荐安全实验平台 - 首页';
-      case 'architecture':
-        return '系统架构';
-      case 'dataFusion':
-        return '数据与融合';
-      case 'clientPersonalization':
-        return '客户端个性化';
-      case 'attackDefenseRange':
-        return '攻防靶场';
-      case 'experimentResults':
-        return '实验结果';
-      case 'deliveryReport':
-        return '交付报告';
-      case 'console':
-        return '训练控制台';
-      case 'monitoring':
-        return '运行监控';
-      case 'analysis':
-        return '实验结果 - 单次结果';
-      case 'comparison':
-        return '实验结果 - 横向对比';
-      case 'history':
-        return '实验结果 - 历史实验';
-      default:
-        return '联邦推荐安全实验平台';
-    }
-  };
-
   return (
-    <MainLayout currentPage={currentPage} onPageChange={setCurrentPage} title={getPageTitle()}>
+    <MainLayout currentPage={currentPage} onPageChange={setCurrentPage} title={getPageTitle(currentPage)}>
       {renderPage()}
     </MainLayout>
   );
