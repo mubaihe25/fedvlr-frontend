@@ -1,5 +1,5 @@
 import React from 'react';
-import {BarChart3, Blocks, Home, MonitorCog, Shield, Swords} from 'lucide-react';
+import {Blocks, Home, Shield, Swords} from 'lucide-react';
 import {cn} from '../../lib/utils';
 import type {PageType} from '../../types/common';
 
@@ -9,40 +9,42 @@ interface SidebarProps {
 }
 
 const mainNav: Array<{id: PageType; label: string; step: string; helper: string; icon: React.ComponentType<{className?: string}>}> = [
-  {id: 'home', label: '项目导览', step: '01', helper: '10 秒理解项目', icon: Home},
-  {id: 'systemMechanism', label: '系统机制', step: '02', helper: '正常推荐系统如何工作', icon: Blocks},
-  {id: 'attackDefenseRange', label: '攻防实验', step: '03', helper: '观察攻击、防御和推荐变化', icon: Swords},
-  {id: 'resultsEvidence', label: '结果与证据', step: '04', helper: '实验结果、能力矩阵和边界', icon: BarChart3},
-];
-
-const developerNav: Array<{id: PageType; label: string}> = [
-  {id: 'console', label: '训练配置'},
-  {id: 'monitoring', label: '运行监控'},
-  {id: 'analysis', label: '单次分析'},
-  {id: 'history', label: '历史实验'},
-  {id: 'comparison', label: '横向对比'},
+  {id: 'home', label: '项目导览', step: '01', helper: '快速理解平台目标', icon: Home},
+  {id: 'systemMechanism', label: '系统机制', step: '02', helper: '联邦推荐如何工作', icon: Blocks},
+  {id: 'attackDefenseRange', label: '攻防工作台', step: '03', helper: '编排、监控、分析、对比', icon: Swords},
 ];
 
 const mechanismPages: PageType[] = ['systemMechanism', 'architecture', 'dataFusion', 'clientPersonalization'];
-const evidencePages: PageType[] = ['resultsEvidence', 'experimentResults', 'deliveryReport'];
+const workbenchPages: PageType[] = [
+  'attackDefenseRange',
+  'console',
+  'monitoring',
+  'analysis',
+  'comparison',
+  'history',
+  'experimentResults',
+  'deliveryReport',
+  'resultsEvidence',
+];
+
 const isMainActive = (id: PageType, currentPage: PageType) => {
   if (id === 'systemMechanism') {
     return mechanismPages.includes(currentPage);
   }
-  if (id === 'resultsEvidence') {
-    return evidencePages.includes(currentPage);
+  if (id === 'attackDefenseRange') {
+    return workbenchPages.includes(currentPage);
   }
   return id === currentPage;
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({currentPage, onPageChange}) => (
-  <aside className="fixed left-0 top-0 z-40 flex h-full w-64 flex-col border-r border-white/10 bg-slate-950/82 shadow-[0_18px_55px_rgba(15,23,42,0.28)] backdrop-blur-2xl">
+  <aside className="fixed left-0 top-0 z-40 flex h-full w-64 flex-col border-r border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.76),rgba(30,41,59,0.58))] shadow-[0_18px_55px_rgba(15,23,42,0.22)] backdrop-blur-2xl">
     <div className="px-6 pb-5 pt-7">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-200/30 bg-cyan-200/12">
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-200/35 bg-cyan-200/14">
         <Shield className="h-5 w-5 text-cyan-100" />
       </div>
-      <h1 className="text-base font-bold leading-6 text-slate-50">安全推荐系统演示平台</h1>
-      <p className="mt-2 text-xs leading-5 text-slate-400">按评委理解顺序组织：导览、机制、攻防、证据。</p>
+      <h1 className="text-base font-bold leading-6 text-slate-50">安全推荐演示平台</h1>
+      <p className="mt-2 text-xs leading-5 text-slate-300">按评委理解顺序组织：导览、机制、攻防工作台。</p>
     </div>
 
     <nav className="flex-1 space-y-2 px-4">
@@ -57,25 +59,25 @@ export const Sidebar: React.FC<SidebarProps> = ({currentPage, onPageChange}) => 
             className={cn(
               'group w-full rounded-2xl px-3.5 py-3 text-left transition-all duration-200',
               isActive
-                ? 'bg-white/12 text-white shadow-[0_14px_34px_rgba(56,189,248,0.12)] ring-1 ring-cyan-200/25'
-                : 'text-slate-400 hover:bg-white/7 hover:text-slate-100',
+                ? 'bg-white/16 text-white shadow-[0_10px_28px_rgba(56,189,248,0.12)] ring-1 ring-cyan-200/35'
+                : 'text-slate-300 hover:bg-white/10 hover:text-white',
             )}
           >
             <div className="flex items-center gap-3">
               <span
                 className={cn(
                   'flex h-8 w-8 items-center justify-center rounded-xl border text-[11px] font-bold',
-                  isActive ? 'border-cyan-200/40 bg-cyan-200/15 text-cyan-100' : 'border-white/10 bg-white/5 text-slate-500',
+                  isActive ? 'border-cyan-200/50 bg-cyan-200/18 text-cyan-50' : 'border-white/12 bg-white/7 text-slate-300',
                 )}
               >
                 {item.step}
               </span>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <item.icon className={cn('h-4 w-4', isActive ? 'text-cyan-100' : 'text-slate-500 group-hover:text-cyan-100')} />
+                  <item.icon className={cn('h-4 w-4', isActive ? 'text-cyan-100' : 'text-slate-300 group-hover:text-cyan-100')} />
                   <span className="font-semibold">{item.label}</span>
                 </div>
-                <p className="mt-0.5 truncate text-[11px] text-slate-500">{item.helper}</p>
+                <p className="mt-0.5 truncate text-[11px] text-slate-400">{item.helper}</p>
               </div>
             </div>
           </button>
@@ -83,33 +85,8 @@ export const Sidebar: React.FC<SidebarProps> = ({currentPage, onPageChange}) => 
       })}
     </nav>
 
-    <div className="px-4 pb-5">
-      <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-        <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-300">
-          <MonitorCog className="h-3.5 w-3.5" />
-          开发者模式
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {developerNav.map((item) => {
-            const isActive = currentPage === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onPageChange(item.id)}
-                className={cn(
-                  'rounded-xl border px-2.5 py-1.5 text-left text-[11px] transition',
-                  isActive
-                    ? 'border-cyan-200/30 bg-cyan-200/10 text-cyan-100'
-                    : 'border-white/8 bg-slate-900/30 text-slate-500 hover:text-slate-200',
-                )}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+    <div className="px-5 pb-5 text-[11px] leading-5 text-slate-400">
+      攻防工作台内已合并实验编排、运行监控、单次分析、横向对比和历史实验。
     </div>
   </aside>
 );

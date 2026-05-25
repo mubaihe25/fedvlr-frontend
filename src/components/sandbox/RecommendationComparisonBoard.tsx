@@ -1,12 +1,15 @@
 import React from 'react';
 import {motion} from 'motion/react';
-import {ImageOff} from 'lucide-react';
+import {ChevronDown, ChevronUp, ImageOff, Target} from 'lucide-react';
 import {cn} from '../../lib/utils';
 import type {ShowcaseRecommendationComparison, ShowcaseRecommendationItem} from '../../types/showcase';
 
 interface RecommendationComparisonBoardProps {
   comparison?: ShowcaseRecommendationComparison | null;
+  targetItemId?: string | number | null;
 }
+
+const DEFAULT_VISIBLE_COUNT = 5;
 
 const columns = [
   {key: 'baseline', title: '正常推荐', tone: 'cyan', empty: '暂无正常推荐'},
@@ -30,6 +33,10 @@ const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; t
   const [sourceIndex, setSourceIndex] = React.useState(0);
   const source = sources[sourceIndex];
 
+  React.useEffect(() => {
+    setSourceIndex(0);
+  }, [item.itemId, item.localImageUrl, item.imageUrl]);
+
   if (source) {
     return (
       <img
@@ -51,60 +58,100 @@ const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; t
 
 const getTitle = (item: ShowcaseRecommendationItem) => item.title ?? (item.itemId ? `商品 ${item.itemId}` : '未命名商品');
 
-export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison}) => (
-  <section className="sandbox-panel sandbox-glow rounded-[28px] p-5">
-    <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
-      <div>
-        <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">推荐对照</p>
-        <h3 className="mt-1 text-xl font-bold text-white">三列推荐商品变化</h3>
-      </div>
-      <p className="text-xs text-slate-400">每列最多展示 5 个商品；优先 local_image_url，其次 image_url，最后占位图；score 为空不显示。</p>
-    </div>
+const sameItem = (left?: string | number | null, right?: string | number | null) =>
+  left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-      {columns.map((column) => {
-        const items = (comparison?.[column.key] ?? []).slice(0, 5);
-        return (
-          <div key={column.key} className="rounded-3xl border border-white/10 bg-white/[0.045] p-4">
-            <div className={cn('mb-4 inline-flex rounded-full border px-3 py-1 text-xs font-bold', toneClass[column.tone])}>{column.title}</div>
-            <div className="space-y-3">
-              {items.length ? (
-                items.map((item, index) => {
-                  const title = getTitle(item);
-                  return (
-                    <motion.div
-                      key={`${column.key}-${item.itemId ?? index}-${item.rank ?? index}`}
-                      className="grid grid-cols-[80px_minmax(0,1fr)] gap-3 rounded-2xl border border-white/10 bg-slate-900/35 p-3"
-                      initial={{opacity: 0, y: 18}}
-                      animate={{opacity: 1, y: 0}}
-                      transition={{delay: index * 0.07, type: 'spring', stiffness: 160, damping: 22}}
-                      whileHover={{scale: 1.012}}
-                    >
-                      <ProductImage item={item} title={title} tone={column.tone} />
-                      <div className="min-w-0">
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span className={cn('rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold', toneClass[column.tone])}>
-                            rank #{item.rank ?? index + 1}
-                          </span>
+export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison, targetItemId}) => {
+  const [expandedColumns, setExpandedColumns] = React.useState<Record<string, boolean>>({});
+
+  const toggleColumn = (key: string) => {
+    setExpandedColumns((current) => ({...current, [key]: !current[key]}));
+  };
+
+  return (
+    <section className="sandbox-panel sandbox-glow rounded-[28px] p-5">
+      <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div>
+          <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">推荐对照</p>
+          <h3 className="mt-1 text-xl font-bold text-white">三列推荐商品变化</h3>
+        </div>
+        <p className="max-w-2xl text-xs leading-5 text-slate-400">
+          每列默认展示 5 个商品，可展开查看更多；图片优先使用本地缓存，其次使用原始链接，失败时显示占位图。分数缺失时不显示。
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        {columns.map((column) => {
+          const allItems = comparison?.[column.key] ?? [];
+          const isExpanded = Boolean(expandedColumns[column.key]);
+          const items = isExpanded ? allItems : allItems.slice(0, DEFAULT_VISIBLE_COUNT);
+          const hiddenCount = Math.max(0, allItems.length - DEFAULT_VISIBLE_COUNT);
+
+          return (
+            <div key={column.key} className="rounded-3xl border border-white/10 bg-white/[0.045] p-4">
+              <div className={cn('mb-4 inline-flex rounded-full border px-3 py-1 text-xs font-bold', toneClass[column.tone])}>
+                {column.title}
+              </div>
+              <div className="space-y-3">
+                {items.length ? (
+                  items.map((item, index) => {
+                    const title = getTitle(item);
+                    const isTarget = column.key === 'attack' && sameItem(item.itemId, targetItemId);
+                    return (
+                      <motion.div
+                        key={`${column.key}-${item.itemId ?? index}-${item.rank ?? index}`}
+                        className={cn(
+                          'grid grid-cols-[80px_minmax(0,1fr)] gap-3 rounded-2xl border bg-slate-900/35 p-3',
+                          isTarget ? 'border-rose-300/50 shadow-[0_0_22px_rgba(244,63,94,0.18)]' : 'border-white/10',
+                        )}
+                        initial={{opacity: 0, y: 18}}
+                        animate={{opacity: 1, y: 0}}
+                        transition={{delay: index * 0.05, type: 'spring', stiffness: 160, damping: 22}}
+                        whileHover={{scale: 1.012}}
+                      >
+                        <ProductImage item={item} title={title} tone={column.tone} />
+                        <div className="min-w-0">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <span className={cn('rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold', toneClass[column.tone])}>
+                              rank #{item.rank ?? index + 1}
+                            </span>
+                            {isTarget ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-rose-300/40 bg-rose-400/15 px-2 py-0.5 text-[11px] font-bold text-rose-100">
+                                <Target className="h-3 w-3" />
+                                定向投毒目标
+                              </span>
+                            ) : null}
+                          </div>
+                          <h4 className="line-clamp-2 text-sm font-bold leading-5 text-slate-50">{title}</h4>
+                          {item.category ? <p className="mt-1 text-[11px] text-slate-400">{item.category}</p> : null}
+                          {typeof item.score === 'number' && Number.isFinite(item.score) ? (
+                            <p className="mt-2 font-mono text-xs text-slate-300">分数 {item.score.toFixed(3)}</p>
+                          ) : null}
                         </div>
-                        <h4 className="line-clamp-2 text-sm font-bold leading-5 text-slate-50">{title}</h4>
-                        {item.category ? <p className="mt-1 text-[11px] text-slate-400">{item.category}</p> : null}
-                        {typeof item.score === 'number' && Number.isFinite(item.score) ? (
-                          <p className="mt-2 font-mono text-xs text-slate-300">score {item.score.toFixed(3)}</p>
-                        ) : null}
-                      </div>
-                    </motion.div>
-                  );
-                })
-              ) : (
-                <div className="rounded-2xl border border-white/10 bg-slate-900/25 px-4 py-6 text-sm text-slate-400">
-                  {column.empty}
-                </div>
-              )}
+                      </motion.div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-2xl border border-white/10 bg-slate-900/25 px-4 py-6 text-sm text-slate-400">
+                    {column.empty}
+                  </div>
+                )}
+              </div>
+
+              {hiddenCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => toggleColumn(column.key)}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
+                >
+                  {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  {isExpanded ? '收起' : `展开更多 ${hiddenCount} 条`}
+                </button>
+              ) : null}
             </div>
-          </div>
-        );
-      })}
-    </div>
-  </section>
-);
+          );
+        })}
+      </div>
+    </section>
+  );
+};

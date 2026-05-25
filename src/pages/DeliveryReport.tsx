@@ -61,7 +61,7 @@ export const DeliveryReport: React.FC = () => {
       title: 'Amazon 商品推荐对照',
       description:
         recommendationTotal > 0
-          ? `当前场景可展示 ${recommendationTotal} 条推荐项，商品图优先使用 local_image_url，失败后再使用 image_url 或占位图。`
+          ? `当前场景可展示 ${recommendationTotal} 条推荐项，商品图优先使用本地缓存图，失败后再使用原始图片链接或占位图。`
           : '当前场景没有完整推荐列表时，页面显示暂无数据，不补假商品或假分数。',
       icon: Database,
     },
@@ -104,9 +104,9 @@ export const DeliveryReport: React.FC = () => {
       detail: '只展示 artifact 摘要，不声称完整隐私攻击覆盖所有模型。',
     },
     {
-      label: 'MIA / SecAgg / Opacus',
+      label: '成员推断 / 安全聚合 / 差分隐私工具',
       value: `AUC ${formatMetricValue(v25?.miaAuc)} / SecAgg ${formatMetricValue(v25?.secAggResidual)}`,
-      detail: `${formatPlainValue(v25?.opacusStatus ?? 'unavailable')}：${formatPlainValue(v25?.opacusBoundary ?? 'formal DP future work')}`,
+      detail: `${formatPlainValue(v25?.opacusStatus ?? '暂不可用')}：${formatPlainValue(v25?.opacusBoundary ?? '正式差分隐私会计留作后续工作')}`,
     },
   ];
 
@@ -114,7 +114,7 @@ export const DeliveryReport: React.FC = () => {
     '补齐更多场景的商品 title、category、local_image_url 与真实视觉 embedding。',
     '如需差分隐私，需要正式 privacy accountant 与训练参数审计；当前只能写作差分隐私风格加噪。',
     '如需安全聚合，需要真实协议链路；当前只能写作安全聚合模拟。',
-    '扩展模型适配器前，unsupported / future_adapter 应作为能力边界呈现，不写成失败结论。',
+    '扩展模型适配器前，暂不支持 / 后续适配应作为能力边界呈现，不写成失败结论。',
   ];
 
   const usageScenarios = ['竞赛评审快速演示', '攻防链路讲解', '前后端联调验收', '后续模型适配规划'];
@@ -125,7 +125,7 @@ export const DeliveryReport: React.FC = () => {
         eyebrow="评委结尾页"
         title="交付报告"
         description="从当前 showcase artifact 生成可讲解的交付摘要：已实现能力、可展示实验、当前边界、后续增强和适用场景。"
-        chips={['中文化交付摘要', 'API artifact 优先', 'proxy / demo / smoke 不写成完整实现']}
+        chips={['中文化交付摘要', 'API artifact 优先', '代理证据 / 演示验证 / 快速冒烟不写成完整实现']}
         icon={FileText}
         tone="secondary"
       />

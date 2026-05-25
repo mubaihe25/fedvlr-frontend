@@ -2,15 +2,11 @@ import React, {useCallback, useEffect, useState} from 'react';
 import {MainLayout} from './layouts/MainLayout';
 import {mockConfigurationData} from './mock/configuration';
 import {Architecture} from './pages/Architecture';
-import {AttackDefenseRange} from './pages/AttackDefenseRange';
+import {AttackDefenseRange, type WorkbenchTabId} from './pages/AttackDefenseRange';
 import {ClientPersonalization} from './pages/ClientPersonalization';
 import {DataFusion} from './pages/DataFusion';
-import {DeliveryReport} from './pages/DeliveryReport';
-import {ExperimentResults, type ExperimentResultsView} from './pages/ExperimentResults';
 import {Home} from './pages/Home';
-import {ResultsEvidence} from './pages/ResultsEvidence';
 import {SystemMechanism} from './pages/SystemMechanism';
-import {Console} from './pages/console/Console';
 import type {ExperimentConfigurationSource} from './services/experiment';
 import {startTrain, type StartTrainResponse} from './services/train';
 import type {ConsoleExperimentContext, ConsoleSessionState, PageType} from './types/common';
@@ -26,28 +22,12 @@ const RESTORABLE_PAGES: PageType[] = [
   'dataFusion',
   'clientPersonalization',
   'attackDefenseRange',
-  'resultsEvidence',
-  'experimentResults',
-  'deliveryReport',
   'console',
   'monitoring',
   'analysis',
   'comparison',
   'history',
 ];
-
-const getExperimentResultsView = (page: PageType): ExperimentResultsView => {
-  switch (page) {
-    case 'history':
-      return 'history';
-    case 'comparison':
-      return 'comparison';
-    case 'analysis':
-    case 'experimentResults':
-    default:
-      return 'analysis';
-  }
-};
 
 const createMockContext = (): ConsoleExperimentContext => ({
   source: 'mock',
@@ -201,6 +181,27 @@ const restoreConsoleState = (): {currentPage: PageType; consoleSession: ConsoleS
   }
 };
 
+const getWorkbenchTabFromPage = (currentPage: PageType): WorkbenchTabId => {
+  switch (currentPage) {
+    case 'console':
+      return 'orchestration';
+    case 'monitoring':
+      return 'monitoring';
+    case 'analysis':
+    case 'experimentResults':
+    case 'deliveryReport':
+    case 'resultsEvidence':
+      return 'analysis';
+    case 'comparison':
+      return 'comparison';
+    case 'history':
+      return 'history';
+    case 'attackDefenseRange':
+    default:
+      return 'orchestration';
+  }
+};
+
 const getPageTitle = (currentPage: PageType) => {
   switch (currentPage) {
     case 'home':
@@ -211,23 +212,17 @@ const getPageTitle = (currentPage: PageType) => {
     case 'clientPersonalization':
       return '系统机制';
     case 'attackDefenseRange':
-      return '攻防实验';
-    case 'resultsEvidence':
+    case 'console':
+    case 'monitoring':
+    case 'analysis':
+    case 'comparison':
+    case 'history':
     case 'experimentResults':
     case 'deliveryReport':
-      return '结果与证据';
-    case 'console':
-      return '开发者模式 - 训练配置';
-    case 'monitoring':
-      return '开发者模式 - 运行监控';
-    case 'analysis':
-      return '开发者模式 - 单次分析';
-    case 'comparison':
-      return '开发者模式 - 横向对比';
-    case 'history':
-      return '开发者模式 - 历史实验';
+    case 'resultsEvidence':
+      return '攻防工作台';
     default:
-      return '安全推荐系统演示平台';
+      return '安全推荐演示平台';
   }
 };
 
@@ -367,8 +362,22 @@ const App: React.FC = () => {
       analysisTaskId: taskId,
       currentExperimentContext: taskId?.startsWith('api::') ? createHistoryContext(taskId) : prev.currentExperimentContext,
     }));
-    setCurrentPage('console');
+    setCurrentPage('attackDefenseRange');
   };
+
+  const renderWorkbench = (initialTab = getWorkbenchTabFromPage(currentPage)) => (
+    <AttackDefenseRange
+      initialTab={initialTab}
+      session={consoleSession}
+      onDraftConfigChange={handleDraftConfigChange}
+      onStartTrain={handleStartTrain}
+      onLaunchStatusChange={handleLaunchStatusChange}
+      onOpenAnalysis={handleOpenAnalysis}
+      onAddComparisonSelection={handleAddComparisonSelection}
+      onOpenComparison={() => setCurrentPage('comparison')}
+      onReuseConfig={handleReuseConfig}
+    />
+  );
 
   const renderPage = () => {
     switch (currentPage) {
@@ -383,41 +392,15 @@ const App: React.FC = () => {
       case 'clientPersonalization':
         return <ClientPersonalization />;
       case 'attackDefenseRange':
-        return <AttackDefenseRange />;
-      case 'resultsEvidence':
-        return <ResultsEvidence onPageChange={setCurrentPage} />;
-      case 'deliveryReport':
-        return <DeliveryReport />;
       case 'console':
       case 'monitoring':
-        return (
-          <Console
-            currentPage={currentPage}
-            onPageChange={setCurrentPage}
-            session={consoleSession}
-            onDraftConfigChange={handleDraftConfigChange}
-            onStartTrain={handleStartTrain}
-            onLaunchStatusChange={handleLaunchStatusChange}
-            onOpenAnalysis={handleOpenAnalysis}
-            onAddComparisonSelection={handleAddComparisonSelection}
-            onOpenComparison={() => setCurrentPage('comparison')}
-            onReuseConfig={handleReuseConfig}
-          />
-        );
-      case 'experimentResults':
       case 'analysis':
       case 'comparison':
       case 'history':
-        return (
-          <ExperimentResults
-            initialView={getExperimentResultsView(currentPage)}
-            session={consoleSession}
-            onOpenAnalysis={handleOpenAnalysis}
-            onAddComparisonSelection={handleAddComparisonSelection}
-            onOpenComparison={() => setCurrentPage('comparison')}
-            onReuseConfig={handleReuseConfig}
-          />
-        );
+      case 'experimentResults':
+      case 'deliveryReport':
+      case 'resultsEvidence':
+        return renderWorkbench();
       default:
         return <Home onPageChange={setCurrentPage} />;
     }

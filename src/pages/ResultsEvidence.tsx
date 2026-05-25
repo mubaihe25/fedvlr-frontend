@@ -69,7 +69,7 @@ export const ResultsEvidence: React.FC<ResultsEvidenceProps> = ({onPageChange}) 
             </div>
             <h1 className="text-3xl font-bold text-white md:text-5xl">评委证据页</h1>
             <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
-              这里集中展示关键结果、模型能力矩阵、KU 与 Amazon 两条实验线、当前支持状态和边界说明。详细训练配置与历史记录收纳到开发者模式。
+              这里集中展示关键结果、模型能力矩阵、KU 与 Amazon 两条实验线、当前支持状态和边界说明。详细训练配置、运行监控、单次分析、横向对比和历史记录已收纳到攻防工作台。
             </p>
           </div>
           <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-xs font-bold text-slate-300">
@@ -130,7 +130,7 @@ export const ResultsEvidence: React.FC<ResultsEvidenceProps> = ({onPageChange}) 
             </div>
             <div className="rounded-3xl border border-amber-200/20 bg-amber-200/10 p-5">
               <p className="text-lg font-bold text-amber-50">证据边界</p>
-              <p className="mt-3 text-sm leading-6 text-slate-300">FedAvg Amazon 的排序推进不能泛化到所有模型；unsupported / future_adapter 是适配边界。</p>
+              <p className="mt-3 text-sm leading-6 text-slate-300">FedAvg Amazon 的排序推进不能泛化到所有模型；暂不支持 / 后续适配是适配边界。</p>
             </div>
           </div>
         </div>
@@ -149,7 +149,7 @@ export const ResultsEvidence: React.FC<ResultsEvidenceProps> = ({onPageChange}) 
             ))}
           </div>
           <div className="mt-5 rounded-2xl border border-emerald-200/20 bg-emerald-200/10 p-4 text-sm leading-6 text-emerald-50">
-            已实现 / 部分支持 / 后续适配都以 artifact 证据为准，不把 demo、smoke、proxy 写成完整实现。
+            已实现 / 部分支持 / 后续适配都以 artifact 证据为准，不把演示验证、快速冒烟、代理证据写成完整实现。
           </div>
         </div>
       </section>
