@@ -21,7 +21,7 @@ It presents the multimodal federated recommendation workflow, experiment configu
 - Data Fusion: showcase dataset profile, modality fields, feature-method notes, and the existing fusion-view explanation.
 - Client Personalization: client-side router and G1-G4 personalized view weighting.
 - Attack Defense Range: API-backed showcase scenarios, metrics, recommendations, target-rank manipulation, defense trace, and boundary notes.
-- Experiment Results: API-backed showcase artifact summary plus the existing Analysis, History, and Comparison views.
+- Experiment Results: API-backed showcase artifact summary, model security capability matrix, V2.5 backend smoke summary, plus the existing Analysis, History, and Comparison views.
 - Delivery Report: report-style summary generated from the current showcase artifact and its limitations.
 - Training Console: experiment configuration and launch controls.
 - Monitoring: validate-only/dry-run/async launch status display.
@@ -48,6 +48,7 @@ The frontend prefers real data from `FedVLR-API`:
 - `/showcase/scenarios/{scenario_id}/recommendations`
 - `/showcase/scenarios/{scenario_id}/security`
 - `/showcase/scenarios/{scenario_id}/privacy`
+- `/showcase/images/{dataset}/{item_id}`
 
 Showcase pages use `src/services/showcase.ts` and `src/types/showcase.ts` to read the API first, then fall back to `src/mock/showcase.ts` if the API or an artifact endpoint is unavailable. The selector on showcase pages exposes the scenario source (`API artifact`, `mock fallback`, or mixed endpoint fallback), dataset/model metadata, tags, warnings, and flags such as `smoke`, `proxy`, `demo_only`, and `unavailable`.
 
@@ -56,6 +57,12 @@ Mock data under `src/mock` is a fallback for offline demos and UI continuity. Mo
 In particular, differential privacy, homomorphic encryption, and secure aggregation are not formally implemented in the current FedVLR training chain. If mentioned, they should be described only as future extensions or planning placeholders.
 
 For Amazon showcase artifacts, `image_features` may be a URL-hash placeholder. The frontend must label that as a placeholder and not as a real visual embedding.
+
+Recommendation cards prefer `local_image_url` from the API, then `image_url`, then a rank placeholder. Local API image URLs are resolved through the same API base/proxy path and local filesystem paths such as drive-letter paths must not be rendered.
+
+The model security capability matrix scenario is displayed from `model_security_capability_matrix`, `supported_demos`, `unsupported_reasons`, and `recommended_frontend_labels`. The UI must keep the boundary wording clear: FedAvg + Amazon is the strongest attack/defense validation base, MMFedRAP + KU is the multimodal showcase model, FedAvg Amazon target rank movement does not generalize to every model, and `unsupported` / `future_adapter` indicates an adapter boundary rather than a failed implementation.
+
+The Amazon Beauty V2.5 backend smoke summary shows target-rank movement, masked TopK hit, interaction reconstruction availability, MIA AUC, SecAgg residual, and Opacus availability without turning proxy/demo evidence into a full implementation claim.
 
 ## Metric Convention
 

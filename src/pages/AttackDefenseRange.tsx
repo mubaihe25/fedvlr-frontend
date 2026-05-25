@@ -5,6 +5,7 @@ import {RecommendationList} from '../components/showcase/RecommendationList';
 import {ScenarioMetricCard} from '../components/showcase/ScenarioMetricCard';
 import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
 import {ShowcaseScenarioSelector} from '../components/showcase/ShowcaseScenarioSelector';
+import {V25ArtifactSummary} from '../components/showcase/V25ArtifactSummary';
 import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
 import {
   EMPTY_VALUE,
@@ -271,6 +272,8 @@ export const AttackDefenseRange: React.FC = () => {
           )}
         </div>
       </section>
+
+      <V25ArtifactSummary summary={report.v25Summary} />
 
       <DefenseTraceCard trace={report.defenseTrace} />
 

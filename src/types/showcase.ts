@@ -63,6 +63,7 @@ export interface ShowcaseRecommendationItem {
   itemId?: string | number | null;
   title?: string | null;
   category?: string | null;
+  localImageUrl?: string | null;
   imageUrl?: string | null;
   score?: number | null;
   reason?: string | null;
@@ -122,6 +123,45 @@ export interface ShowcaseDefenseTrace {
   raw?: ShowcaseJsonRecord;
 }
 
+export interface ShowcaseModelCapabilityRow {
+  model?: string | null;
+  dataset?: string | null;
+  capability?: string | null;
+  status?: 'supported' | 'partial' | 'unsupported' | 'future_adapter' | 'not_tested' | string | null;
+  evidence?: string | null;
+  reason?: string | null;
+  recommendedDemoUsage?: string | null;
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseModelCapabilityMatrix {
+  entries: ShowcaseModelCapabilityRow[];
+  supportedDemos: ShowcaseModelCapabilityRow[];
+  unsupportedReasons: ShowcaseModelCapabilityRow[];
+  statusCounts?: Record<string, number>;
+  recommendedFrontendLabels?: Record<string, unknown>;
+  warnings?: string[];
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV25Summary {
+  targetRankBefore?: number | null;
+  targetRankAfter?: number | null;
+  rankMove?: number | null;
+  scoreGain?: number | null;
+  maskedTopkHitRate?: number | null;
+  interactionReconstructionHit10?: number | null;
+  interactionReconstructionHit20?: number | null;
+  interactionReconstructionHit50?: number | null;
+  interactionReconstructionStatus?: string | null;
+  miaAuc?: number | null;
+  secAggResidual?: number | null;
+  opacusStatus?: string | null;
+  opacusBoundary?: string | null;
+  warnings?: string[];
+  raw?: ShowcaseJsonRecord;
+}
+
 export interface ShowcaseReport {
   scenarioId: string;
   title?: string | null;
@@ -134,6 +174,8 @@ export interface ShowcaseReport {
   recommendationComparison?: ShowcaseRecommendationComparison | null;
   targetRankSummary?: ShowcaseTargetRankSummary | null;
   defenseTrace?: ShowcaseDefenseTrace | null;
+  modelCapabilityMatrix?: ShowcaseModelCapabilityMatrix | null;
+  v25Summary?: ShowcaseV25Summary | null;
   security?: unknown;
   privacy?: unknown;
   delivery?: unknown;

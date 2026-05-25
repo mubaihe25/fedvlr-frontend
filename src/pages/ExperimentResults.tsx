@@ -1,8 +1,10 @@
 import React, {useEffect, useState} from 'react';
 import {BarChart3, Clock, FileText, ShieldCheck, Swords, TrendingUp} from 'lucide-react';
+import {ModelCapabilityMatrix} from '../components/showcase/ModelCapabilityMatrix';
 import {ScenarioMetricCard} from '../components/showcase/ScenarioMetricCard';
 import {ShowcasePageHeader} from '../components/showcase/ShowcasePageHeader';
 import {ShowcaseScenarioSelector} from '../components/showcase/ShowcaseScenarioSelector';
+import {V25ArtifactSummary} from '../components/showcase/V25ArtifactSummary';
 import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
 import {cn} from '../lib/utils';
 import {formatMetricValue, formatPercentValue, getRecommendationCounts, summarizeArtifactValue} from '../lib/showcaseFormat';
@@ -181,6 +183,10 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
           ))}
         </div>
       </section>
+
+      <ModelCapabilityMatrix matrix={report.modelCapabilityMatrix} />
+
+      <V25ArtifactSummary summary={report.v25Summary} />
 
       <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-6">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">

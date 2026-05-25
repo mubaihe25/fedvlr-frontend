@@ -47,6 +47,11 @@ const statusClasses: Record<string, string> = {
 
 const formatScore = (score?: number | null) => (typeof score === 'number' && Number.isFinite(score) ? score.toFixed(2) : null);
 
+const isBlockedImageUrl = (value?: string | null) => !value || /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\');
+
+const getImageSources = (item: ShowcaseRecommendationItem) =>
+  [item.localImageUrl, item.imageUrl].filter((value): value is string => !isBlockedImageUrl(value));
+
 const getItemTitle = (item: ShowcaseRecommendationItem) => item.title ?? (item.itemId ? `Item ${item.itemId}` : '未命名物品');
 
 const getStatusLabel = (status?: string | null) => {
@@ -63,6 +68,36 @@ const getStatusClass = (status?: string | null) => {
   }
 
   return statusClasses[status] ?? 'bg-secondary/10 text-secondary';
+};
+
+const RecommendationImage: React.FC<{
+  item: ShowcaseRecommendationItem;
+  itemTitle: string;
+  rank: number;
+  borderClass: string;
+  iconClass: string;
+}> = ({item, itemTitle, rank, borderClass, iconClass}) => {
+  const sources = getImageSources(item);
+  const [sourceIndex, setSourceIndex] = React.useState(0);
+  const source = sources[sourceIndex];
+
+  if (source) {
+    return (
+      <img
+        className="h-14 w-14 rounded-lg object-cover"
+        src={source}
+        alt={itemTitle}
+        referrerPolicy="no-referrer"
+        onError={() => setSourceIndex((nextIndex) => nextIndex + 1)}
+      />
+    );
+  }
+
+  return (
+    <div className={cn('flex h-14 w-14 items-center justify-center rounded-lg border font-mono text-xs font-bold', borderClass, iconClass)}>
+      #{rank}
+    </div>
+  );
 };
 
 export const RecommendationList: React.FC<RecommendationListProps> = ({title, description, items, tone}) => {
@@ -89,18 +124,13 @@ export const RecommendationList: React.FC<RecommendationListProps> = ({title, de
             return (
               <div key={`${item.rank ?? index}-${item.itemId ?? itemTitle}`} className="rounded-xl border border-outline-variant/10 bg-surface-container-high p-4">
                 <div className="mb-3 grid grid-cols-[56px_minmax(0,1fr)] gap-3">
-                  {item.imageUrl ? (
-                    <img
-                      className="h-14 w-14 rounded-lg object-cover"
-                      src={item.imageUrl}
-                      alt={itemTitle}
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className={cn('flex h-14 w-14 items-center justify-center rounded-lg border font-mono text-xs font-bold', toneClass.border, toneClass.icon)}>
-                      #{item.rank ?? index + 1}
-                    </div>
-                  )}
+                  <RecommendationImage
+                    item={item}
+                    itemTitle={itemTitle}
+                    rank={item.rank ?? index + 1}
+                    borderClass={toneClass.border}
+                    iconClass={toneClass.icon}
+                  />
                   <div className="min-w-0">
                     <div className="mb-1 flex flex-wrap items-center gap-2">
                       <span className={cn('font-mono text-xs font-bold', toneClass.icon)}>#{item.rank ?? index + 1}</span>

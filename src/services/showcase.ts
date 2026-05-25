@@ -12,14 +12,17 @@ import type {
   ShowcaseFetchResult,
   ShowcaseJsonRecord,
   ShowcaseMetricsSummary,
+  ShowcaseModelCapabilityMatrix,
+  ShowcaseModelCapabilityRow,
   ShowcaseRecommendationComparison,
   ShowcaseRecommendationItem,
   ShowcaseReport,
   ShowcaseScenario,
   ShowcaseTargetRankEntry,
   ShowcaseTargetRankSummary,
+  ShowcaseV25Summary,
 } from '../types/showcase';
-import {apiGet} from './api';
+import {apiGet, buildApiUrl} from './api';
 
 const SHOWCASE_BASE_PATH = '/showcase/scenarios';
 
@@ -167,6 +170,24 @@ const firstNumber = (record: ShowcaseJsonRecord | undefined, keys: string[]) => 
 const firstBoolean = (record: ShowcaseJsonRecord | undefined, keys: string[]) => toBooleanValue(readField(record, keys));
 
 const firstStringList = (record: ShowcaseJsonRecord | undefined, keys: string[]) => toStringList(readField(record, keys));
+
+const isLocalFilePath = (value: string) => /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\');
+
+const toPublicUrl = (value: unknown): string | null => {
+  const stringValue = toStringValue(value);
+  if (!stringValue || isLocalFilePath(stringValue)) {
+    return null;
+  }
+  return stringValue;
+};
+
+const toPublicAssetUrl = (value: unknown): string | null => {
+  const publicUrl = toPublicUrl(value);
+  if (!publicUrl) {
+    return null;
+  }
+  return publicUrl.startsWith('/showcase/') ? buildApiUrl(publicUrl) : publicUrl;
+};
 
 const inferFlagFromText = (record: ShowcaseJsonRecord, fragments: string[]) => {
   const text = [
@@ -321,7 +342,8 @@ const normalizeRecommendationItem = (value: unknown, index: number): ShowcaseRec
     itemId: readField(value, ['item_id', 'itemId', 'id', 'asin', 'product_id', 'productId']) as string | number | null | undefined,
     title: firstString(value, ['title', 'item_title', 'itemTitle', 'name', 'product_title', 'productTitle']),
     category: firstString(value, ['category', 'item_category', 'itemCategory']),
-    imageUrl: firstString(value, ['image_url', 'imageUrl', 'image', 'thumbnail', 'thumbnail_url', 'thumbnailUrl']),
+    localImageUrl: toPublicAssetUrl(readField(value, ['local_image_url', 'localImageUrl'])),
+    imageUrl: toPublicAssetUrl(readField(value, ['image_url', 'imageUrl', 'image', 'thumbnail', 'thumbnail_url', 'thumbnailUrl'])),
     score: firstNumber(value, ['score', 'prediction', 'predicted_score', 'predictedScore']),
     reason: firstString(value, ['reason', 'note', 'description']),
     mainModality: firstString(value, ['main_modality', 'mainModality', 'modality']),
@@ -360,31 +382,38 @@ const normalizeRecommendationComparison = (payload: unknown): ShowcaseRecommenda
 
 const normalizeTargetRankEntry = (value: unknown): ShowcaseTargetRankEntry => {
   const record = isRecord(value) ? value : {};
+  const baselineRecord = pickRecord(record.baseline, ['baseline']);
+  const attackRecord = pickRecord(record.attack, ['attack', 'attacked']);
+  const defenseRecord = pickRecord(record.defense, ['defense', 'defended']);
 
   return {
     itemId: readField(record, ['item_id', 'itemId', 'target_item_id', 'targetItemId', 'id']) as string | number | null | undefined,
     title: firstString(record, ['title', 'target_title', 'targetTitle', 'name']),
-    baselineRank: firstNumber(record, [
-      'baseline_rank',
-      'baselineRank',
-      'clean_rank',
-      'cleanRank',
-      'baseline_best_unmasked_rank',
-      'baselineBestUnmaskedRank',
-      'baseline_mean_unmasked_rank',
-      'baselineMeanUnmaskedRank',
-    ]),
-    attackRank: firstNumber(record, [
-      'attack_rank',
-      'attackRank',
-      'attacked_rank',
-      'attackedRank',
-      'attack_best_unmasked_rank',
-      'attackBestUnmaskedRank',
-      'attack_mean_unmasked_rank',
-      'attackMeanUnmaskedRank',
-    ]),
-    defenseRank: firstNumber(record, ['defense_rank', 'defenseRank', 'defended_rank', 'defendedRank']),
+    baselineRank:
+      firstNumber(record, [
+        'baseline_rank',
+        'baselineRank',
+        'clean_rank',
+        'cleanRank',
+        'baseline_best_unmasked_rank',
+        'baselineBestUnmaskedRank',
+        'baseline_mean_unmasked_rank',
+        'baselineMeanUnmaskedRank',
+      ]) ?? firstNumber(baselineRecord, ['best_unmasked_rank', 'bestUnmaskedRank', 'mean_unmasked_rank', 'meanUnmaskedRank']),
+    attackRank:
+      firstNumber(record, [
+        'attack_rank',
+        'attackRank',
+        'attacked_rank',
+        'attackedRank',
+        'attack_best_unmasked_rank',
+        'attackBestUnmaskedRank',
+        'attack_mean_unmasked_rank',
+        'attackMeanUnmaskedRank',
+      ]) ?? firstNumber(attackRecord, ['best_unmasked_rank', 'bestUnmaskedRank', 'mean_unmasked_rank', 'meanUnmaskedRank']),
+    defenseRank:
+      firstNumber(record, ['defense_rank', 'defenseRank', 'defended_rank', 'defendedRank']) ??
+      firstNumber(defenseRecord, ['best_unmasked_rank', 'bestUnmaskedRank', 'mean_unmasked_rank', 'meanUnmaskedRank']),
     rankGain: firstNumber(record, [
       'rank_gain',
       'rankGain',
@@ -395,9 +424,18 @@ const normalizeTargetRankEntry = (value: unknown): ShowcaseTargetRankEntry => {
       'mean_rank_shift_positive_is_better',
       'meanRankShiftPositiveIsBetter',
     ]),
-    scoreGain: firstNumber(record, ['score_gain', 'scoreGain', 'score_delta', 'scoreDelta', 'best_score_gain', 'bestScoreGain', 'mean_score_gain', 'meanScoreGain']),
+    scoreGain: firstNumber(record, [
+      'score_gain',
+      'scoreGain',
+      'score_delta',
+      'scoreDelta',
+      'best_score_gain',
+      'bestScoreGain',
+      'mean_score_gain',
+      'meanScoreGain',
+    ]),
     targetHitRate: firstNumber(record, ['target_hit_rate', 'targetHitRate']),
-    inTop50: firstBoolean(record, ['in_top50', 'inTop50', 'top50_hit', 'top50Hit', 'entered_top50', 'enteredTop50']),
+    inTop50: firstBoolean(record, ['in_top50', 'inTop50', 'top50_hit', 'top50Hit', 'entered_top50', 'enteredTop50', 'target_entered_top50']),
     raw: isRecord(value) ? value : undefined,
   };
 };
@@ -458,6 +496,162 @@ const normalizeDefenseTrace = (payload: unknown): ShowcaseDefenseTrace => {
   };
 };
 
+const normalizeCapabilityRow = (value: unknown): ShowcaseModelCapabilityRow => {
+  const record = isRecord(value) ? value : {};
+
+  return {
+    model: firstString(record, ['model', 'model_name', 'modelName']),
+    dataset: firstString(record, ['dataset', 'dataset_name', 'datasetName']),
+    capability: firstString(record, ['capability', 'capability_name', 'capabilityName', 'demo', 'feature']),
+    status: firstString(record, ['status', 'state']),
+    evidence: firstString(record, ['evidence', 'source', 'artifact', 'summary']),
+    reason: firstString(record, ['reason', 'note', 'description']),
+    recommendedDemoUsage: firstString(record, ['recommended_demo_usage', 'recommendedDemoUsage', 'usage', 'recommended_usage']),
+    raw: isRecord(value) ? value : undefined,
+  };
+};
+
+const normalizeCapabilityRows = (payload: unknown): ShowcaseModelCapabilityRow[] => {
+  const rows = pickArray(payload, ['entries', 'rows', 'items', 'supported_demos', 'supportedDemos', 'unsupported_reasons', 'unsupportedReasons']);
+  return rows?.map(normalizeCapabilityRow) ?? [];
+};
+
+const normalizeStatusCounts = (value: unknown): Record<string, number> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const counts = Object.entries(value).reduce<Record<string, number>>((accumulator, [key, item]) => {
+    const numberValue = toNumberValue(item);
+    if (numberValue !== null) {
+      accumulator[key] = numberValue;
+    }
+    return accumulator;
+  }, {});
+
+  return Object.keys(counts).length ? counts : undefined;
+};
+
+const normalizeModelCapabilityMatrix = (payload: unknown): ShowcaseModelCapabilityMatrix | null => {
+  const payloadRecord = isRecord(payload) ? payload : {};
+  const record = pickRecord(payloadRecord, ['model_security_capability_matrix', 'modelSecurityCapabilityMatrix', 'matrix']) ?? {};
+  const supportedRecord = pickRecord(readField(payloadRecord, ['supported_demos', 'supportedDemos']), [
+    'supported_demos',
+    'supportedDemos',
+  ]);
+  const unsupportedRecord = pickRecord(readField(payloadRecord, ['unsupported_reasons', 'unsupportedReasons']), [
+    'unsupported_reasons',
+    'unsupportedReasons',
+  ]);
+  const labelsRecord = pickRecord(readField(payloadRecord, ['recommended_frontend_labels', 'recommendedFrontendLabels']), [
+    'recommended_frontend_labels',
+    'recommendedFrontendLabels',
+  ]);
+  const entries = normalizeCapabilityRows(record);
+  const supportedDemos = normalizeCapabilityRows(supportedRecord);
+  const unsupportedReasons = normalizeCapabilityRows(unsupportedRecord);
+
+  if (!entries.length && !supportedDemos.length && !unsupportedReasons.length) {
+    return null;
+  }
+
+  return {
+    entries,
+    supportedDemos,
+    unsupportedReasons,
+    statusCounts: normalizeStatusCounts(readField(record, ['status_counts', 'statusCounts'])),
+    recommendedFrontendLabels: labelsRecord,
+    warnings: uniqueStrings([
+      ...firstStringList(record, ['warnings', 'warning']),
+      ...firstStringList(labelsRecord, ['warnings', 'warning']),
+    ]),
+    raw: isRecord(payload) ? payload : undefined,
+  };
+};
+
+const normalizeV25Summary = (
+  scenarioId: string,
+  attackDefenseSummaryPayload: unknown,
+  privacyRiskSummaryPayload: unknown,
+  defenseTracePayload: unknown,
+): ShowcaseV25Summary | null => {
+  const text = scenarioId.toLowerCase();
+  const attackDefenseRecord = isRecord(attackDefenseSummaryPayload) ? attackDefenseSummaryPayload : {};
+  const privacyRecord = isRecord(privacyRiskSummaryPayload) ? privacyRiskSummaryPayload : {};
+  const defenseRecord = isRecord(defenseTracePayload) ? defenseTracePayload : {};
+  const rankRecord = pickRecord(readField(attackDefenseRecord, ['target_rank_score', 'targetRankScore']), [
+    'target_rank_score',
+    'targetRankScore',
+  ]);
+  const firstRankRow = normalizeTargetRankEntry((pickArray(rankRecord, ['rows', 'entries', 'items']) ?? [])[0]);
+  const manipulationRecord =
+    pickRecord(readField(attackDefenseRecord, ['recommendation_manipulation', 'recommendationManipulation']), [
+      'recommendation_manipulation',
+      'recommendationManipulation',
+    ]) ?? {};
+  const interactionRecord =
+    pickRecord(readField(privacyRecord, ['interaction_reconstruction', 'interactionReconstruction']), [
+      'interaction_reconstruction',
+      'interactionReconstruction',
+    ]) ?? {};
+  const miaRecord =
+    pickRecord(readField(privacyRecord, ['membership_inference', 'membershipInference', 'mia']), [
+      'membership_inference',
+      'membershipInference',
+      'mia',
+    ]) ?? {};
+  const secAggRecord =
+    pickRecord(readField(defenseRecord, ['secure_aggregation_demo', 'secureAggregationDemo', 'secure_agg', 'secureAgg']), [
+      'secure_aggregation_demo',
+      'secureAggregationDemo',
+      'secure_agg',
+      'secureAgg',
+    ]) ??
+    pickRecord(readField(privacyRecord, ['secure_aggregation_demo', 'secureAggregationDemo']), [
+      'secure_aggregation_demo',
+      'secureAggregationDemo',
+    ]) ??
+    {};
+  const opacusRecord =
+    pickRecord(readField(privacyRecord, ['opacus_feasibility', 'opacusFeasibility', 'opacus_toy', 'opacusToy']), [
+      'opacus_feasibility',
+      'opacusFeasibility',
+      'opacus_toy',
+      'opacusToy',
+    ]) ?? {};
+
+  if (!text.includes('v25') && !firstRankRow.baselineRank && !firstRankRow.attackRank && !miaRecord.attack_auc) {
+    return null;
+  }
+
+  return {
+    targetRankBefore: firstRankRow.baselineRank,
+    targetRankAfter: firstRankRow.attackRank,
+    rankMove: firstRankRow.rankGain,
+    scoreGain: firstRankRow.scoreGain,
+    maskedTopkHitRate:
+      firstNumber(manipulationRecord, ['target_hit_rate_at_k_attack', 'targetHitRateAtKAttack', 'masked_topk_hit_rate', 'maskedTopkHitRate']) ??
+      firstNumber(manipulationRecord, ['target_hit_rate_attack', 'targetHitRateAttack']),
+    interactionReconstructionHit10: firstNumber(interactionRecord, ['hit@10', 'hit_at_10', 'hitAt10', 'hit10']),
+    interactionReconstructionHit20: firstNumber(interactionRecord, ['hit@20', 'hit_at_20', 'hitAt20', 'hit20']),
+    interactionReconstructionHit50: firstNumber(interactionRecord, ['hit@50', 'hit_at_50', 'hitAt50', 'hit50']),
+    interactionReconstructionStatus: firstString(interactionRecord, ['status', 'state']),
+    miaAuc: firstNumber(miaRecord, ['attack_auc', 'attackAuc', 'auc', 'mia_auc', 'miaAuc']),
+    secAggResidual: firstNumber(secAggRecord, ['aggregate_residual_norm', 'aggregateResidualNorm', 'residual', 'secagg_residual']),
+    opacusStatus: firstString(opacusRecord, ['status', 'state']),
+    opacusBoundary: firstString(opacusRecord, ['note', 'warning', 'summary']),
+    warnings: uniqueStrings([
+      ...firstStringList(privacyRecord, ['warnings', 'warning']),
+      ...firstStringList(opacusRecord, ['warnings', 'warning']),
+    ]),
+    raw: {
+      attackDefenseSummary: attackDefenseRecord,
+      privacyRiskSummary: privacyRecord,
+      defenseTrace: defenseRecord,
+    },
+  };
+};
+
 const uniqueStrings = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
 
 const normalizeReport = (payload: unknown, scenario?: ShowcaseScenario): ShowcaseReport => {
@@ -465,6 +659,8 @@ const normalizeReport = (payload: unknown, scenario?: ShowcaseScenario): Showcas
   const scenarioRecord = pickRecord(record.scenario, ['scenario']) ?? undefined;
   const metricsSummaryPayload = readField(record, ['metrics_summary', 'metricsSummary', 'metrics']) ?? record;
   const attackDefenseSummaryPayload = readField(record, ['attack_defense_summary', 'attackDefenseSummary']);
+  const privacyRiskSummaryPayload = readField(record, ['privacy_risk_summary', 'privacyRiskSummary', 'privacy']);
+  const defenseTracePayload = readField(record, ['defense_trace', 'defenseTrace', 'security', 'security_matrix', 'securityMatrix']);
   const metricsSummary = normalizeMetricsSummary(metricsSummaryPayload);
   const attackDefenseMetrics = attackDefenseSummaryPayload ? normalizeMetricsSummary(attackDefenseSummaryPayload) : null;
   const targetRankPayload =
@@ -499,10 +695,12 @@ const normalizeReport = (payload: unknown, scenario?: ShowcaseScenario): Showcas
       targetHitRate: attackDefenseMetrics?.targetHitRate ?? metricsSummary.targetHitRate,
     },
     attackDefenseSummary: attackDefenseSummaryPayload,
-    privacyRiskSummary: readField(record, ['privacy_risk_summary', 'privacyRiskSummary', 'privacy']),
+    privacyRiskSummary: privacyRiskSummaryPayload,
     recommendationComparison: normalizeRecommendationComparison(readField(record, ['recommendation_comparison', 'recommendationComparison', 'recommendations']) ?? record),
     targetRankSummary: normalizeTargetRankSummary(targetRankPayload),
-    defenseTrace: normalizeDefenseTrace(readField(record, ['defense_trace', 'defenseTrace', 'security', 'security_matrix', 'securityMatrix']) ?? record),
+    defenseTrace: normalizeDefenseTrace(defenseTracePayload ?? record),
+    modelCapabilityMatrix: normalizeModelCapabilityMatrix(record),
+    v25Summary: normalizeV25Summary(scenarioId, attackDefenseSummaryPayload, privacyRiskSummaryPayload, defenseTracePayload),
     security: readField(record, ['security', 'security_matrix', 'securityMatrix']),
     privacy: readField(record, ['privacy']),
     delivery: readField(record, ['delivery', 'delivery_summary', 'deliverySummary']),
@@ -755,6 +953,9 @@ const combineSources = (sources: Array<Extract<ShowcaseDataSource, 'api' | 'mock
   return sources[0] ?? 'mock';
 };
 
+const hasRecommendationRows = (comparison?: ShowcaseRecommendationComparison | null) =>
+  Boolean(comparison && (comparison.baseline.length || comparison.attack.length || comparison.defense.length));
+
 export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<ShowcaseBundle> => {
   const scenariosResult = await fetchShowcaseScenarios();
   const selectedScenario =
@@ -766,14 +967,16 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
   }
 
   const scenarioId = selectedScenario.scenarioId;
-  const [reportResult, datasetResult, metricsResult, recommendationsResult, securityResult, privacyResult] = await Promise.all([
+  const [reportResult, datasetResult, metricsResult, securityResult, privacyResult] = await Promise.all([
     fetchShowcaseReport(scenarioId),
     fetchShowcaseDataset(scenarioId),
     fetchShowcaseMetrics(scenarioId),
-    fetchShowcaseRecommendations(scenarioId),
     fetchShowcaseSecurity(scenarioId),
     fetchShowcasePrivacy(scenarioId),
   ]);
+  const recommendationsResult = hasRecommendationRows(reportResult.data.recommendationComparison)
+    ? undefined
+    : await fetchShowcaseRecommendations(scenarioId);
 
   const report: ShowcaseReport = {
     ...reportResult.data,
@@ -784,7 +987,7 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
     datasetProfile: datasetResult.source === 'api' ? datasetResult.data : reportResult.data.datasetProfile,
     metricsSummary: reportResult.data.metricsSummary ?? (metricsResult.source === 'api' ? metricsResult.data : null),
     recommendationComparison:
-      recommendationsResult.source === 'api' ? recommendationsResult.data : reportResult.data.recommendationComparison,
+      recommendationsResult?.source === 'api' ? recommendationsResult.data : reportResult.data.recommendationComparison,
     defenseTrace: securityResult.source === 'api' ? securityResult.data.defenseTrace ?? null : reportResult.data.defenseTrace,
     security: securityResult.source === 'api' ? securityResult.data.security : reportResult.data.security,
     privacyRiskSummary: privacyResult.source === 'api' ? privacyResult.data.privacyRiskSummary : reportResult.data.privacyRiskSummary,
@@ -796,12 +999,12 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
     reportResult.source,
     datasetResult.source,
     metricsResult.source,
-    recommendationsResult.source,
+    recommendationsResult?.source,
     securityResult.source,
     privacyResult.source,
-  ];
+  ].filter((source): source is Extract<ShowcaseDataSource, 'api' | 'mock'> => Boolean(source));
   const fallbackReason = uniqueStrings(
-    [scenariosResult.error, reportResult.error, datasetResult.error, metricsResult.error, recommendationsResult.error, securityResult.error, privacyResult.error].filter(
+    [scenariosResult.error, reportResult.error, datasetResult.error, metricsResult.error, recommendationsResult?.error, securityResult.error, privacyResult.error].filter(
       (item): item is string => Boolean(item),
     ),
   ).join(' / ');
