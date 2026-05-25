@@ -1,6 +1,6 @@
 # FedVLR-Frontend
 
-`FedVLR-Frontend` 是 FedVLR 的前端展示与交互仓库，当前定位是“数字化联邦推荐攻防沙盘”。它面向评审演示和联调验收，优先展示 FedVLR-API 的只读 showcase artifacts，并在 API 不可用或单个 artifact 缺失时回退到本地 mock，保证页面不白屏。
+`FedVLR-Frontend` 是 FedVLR 的前端展示与交互仓库，当前定位是“安全推荐系统演示平台”。它面向评审顺序理解，优先读取 `FedVLR-API` 的只读 showcase artifacts，并在 API 不可用或单个 artifact 缺失时回退到本地 mock，保证页面不白屏。
 
 ## 技术栈
 
@@ -14,24 +14,34 @@
 
 ## 导航结构
 
-主侧边栏收束为 5 个评审主入口：
+主侧边栏保留 4 个评委主路径：
 
-- 系统总览
-- 攻防沙盘
-- 实验结果
-- 交付报告
-- 开发者控制台
+- 项目导览
+- 系统机制
+- 攻防实验
+- 结果与证据
 
-训练配置、运行监控、历史实验、横向对比、单次分析仍保留在代码中，但入口收纳到“开发者控制台”，避免评审主路径被后台管理功能打散。
+开发相关入口弱化到“开发者模式”分组：训练配置、运行监控、单次分析、历史实验、横向对比。
+
+## 旧页面合并关系
+
+- `Home` 改为“项目导览”。
+- `Architecture` / `DataFusion` / `ClientPersonalization` 的讲解被合并到“系统机制”。
+- `AttackDefenseRange` 改为“攻防实验”。
+- `ExperimentResults` / `History` / `Comparison` / `Model Matrix` 被合并到“结果与证据”。
+- `Training Console` / `Monitoring` / `Configuration` 放入“开发者模式”。
+- `DeliveryReport` 不再作为一级导航，作为“结果与证据”的交付摘要与详情入口保留。
+
+旧页面没有删除；当前先通过路由和导航组织隐藏或弱化。
 
 ## 页面与模块
 
-- `src/pages/Home.tsx`：系统总览第一屏，展示“联邦安全推荐数字沙盘”主视觉、中央服务器、客户端节点、商品/文本/交互数据流和动态飞线。
-- `src/pages/AttackDefenseRange.tsx`：核心攻防沙盘，包含左侧风琴式控制翼、中间联邦拓扑演练大屏、目标 rank 推进动画、右侧实时审计曲线，以及底部三列推荐商品对照。
-- `src/pages/ExperimentResults.tsx`：真实 artifact 摘要、Amazon V2.5 smoke 摘要、模型安全能力矩阵，以及原有 Analysis / History / Comparison 视图入口。
-- `src/pages/DeliveryReport.tsx`：评委结尾页，归纳已实现能力、可展示实验、当前边界、后续增强和适用场景。
-- `src/components/sandbox`：沙盘视觉组件，包括联邦拓扑飞线、风琴控制面板、目标 rank 舞台、实时审计 sparkline 和三列推荐对照。
-- `src/components/showcase`：showcase 场景选择、指标卡、能力矩阵、V2.5 摘要等复用展示组件。
+- `src/pages/Home.tsx`：项目导览页。用一句话定位、三步说明、简洁联邦拓扑图和三个主按钮帮助评委快速理解项目。
+- `src/pages/SystemMechanism.tsx`：系统机制页。按数据接入、多模态融合、本地训练、服务端聚合、双层融合机制解释正常系统。
+- `src/pages/AttackDefenseRange.tsx`：攻防实验页。按“选择实验剧本、观察攻防过程、查看推荐与指标变化”组织核心演示。
+- `src/pages/ResultsEvidence.tsx`：结果与证据页。集中展示关键结果、模型能力矩阵、KU 与 Amazon 两条实验线、支持状态和边界说明。
+- `src/components/sandbox`：沙盘视觉组件，包括联邦拓扑飞线、攻防剧本控制、target rank 动画和三列推荐对照。
+- `src/components/showcase`：showcase 场景、指标、能力矩阵、V2.5 摘要等复用展示组件。
 - `src/services/showcase.ts`：showcase API 读取、artifact 正规化、mock fallback 和本地图片 URL 处理。
 - `src/types/showcase.ts`：showcase artifact 类型定义，字段允许缺失。
 - `src/lib/showcaseFormat.ts`：中文 label map、指标格式化、边界说明和 artifact 摘要。
@@ -49,7 +59,7 @@
 - `/showcase/scenarios/{scenario_id}/privacy`
 - `/showcase/images/{dataset}/{item_id}`
 
-Showcase 页面通过 `useShowcaseBundle` 和 `src/services/showcase.ts` 读取 API。API 整体不可用或部分 artifact endpoint 不可用时，允许回退到 `src/mock/showcase.ts`，并在场景选择器中显示 `API artifact`、`API + fallback` 或 `mock fallback` 来源。
+Showcase 页面通过 `useShowcaseBundle` 和 `src/services/showcase.ts` 读取 API。API 整体不可用或部分 artifact endpoint 不可用时，允许回退到 `src/mock/showcase.ts`，并在页面中显示 `API artifact`、`API + fallback` 或 `mock fallback` 来源。
 
 ## 当前已实现能力
 
@@ -59,7 +69,7 @@ Showcase 页面通过 `useShowcaseBundle` 和 `src/services/showcase.ts` 读取 
 - target promotion V2.5 摘要：未屏蔽排序可展示 `170 -> 3`，同时明确 masked Top50 hit 为 0 时不能写成攻击成功。
 - MIA、interaction reconstruction、Krum / Median / TrimmedMean、DP-style Noise、SecAgg demo 等 artifact 摘要展示。
 - model_security_capability_matrix 展示，状态中文化为已支持、部分支持、暂不支持、后续适配。
-- 首页和攻防沙盘的 SVG / CSS / motion 动态飞线，不引入 three.js。
+- 首页和攻防实验页的 SVG / CSS / motion 动态飞线，不引入 three.js。
 
 ## 当前边界
 
@@ -74,7 +84,7 @@ Showcase 页面通过 `useShowcaseBundle` 和 `src/services/showcase.ts` 读取 
 - 页面展示优先使用 `Recall@50` 和 `NDCG@50`。
 - 历史和对比摘要优先使用 tail mean。
 - 不要把主要展示口径回退成单轮最大值。
-- 右侧实时曲线若由 artifact 摘要生成，必须标注为“展示曲线 / artifact 摘要”，不能伪造成完整训练全过程。
+- target_hit_rate=0 或 masked Top50 hit 为 0 时必须显示为“最终曝光未命中”，不写成攻击成功。
 
 ## 环境配置
 

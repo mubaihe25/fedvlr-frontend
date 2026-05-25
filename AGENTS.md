@@ -2,7 +2,7 @@
 
 ## 仓库职责边界
 
-`FedVLR-Frontend` 只负责前端展示、交互、showcase artifact 读取和 mock fallback。当前主定位是“数字化联邦推荐攻防沙盘”，面向评审演示和端到端联调验收。
+`FedVLR-Frontend` 只负责前端展示、交互、showcase artifact 读取和 mock fallback。当前主定位是“安全推荐系统演示平台”，面向评审顺序理解和端到端联调验收。
 
 不要在本仓库任务中修改 `FedVLR` 算法仓库或 `FedVLR-API`，除非用户明确扩大范围。不要运行训练，不要删除 outputs，不要提交 Git，除非用户明确要求。
 
@@ -18,8 +18,8 @@
 
 ## 重点目录
 
-- `src/pages`：页面级功能。主路径为系统总览、攻防沙盘、实验结果、交付报告、开发者控制台。
-- `src/components/sandbox`：数字沙盘视觉组件，包括联邦拓扑、动态飞线、风琴控制翼、target rank 动画、实时审计曲线和推荐三列对照。
+- `src/pages`：页面级功能。主路径为项目导览、系统机制、攻防实验、结果与证据。
+- `src/components/sandbox`：数字沙盘视觉组件，包括联邦拓扑、动态飞线、攻防剧本控制、target rank 动画和推荐三列对照。
 - `src/components/showcase`：showcase 复用组件，包括场景选择器、指标卡、模型能力矩阵、V2.5 摘要等。
 - `src/services`：API 调用、实验配置映射、历史结果读取、showcase artifact 读取和 mock fallback。
 - `src/mock`：离线展示兜底数据。
@@ -28,15 +28,23 @@
 
 ## 导航与页面约束
 
-主侧边栏保持 5 个评审入口：
+主侧边栏保持 4 个评委入口：
 
-- 系统总览
-- 攻防沙盘
-- 实验结果
-- 交付报告
-- 开发者控制台
+- 项目导览
+- 系统机制
+- 攻防实验
+- 结果与证据
 
-训练配置、运行监控、历史实验、横向对比、单次分析放入“开发者控制台”分组。旧页面可以保留，但不要把评委主路径重新拆成后台管理式的 8 个以上导航入口。
+训练配置、运行监控、单次分析、历史实验、横向对比放入弱化的“开发者模式”分组。旧页面可以保留，但不要把评委主路径重新拆成后台管理式多页面。
+
+旧页面合并关系：
+
+- `Home` -> 项目导览
+- `Architecture` / `DataFusion` / `ClientPersonalization` -> 系统机制
+- `AttackDefenseRange` -> 攻防实验
+- `ExperimentResults` / `History` / `Comparison` / `Model Matrix` -> 结果与证据
+- `Training Console` / `Monitoring` / `Configuration` -> 开发者模式
+- `DeliveryReport` 不作为一级导航，只保留在结果与证据底部或详情入口
 
 ## Showcase API 协议
 
@@ -58,7 +66,7 @@ Showcase 页面必须 API 优先；API 不可用或单个 artifact 缺失时允�
 ## 口径和边界
 
 - `smoke`、`proxy`、`demo_only`、`unavailable`、`not_available`、warnings 必须按边界说明展示，不要改写成完整实现。
-- `target_hit_rate=0` 或 masked Top50 hit 为 0 时，不要写成攻击成功。
+- `target_hit_rate=0` 或 masked Top50 hit 为 0 时，必须显示为“最终曝光未命中”，不要写成攻击成功。
 - Amazon 场景中的 `image_features` 若为 URL-hash placeholder，必须明确说明不是实际视觉 embedding。
 - `secure_aggregation_sim` 只能写成安全聚合模拟，不是生产级协议。
 - `dp_noise` 只能写成差分隐私风格加噪；没有正式 privacy accountant 时，不要写成 formal DP。
@@ -75,10 +83,11 @@ Showcase 页面必须 API 优先；API 不可用或单个 artifact 缺失时允�
 
 ## 视觉约束
 
-- 保持深色科技风，优先使用 slate-950 / black gradient、毛玻璃容器、渐变描边和柔和辉光。
-- 攻防沙盘必须保留清晰的联邦拓扑、动态飞线、攻击红色流、防御绿色消散或拦截效果、实时指标曲线和三列推荐对照。
-- 不新增 three.js 等重依赖。SVG、CSS animation、motion 足够完成第一阶段视觉骨架。
-- 不要为了视觉效果堆过多卡片；主体验应集中在拓扑演练和攻防对照。
+- 保持简约暗色科技风：slate-950 到 slate-900，柔和蓝紫渐变光，通透容器。
+- 少放小卡片，多用流程图、拓扑图和对照区。
+- 颜色语义统一：蓝=正常，红=攻击，绿=防御，紫=多模态。
+- 动效保留但不要过度；联邦拓扑、动态飞线、攻击流、防御过滤、target rank 动画和推荐三列对照是核心视觉骨架。
+- 不新增 three.js 等重依赖。SVG、CSS animation、motion 足够完成当前阶段。
 
 ## 开发约束
 

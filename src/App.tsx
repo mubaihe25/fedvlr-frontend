@@ -8,6 +8,8 @@ import {DataFusion} from './pages/DataFusion';
 import {DeliveryReport} from './pages/DeliveryReport';
 import {ExperimentResults, type ExperimentResultsView} from './pages/ExperimentResults';
 import {Home} from './pages/Home';
+import {ResultsEvidence} from './pages/ResultsEvidence';
+import {SystemMechanism} from './pages/SystemMechanism';
 import {Console} from './pages/console/Console';
 import type {ExperimentConfigurationSource} from './services/experiment';
 import {startTrain, type StartTrainResponse} from './services/train';
@@ -16,12 +18,15 @@ import type {LaunchExperimentOptions, LaunchExperimentRecord, LaunchExperimentRe
 
 const cloneConfig = (config: TrainConfig) => structuredClone(config);
 const CONSOLE_SESSION_STORAGE_KEY = 'fedvlr.console.session.v1';
+
 const RESTORABLE_PAGES: PageType[] = [
   'home',
+  'systemMechanism',
   'architecture',
   'dataFusion',
   'clientPersonalization',
   'attackDefenseRange',
+  'resultsEvidence',
   'experimentResults',
   'deliveryReport',
   'console',
@@ -199,31 +204,30 @@ const restoreConsoleState = (): {currentPage: PageType; consoleSession: ConsoleS
 const getPageTitle = (currentPage: PageType) => {
   switch (currentPage) {
     case 'home':
-      return '系统总览';
-    case 'attackDefenseRange':
-      return '攻防沙盘';
-    case 'experimentResults':
-      return '实验结果';
-    case 'deliveryReport':
-      return '交付报告';
+      return '项目导览';
+    case 'systemMechanism':
     case 'architecture':
-      return '系统架构';
     case 'dataFusion':
-      return '数据与融合';
     case 'clientPersonalization':
-      return '客户端个性化';
+      return '系统机制';
+    case 'attackDefenseRange':
+      return '攻防实验';
+    case 'resultsEvidence':
+    case 'experimentResults':
+    case 'deliveryReport':
+      return '结果与证据';
     case 'console':
-      return '开发者控制台';
+      return '开发者模式 - 训练配置';
     case 'monitoring':
-      return '开发者控制台 - 运行监控';
+      return '开发者模式 - 运行监控';
     case 'analysis':
-      return '开发者控制台 - 单次分析';
+      return '开发者模式 - 单次分析';
     case 'comparison':
-      return '开发者控制台 - 横向对比';
+      return '开发者模式 - 横向对比';
     case 'history':
-      return '开发者控制台 - 历史实验';
+      return '开发者模式 - 历史实验';
     default:
-      return '联邦推荐攻防沙盘';
+      return '安全推荐系统演示平台';
   }
 };
 
@@ -370,6 +374,8 @@ const App: React.FC = () => {
     switch (currentPage) {
       case 'home':
         return <Home onPageChange={setCurrentPage} />;
+      case 'systemMechanism':
+        return <SystemMechanism />;
       case 'architecture':
         return <Architecture />;
       case 'dataFusion':
@@ -378,6 +384,8 @@ const App: React.FC = () => {
         return <ClientPersonalization />;
       case 'attackDefenseRange':
         return <AttackDefenseRange />;
+      case 'resultsEvidence':
+        return <ResultsEvidence onPageChange={setCurrentPage} />;
       case 'deliveryReport':
         return <DeliveryReport />;
       case 'console':

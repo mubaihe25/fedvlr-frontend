@@ -112,8 +112,8 @@ export const DeliveryReport: React.FC = () => {
 
   const futureWork = [
     '补齐更多场景的商品 title、category、local_image_url 与真实视觉 embedding。',
-    '如需差分隐私，需要正式 privacy accountant 与训练参数审计；当前 dp_noise 只能写作差分隐私风格加噪。',
-    '如需安全聚合，需要真实协议链路；当前 secure_aggregation_sim 只能写作安全聚合模拟。',
+    '如需差分隐私，需要正式 privacy accountant 与训练参数审计；当前只能写作差分隐私风格加噪。',
+    '如需安全聚合，需要真实协议链路；当前只能写作安全聚合模拟。',
     '扩展模型适配器前，unsupported / future_adapter 应作为能力边界呈现，不写成失败结论。',
   ];
 

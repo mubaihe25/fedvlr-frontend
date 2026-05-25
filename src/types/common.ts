@@ -2,10 +2,12 @@ import type {LaunchExperimentRecord, TrainConfig} from './train';
 
 export type PageType =
   | 'home'
+  | 'systemMechanism'
   | 'architecture'
   | 'dataFusion'
   | 'clientPersonalization'
   | 'attackDefenseRange'
+  | 'resultsEvidence'
   | 'experimentResults'
   | 'deliveryReport'
   | 'console'
