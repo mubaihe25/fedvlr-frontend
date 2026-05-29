@@ -25,6 +25,12 @@ import type {
 import {apiGet, buildApiUrl} from './api';
 
 const SHOWCASE_BASE_PATH = '/showcase/scenarios';
+export const DEFAULT_SHOWCASE_SCENARIO_PREFERENCE = [
+  'amazon_beauty_poc_v25_backend_smoke',
+  'mmfedrap_ku_attack_defense_demo',
+  'model_security_capability_matrix',
+  'security_matrix_krum_demo',
+] as const;
 
 const isRecord = (value: unknown): value is ShowcaseJsonRecord =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -724,8 +730,8 @@ const buildFallbackScenario = (scenarioId?: string): ShowcaseScenario => {
     scenarioId: fallbackCase.caseId,
     name: fallbackCase.title,
     dataset: fallbackCase.dataset || mockDatasetProfile.name,
-    model: 'FedVLR showcase mock',
-    tags: ['mock', 'sample structure', 'Recall@50', 'NDCG@50'],
+    model: 'FedVLR showcase 演示数据',
+    tags: ['演示数据', '样例结构', 'Recall@50', 'NDCG@50'],
     warnings: [showcaseSampleNotice],
     dataSource: 'mock',
     demo: true,
@@ -771,18 +777,18 @@ const buildFallbackReport = (scenario: ShowcaseScenario): ShowcaseReport => {
     datasetProfile: normalizeDatasetProfile(mockDatasetProfile),
     metricsSummary,
     attackDefenseSummary: fallbackCase.note,
-    privacyRiskSummary: 'Mock fallback only. Privacy/security planning labels must not be read as implemented DP or secure aggregation.',
+    privacyRiskSummary: 'API 未连接时的演示数据。隐私与安全规划标签不能解读为已实现的正式差分隐私或生产级安全聚合。',
     recommendationComparison: normalizeRecommendationComparison(fallbackCase.recommendationComparison),
     targetRankSummary: {
       entries: [],
-      note: 'Mock fallback does not include target rank comparison artifacts.',
+      note: 'API 未连接时的演示数据不包含目标排序对比 artifact。',
       unavailable: true,
     },
     defenseTrace,
     delivery: deliverySummary,
     warnings: [showcaseSampleNotice],
     boundaries: [
-      'Mock fallback sample structure.',
+      'API 未连接时使用演示数据结构。',
       'No formal differential privacy accountant is implemented in this fallback.',
       'Secure aggregation is not implemented in this fallback.',
     ],
@@ -793,7 +799,7 @@ const buildFallbackReport = (scenario: ShowcaseScenario): ShowcaseReport => {
 
 export const fallbackToMockShowcase = (scenarioId?: string, fallbackReason?: string): ShowcaseBundle => {
   const selectedScenario = buildFallbackScenario(scenarioId);
-  const fallbackWarning = fallbackReason ? `API fallback: ${fallbackReason}` : undefined;
+  const fallbackWarning = fallbackReason ? `API 未连接，已切换到演示数据：${fallbackReason}` : undefined;
 
   return {
     scenarios: [
@@ -945,77 +951,187 @@ const fetchShowcasePrivacy = async (scenarioId: string): Promise<ShowcaseFetchRe
   }
 };
 
-const combineSources = (sources: Array<Extract<ShowcaseDataSource, 'api' | 'mock'>>): ShowcaseDataSource => {
-  const uniqueSources = new Set(sources);
-  if (uniqueSources.size > 1) {
-    return 'mixed';
-  }
-  return sources[0] ?? 'mock';
-};
-
 const hasRecommendationRows = (comparison?: ShowcaseRecommendationComparison | null) =>
   Boolean(comparison && (comparison.baseline.length || comparison.attack.length || comparison.defense.length));
 
+const pickDefaultScenario = (scenarios: ShowcaseScenario[], requestedScenarioId?: string) => {
+  const requested = scenarios.find((scenario) => scenario.scenarioId === requestedScenarioId || scenario.id === requestedScenarioId);
+  if (requested) {
+    return requested;
+  }
+
+  for (const preferredId of DEFAULT_SHOWCASE_SCENARIO_PREFERENCE) {
+    const preferred = scenarios.find((scenario) => scenario.scenarioId === preferredId || scenario.id === preferredId);
+    if (preferred) {
+      return preferred;
+    }
+  }
+
+  return scenarios[0];
+};
+
+const emptyRecommendationComparison = (): ShowcaseRecommendationComparison => ({
+  baseline: [],
+  attack: [],
+  defense: [],
+});
+
+const buildApiScenarioShell = (scenarioId = DEFAULT_SHOWCASE_SCENARIO_PREFERENCE[0]): ShowcaseScenario => ({
+  id: scenarioId,
+  scenarioId,
+  name: '正在连接真实 artifact',
+  dataset: null,
+  model: null,
+  tags: ['api'],
+  warnings: [],
+  dataSource: 'api',
+});
+
+const buildApiReportShell = (scenario: ShowcaseScenario, warning?: string): ShowcaseReport => ({
+  scenarioId: scenario.scenarioId,
+  title: scenario.name,
+  dataset: scenario.dataset,
+  model: scenario.model,
+  datasetProfile: null,
+  metricsSummary: null,
+  recommendationComparison: emptyRecommendationComparison(),
+  targetRankSummary: {
+    entries: [],
+    unavailable: true,
+  },
+  defenseTrace: null,
+  warnings: warning ? [warning] : [],
+  raw: scenario.raw,
+});
+
+export const createLoadingShowcaseBundle = (): ShowcaseBundle => {
+  const selectedScenario = buildApiScenarioShell();
+  return {
+    scenarios: [selectedScenario],
+    selectedScenario,
+    report: buildApiReportShell(selectedScenario),
+    dataSource: 'api',
+    scenarioSource: 'api',
+    fetchedAt: new Date().toISOString(),
+  };
+};
+
+interface ApiOnlyResult<T> {
+  data: T | null;
+  error?: string;
+}
+
+const fetchApiOnly = async <T>(path: string, normalizer: (payload: unknown) => T): Promise<ApiOnlyResult<T>> => {
+  try {
+    const payload = await apiGet<unknown>(path);
+    return {data: normalizer(payload)};
+  } catch (error) {
+    return {
+      data: null,
+      error: toErrorMessage(error),
+    };
+  }
+};
+
+const mergeMetricsSummary = (
+  reportMetrics?: ShowcaseMetricsSummary | null,
+  endpointMetrics?: ShowcaseMetricsSummary | null,
+): ShowcaseMetricsSummary | null => {
+  if (!reportMetrics && !endpointMetrics) {
+    return null;
+  }
+
+  return {
+    ...(endpointMetrics ?? {}),
+    ...(reportMetrics ?? {}),
+    baseline: reportMetrics?.baseline ?? endpointMetrics?.baseline,
+    attack: reportMetrics?.attack ?? endpointMetrics?.attack,
+    defense: reportMetrics?.defense ?? endpointMetrics?.defense,
+    recallDrop: reportMetrics?.recallDrop ?? endpointMetrics?.recallDrop,
+    ndcgDrop: reportMetrics?.ndcgDrop ?? endpointMetrics?.ndcgDrop,
+    recoveryRate: reportMetrics?.recoveryRate ?? endpointMetrics?.recoveryRate,
+    targetHitRate: reportMetrics?.targetHitRate ?? endpointMetrics?.targetHitRate,
+    warnings: uniqueStrings([...(endpointMetrics?.warnings ?? []), ...(reportMetrics?.warnings ?? [])]),
+  };
+};
+
+const optionalWarning = (label: string, error?: string) => (error ? `${label} 暂未返回，页面保留已有 artifact 内容并对缺失指标显示暂无。` : null);
+
 export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<ShowcaseBundle> => {
   const scenariosResult = await fetchShowcaseScenarios();
-  const selectedScenario =
-    scenariosResult.data.find((scenario) => scenario.scenarioId === requestedScenarioId || scenario.id === requestedScenarioId) ??
-    scenariosResult.data[0];
+  const selectedScenario = pickDefaultScenario(scenariosResult.data, requestedScenarioId);
 
   if (!selectedScenario || scenariosResult.source === 'mock') {
     return fallbackToMockShowcase(requestedScenarioId, scenariosResult.error);
   }
 
   const scenarioId = selectedScenario.scenarioId;
-  const [reportResult, datasetResult, metricsResult, securityResult, privacyResult] = await Promise.all([
-    fetchShowcaseReport(scenarioId),
-    fetchShowcaseDataset(scenarioId),
-    fetchShowcaseMetrics(scenarioId),
-    fetchShowcaseSecurity(scenarioId),
-    fetchShowcasePrivacy(scenarioId),
+  const [reportOnlyResult, datasetOnlyResult, metricsOnlyResult, securityOnlyResult, privacyOnlyResult] = await Promise.all([
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/report`, (payload) => normalizeReport(payload, selectedScenario)),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/dataset`, normalizeDatasetProfile),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/metrics`, normalizeMetricsSummary),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/security`, (payload) => ({
+      defenseTrace: normalizeDefenseTrace(payload),
+      security: unwrapPayload(payload),
+    })),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/privacy`, (payload) => {
+      const record = pickRecord(payload, ['privacy', 'privacy_risk_summary', 'privacyRiskSummary']) ?? {};
+      return {
+        privacyRiskSummary: record,
+        privacy: unwrapPayload(payload),
+      };
+    }),
   ]);
-  const recommendationsResult = hasRecommendationRows(reportResult.data.recommendationComparison)
-    ? undefined
-    : await fetchShowcaseRecommendations(scenarioId);
+  const reportResult = reportOnlyResult.data ?? buildApiReportShell(selectedScenario, '当前场景 report 暂未返回，页面只展示已可读取的场景信息。');
+  const recommendationsOnlyResult = await fetchApiOnly(
+    `${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/recommendations`,
+    normalizeRecommendationComparison,
+  );
+  const metricsSummary = mergeMetricsSummary(reportResult.metricsSummary, metricsOnlyResult.data);
+  const attackDefenseSummary = reportResult.attackDefenseSummary;
+  const privacyRiskSummary =
+    privacyOnlyResult.data?.privacyRiskSummary ?? reportResult.privacyRiskSummary;
+  const securityRaw = securityOnlyResult.data?.security ?? reportResult.security;
+  const defenseTrace = securityOnlyResult.data?.defenseTrace ?? reportResult.defenseTrace;
+  const v25Summary =
+    reportResult.v25Summary ??
+    normalizeV25Summary(scenarioId, attackDefenseSummary, privacyRiskSummary, securityRaw ?? defenseTrace);
+  const warnings = uniqueStrings([
+    ...(selectedScenario.warnings ?? []),
+    ...(reportResult.warnings ?? []),
+    optionalWarning('数据画像 artifact', datasetOnlyResult.error),
+    optionalWarning('指标 artifact', metricsOnlyResult.error),
+    optionalWarning('安全 artifact', securityOnlyResult.error),
+    optionalWarning('隐私 artifact', privacyOnlyResult.error),
+    optionalWarning('推荐列表 artifact', recommendationsOnlyResult?.error),
+  ].filter((item): item is string => Boolean(item)));
 
   const report: ShowcaseReport = {
-    ...reportResult.data,
+    ...reportResult,
     scenarioId,
-    title: reportResult.data.title ?? selectedScenario.name,
-    dataset: reportResult.data.dataset ?? selectedScenario.dataset,
-    model: reportResult.data.model ?? selectedScenario.model,
-    datasetProfile: datasetResult.source === 'api' ? datasetResult.data : reportResult.data.datasetProfile,
-    metricsSummary: reportResult.data.metricsSummary ?? (metricsResult.source === 'api' ? metricsResult.data : null),
+    title: reportResult.title ?? selectedScenario.name,
+    dataset: reportResult.dataset ?? selectedScenario.dataset,
+    model: reportResult.model ?? selectedScenario.model,
+    datasetProfile: datasetOnlyResult.data ?? reportResult.datasetProfile,
+    metricsSummary,
     recommendationComparison:
-      recommendationsResult?.source === 'api' ? recommendationsResult.data : reportResult.data.recommendationComparison,
-    defenseTrace: securityResult.source === 'api' ? securityResult.data.defenseTrace ?? null : reportResult.data.defenseTrace,
-    security: securityResult.source === 'api' ? securityResult.data.security : reportResult.data.security,
-    privacyRiskSummary: privacyResult.source === 'api' ? privacyResult.data.privacyRiskSummary : reportResult.data.privacyRiskSummary,
-    privacy: privacyResult.source === 'api' ? privacyResult.data.privacy : reportResult.data.privacy,
-    warnings: uniqueStrings([...(selectedScenario.warnings ?? []), ...(reportResult.data.warnings ?? [])]),
+      hasRecommendationRows(recommendationsOnlyResult.data)
+        ? recommendationsOnlyResult.data
+        : reportResult.recommendationComparison ?? emptyRecommendationComparison(),
+    defenseTrace,
+    security: securityRaw,
+    privacyRiskSummary,
+    privacy: privacyOnlyResult.data?.privacy ?? reportResult.privacy,
+    v25Summary,
+    warnings,
   };
-  const sources = [
-    scenariosResult.source,
-    reportResult.source,
-    datasetResult.source,
-    metricsResult.source,
-    recommendationsResult?.source,
-    securityResult.source,
-    privacyResult.source,
-  ].filter((source): source is Extract<ShowcaseDataSource, 'api' | 'mock'> => Boolean(source));
-  const fallbackReason = uniqueStrings(
-    [scenariosResult.error, reportResult.error, datasetResult.error, metricsResult.error, recommendationsResult?.error, securityResult.error, privacyResult.error].filter(
-      (item): item is string => Boolean(item),
-    ),
-  ).join(' / ');
 
   return {
     scenarios: scenariosResult.data,
     selectedScenario,
     report,
-    dataSource: combineSources(sources),
+    dataSource: 'api',
     scenarioSource: scenariosResult.source,
-    fallbackReason: fallbackReason || undefined,
     fetchedAt: new Date().toISOString(),
   };
 };

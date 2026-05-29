@@ -10,6 +10,8 @@ interface RecommendationComparisonBoardProps {
 }
 
 const DEFAULT_VISIBLE_COUNT = 5;
+const EXPANDED_VISIBLE_COUNT = 15;
+const MAX_VISIBLE_COUNT = 50;
 
 const columns = [
   {key: 'baseline', title: '正常推荐', tone: 'cyan', empty: '暂无正常推荐'},
@@ -62,10 +64,10 @@ const sameItem = (left?: string | number | null, right?: string | number | null)
   left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 
 export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison, targetItemId}) => {
-  const [expandedColumns, setExpandedColumns] = React.useState<Record<string, boolean>>({});
+  const [visibleCounts, setVisibleCounts] = React.useState<Record<string, number>>({});
 
-  const toggleColumn = (key: string) => {
-    setExpandedColumns((current) => ({...current, [key]: !current[key]}));
+  const setColumnLimit = (key: string, count: number) => {
+    setVisibleCounts((current) => ({...current, [key]: count}));
   };
 
   return (
@@ -83,20 +85,26 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {columns.map((column) => {
           const allItems = comparison?.[column.key] ?? [];
-          const isExpanded = Boolean(expandedColumns[column.key]);
-          const items = isExpanded ? allItems : allItems.slice(0, DEFAULT_VISIBLE_COUNT);
+          const visibleCount = visibleCounts[column.key] ?? DEFAULT_VISIBLE_COUNT;
+          const items = allItems.slice(0, Math.min(visibleCount, MAX_VISIBLE_COUNT));
           const hiddenCount = Math.max(0, allItems.length - DEFAULT_VISIBLE_COUNT);
+          const maxCount = Math.min(MAX_VISIBLE_COUNT, allItems.length);
 
           return (
             <div key={column.key} className="rounded-3xl border border-white/10 bg-white/[0.045] p-4">
-              <div className={cn('mb-4 inline-flex rounded-full border px-3 py-1 text-xs font-bold', toneClass[column.tone])}>
-                {column.title}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div className={cn('inline-flex rounded-full border px-3 py-1 text-xs font-bold', toneClass[column.tone])}>
+                  {column.title}
+                </div>
+                <span className="rounded-full bg-slate-950/45 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
+                  共 {allItems.length} 条
+                </span>
               </div>
               <div className="space-y-3">
                 {items.length ? (
                   items.map((item, index) => {
                     const title = getTitle(item);
-                    const isTarget = column.key === 'attack' && sameItem(item.itemId, targetItemId);
+                    const isTarget = sameItem(item.itemId, targetItemId);
                     return (
                       <motion.div
                         key={`${column.key}-${item.itemId ?? index}-${item.rank ?? index}`}
@@ -139,14 +147,34 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
               </div>
 
               {hiddenCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => toggleColumn(column.key)}
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
-                >
-                  {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  {isExpanded ? '收起' : `展开更多 ${hiddenCount} 条`}
-                </button>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setColumnLimit(column.key, EXPANDED_VISIBLE_COUNT)}
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                    展开 15 条
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setColumnLimit(column.key, MAX_VISIBLE_COUNT)}
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                    展开 {maxCount} 条
+                  </button>
+                  {visibleCount > DEFAULT_VISIBLE_COUNT ? (
+                    <button
+                      type="button"
+                      onClick={() => setColumnLimit(column.key, DEFAULT_VISIBLE_COUNT)}
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                      收起
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           );

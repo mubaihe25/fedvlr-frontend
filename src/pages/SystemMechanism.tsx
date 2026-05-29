@@ -44,6 +44,14 @@ const dataNodes = [
   {label: '交互 ID', icon: Route, desc: '点击、浏览、购买等隐式反馈用于协同信号。'},
 ];
 
+const architectureLayers = [
+  {title: '数据层', items: ['商品图片', '文本描述', '交互记录'], tone: 'border-sky-200/25 bg-sky-200/10 text-sky-50'},
+  {title: '客户端层', items: ['本地训练', '个性化路由'], tone: 'border-emerald-200/25 bg-emerald-200/10 text-emerald-50'},
+  {title: '服务端层', items: ['模型聚合', '多视图融合'], tone: 'border-cyan-200/25 bg-cyan-200/10 text-cyan-50'},
+  {title: '安全层', items: ['成员推断', '交互还原', '定向投毒', '鲁棒防御'], tone: 'border-rose-200/25 bg-rose-200/10 text-rose-50'},
+  {title: '展示层', items: ['artifact', 'API', '前端沙盘'], tone: 'border-violet-200/25 bg-violet-200/10 text-violet-50'},
+];
+
 export const SystemMechanism: React.FC = () => {
   const {bundle} = useShowcaseBundle();
   const dataset = bundle.report.datasetProfile;
@@ -73,6 +81,34 @@ export const SystemMechanism: React.FC = () => {
             </div>
           </div>
           <FederatedTopology mode="overview" defenseActive className="min-h-[470px]" />
+        </div>
+      </section>
+
+      <section className="sandbox-panel rounded-[28px] p-6">
+        <div className="mb-6">
+          <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">系统架构图</p>
+          <h2 className="mt-2 text-2xl font-bold text-white">从本地数据到攻防沙盘的五层链路</h2>
+        </div>
+        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/35 p-5">
+          <div className="absolute left-8 right-8 top-1/2 hidden h-px bg-gradient-to-r from-sky-200/20 via-emerald-200/35 to-violet-200/20 xl:block" />
+          <div className="grid gap-4 xl:grid-cols-5">
+            {architectureLayers.map((layer, index) => (
+              <div key={layer.title} className={`relative rounded-3xl border p-5 backdrop-blur ${layer.tone}`}>
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="text-xs font-bold tracking-[0.2em] text-white/60">0{index + 1}</span>
+                  <span className="h-2 w-2 rounded-full bg-current shadow-[0_0_18px_currentColor]" />
+                </div>
+                <h3 className="text-lg font-bold">{layer.title}</h3>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {layer.items.map((item) => (
+                    <span key={item} className="rounded-full border border-white/15 bg-slate-950/30 px-3 py-1 text-xs font-semibold text-white/85">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

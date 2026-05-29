@@ -14,6 +14,7 @@ import {
   Radar,
   Search,
   ShieldCheck,
+  SquareTerminal,
   Swords,
   Target,
   UserSearch,
@@ -37,6 +38,7 @@ import type {ConsoleSessionState} from '../types/common';
 import type {LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../types/train';
 import type {
   ShowcaseBundle,
+  ShowcaseModelCapabilityRow,
   ShowcaseRecommendationItem,
   ShowcaseReport,
   ShowcaseScenario,
@@ -157,9 +159,9 @@ const sourceLabel = (source: ShowcaseBundle['dataSource']) => {
     return 'API artifact';
   }
   if (source === 'mixed') {
-    return 'API + fallback';
+    return 'API artifact（部分缺失）';
   }
-  return 'mock fallback';
+  return 'API 未连接 / 演示数据';
 };
 
 const getScenarioLabel = (scenario: ShowcaseScenario) => {
@@ -170,6 +172,23 @@ const getScenarioLabel = (scenario: ShowcaseScenario) => {
   if (text.includes('krum')) return '鲁棒聚合防御';
   if (text.includes('matrix')) return '模型能力摘要';
   return scenario.name;
+};
+
+const capabilityStatusLabel = (status?: string | null) => {
+  switch (status) {
+    case 'supported':
+      return '已支持';
+    case 'partial':
+      return '部分支持';
+    case 'unsupported':
+      return '暂不支持';
+    case 'future_adapter':
+      return '后续适配';
+    case 'not_tested':
+      return '未验证';
+    default:
+      return status || EMPTY_VALUE;
+  }
 };
 
 const getTargetEntry = (report: ShowcaseReport) => report.targetRankSummary?.entries?.[0];
@@ -322,7 +341,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const preferredIds = [
       selectedScenario.scenarioId,
       ...bundle.scenarios
-        .filter((scenario) => /ku|amazon|v25|krum/i.test(`${scenario.scenarioId} ${scenario.name}`))
+        .filter((scenario) => /ku|amazon|v25|krum|matrix|capability/i.test(`${scenario.scenarioId} ${scenario.name}`))
         .map((scenario) => scenario.scenarioId),
     ];
     const uniqueIds = Array.from(new Set(preferredIds)).slice(0, 5);
@@ -435,7 +454,71 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           <p className="mt-3 text-sm leading-6 text-slate-300">选择数据集、模型、攻击与防御后，可以先做配置校验；真实训练不会在本轮自动启动。</p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
+          {[
+            {label: '当前 artifact 场景', value: getScenarioLabel(selectedScenario), detail: selectedScenario.name},
+            {label: '数据集 / 模型', value: `${datasetLabel(report.dataset ?? selectedScenario.dataset)} / ${formatPlainValue(report.model ?? selectedScenario.model)}`, detail: '从真实 showcase 场景读取'},
+            {label: '验证内容', value: '排序操纵 / 隐私审计 / 防御摘要', detail: '按当前 artifact 可用字段展示，缺失项显示暂无'},
+          ].map((item) => (
+            <div key={item.label} className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
+              <p className="text-xs font-bold text-slate-400">{item.label}</p>
+              <p className="mt-2 text-lg font-bold text-white">{item.value}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-400">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-rose-200/20 bg-rose-200/10 p-4">
+            <p className="mb-3 font-bold text-rose-50">攻击剧本</p>
+            <div className="space-y-2">
+              {attackOptions.map((option) => {
+                const selected = selectedAttackIds.has(option.id);
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => toggleAttack(option.id)}
+                    className={cn(
+                      'w-full rounded-xl border px-3 py-3 text-left transition',
+                      selected ? 'border-rose-200/45 bg-rose-200/16 text-rose-50' : 'border-white/10 bg-slate-900/24 text-slate-300',
+                    )}
+                  >
+                    <span className="font-semibold">{option.label}</span>
+                    <span className="mt-1 block text-xs text-slate-400">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-200/20 bg-emerald-200/10 p-4">
+            <p className="mb-3 font-bold text-emerald-50">防御策略</p>
+            <div className="space-y-2">
+              {defenseOptions.map((option) => {
+                const selected = selectedDefenseIds.has(option.id);
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => toggleDefense(option.id)}
+                    className={cn(
+                      'w-full rounded-xl border px-3 py-3 text-left transition',
+                      selected ? 'border-emerald-200/45 bg-emerald-200/16 text-emerald-50' : 'border-white/10 bg-slate-900/24 text-slate-300',
+                    )}
+                  >
+                    <span className="font-semibold">{option.label}</span>
+                    <span className="mt-1 block text-xs text-slate-400">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <details className="mt-5 rounded-3xl border border-white/10 bg-white/[0.035] p-4">
+          <summary className="cursor-pointer text-sm font-bold text-slate-100">必要参数与校验配置</summary>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
             <span className="text-xs font-bold text-slate-400">数据集选择</span>
             <select
@@ -465,9 +548,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               ))}
             </select>
           </label>
-        </div>
+          </div>
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-rose-200/20 bg-rose-200/10 p-4">
             <p className="mb-3 font-bold text-rose-50">攻击选择</p>
             <div className="space-y-2">
@@ -513,9 +596,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               })}
             </div>
           </div>
-        </div>
+          </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-4">
+          <div className="mt-5 grid gap-4 md:grid-cols-4">
           {[
             ['训练轮数', config.totalRounds],
             ['客户端数', config.clientCount],
@@ -527,7 +610,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <p className="mt-2 text-xl font-bold text-white">{value}</p>
             </div>
           ))}
-        </div>
+          </div>
+        </details>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
@@ -544,6 +628,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             className="rounded-2xl border border-white/10 bg-white/[0.055] px-5 py-3 text-sm font-bold text-slate-100 transition hover:border-cyan-200/30"
           >
             查看运行监控
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('analysis')}
+            className="rounded-2xl border border-white/10 bg-white/[0.055] px-5 py-3 text-sm font-bold text-slate-100 transition hover:border-cyan-200/30"
+          >
+            查看单次分析
           </button>
           {submitMessage ? <span className="text-sm text-slate-300">{submitMessage}</span> : null}
         </div>
@@ -568,7 +659,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-semibold">{getScenarioLabel(scenario)}</span>
                     <span className="rounded-full bg-slate-950/45 px-2 py-0.5 text-[10px] text-slate-300">
-                      {scenario.dataSource === 'api' ? 'API' : 'Mock'}
+                      {scenario.dataSource === 'api' ? 'API' : '演示'}
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-slate-400">{datasetLabel(scenario.dataset)} / {formatPlainValue(scenario.model)}</p>
@@ -607,6 +698,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       0.11,
     );
     const lossCurve = interpolate(1.1, 0.42, 16).reverse();
+    const terminalLogs = [
+      '[Round 1] 客户端本地训练完成，用户数据保留在本地',
+      '[Round 2] 客户端上传模型更新 / 梯度摘要',
+      '[Round 2] 检测到恶意更新携带目标商品投毒信号',
+      defenseActive ? '[Round 3] 鲁棒聚合启用，绿色过滤环拦截异常更新' : '[Round 3] 未启用防御，服务器出现异常聚合波动',
+      '[Round 3] 服务端完成聚合并写入 showcase artifact',
+      `[Audit] target rank ${formatRank(rankStats.before)} -> ${formatRank(rankStats.after)}，最终 Top50 曝光：${
+        (report.v25Summary?.maskedTopkHitRate ?? report.targetRankSummary?.targetHitRate ?? metrics?.targetHitRate ?? 0) === 0 ? '未命中' : '以 artifact 为准'
+      }`,
+    ];
 
     return (
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
@@ -644,6 +745,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
           <div className="sandbox-panel rounded-[28px] p-5">
             <div className="mb-4 flex items-center gap-3">
+              <SquareTerminal className="h-5 w-5 text-emerald-100" />
+              <div>
+                <h3 className="text-xl font-bold text-white">运行终端日志</h3>
+                <p className="text-xs text-slate-400">展示训练、上传、聚合和审计事件；来自 artifact 摘要，不伪造完整训练日志。</p>
+              </div>
+            </div>
+            <div className="space-y-2 rounded-2xl border border-emerald-200/15 bg-slate-950/55 p-4 font-mono text-xs leading-5 text-emerald-100">
+              {terminalLogs.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
+            </div>
+          </div>
+
+          <div className="sandbox-panel rounded-[28px] p-5">
+            <div className="mb-4 flex items-center gap-3">
               <LineChart className="h-5 w-5 text-cyan-100" />
               <div>
                 <h3 className="text-xl font-bold text-white">loss / Recall@50 / NDCG@50</h3>
@@ -665,6 +781,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const entry = getTargetEntry(report);
     const item = findProductByItemId(report, entry?.itemId);
     const image = getProductImage(item);
+    const targetInRecommendationList =
+      entry?.itemId !== undefined &&
+      entry.itemId !== null &&
+      [
+        ...(report.recommendationComparison?.baseline ?? []),
+        ...(report.recommendationComparison?.attack ?? []),
+        ...(report.recommendationComparison?.defense ?? []),
+      ].some((candidate) => String(candidate.itemId) === String(entry.itemId));
 
     return (
       <section className="sandbox-panel rounded-[28px] p-5">
@@ -672,7 +796,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           <Target className="h-5 w-5 text-rose-100" />
           <div>
             <h3 className="text-xl font-bold text-white">目标商品轨迹</h3>
-            <p className="text-xs text-slate-400">结论：模型内部排序已被显著推动，但最终推荐列表未曝光。</p>
+            <p className="text-xs text-slate-400">
+              结论：模型内部排序已被显著推动，但最终推荐列表{targetInRecommendationList ? '中可定位目标商品' : '未曝光目标商品'}。
+            </p>
           </div>
         </div>
         <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -791,10 +917,52 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     </div>
   );
 
+  const renderExperimentConclusion = () => {
+    const finalExposure =
+      (report.v25Summary?.maskedTopkHitRate ?? report.targetRankSummary?.targetHitRate ?? metrics?.targetHitRate ?? 0) === 0
+        ? '未命中'
+        : '以 artifact 为准';
+    const conclusionCards = [
+      ['目标商品排序', `${formatRank(rankStats.before)} -> ${formatRank(rankStats.after)}`, 'text-rose-100'],
+      ['排名提升', formatSignedNumber(rankStats.rankLift, 0), 'text-rose-100'],
+      ['最终 Top50 曝光', finalExposure, 'text-amber-100'],
+      ['成员推断 AUC', formatMetricValue(privacyMetrics.miaAuc), 'text-violet-100'],
+      ['交互候选还原 hit@50', formatMetricValue(privacyMetrics.hit50), 'text-cyan-100'],
+      ['安全聚合残差', report.v25Summary?.secAggResidual === 0 ? '接近 0' : formatMetricValue(report.v25Summary?.secAggResidual), 'text-emerald-100'],
+    ];
+
+    return (
+      <section className="sandbox-panel sandbox-glow rounded-[28px] p-5">
+        <div className="mb-5 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+          <div>
+            <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">本次实验结论</p>
+            <h2 className="mt-2 text-2xl font-bold text-white">定向投毒推动了模型内部排序，但最终推荐曝光未命中</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('monitoring')}
+            className="rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-bold text-slate-100 transition hover:border-cyan-200/30"
+          >
+            回看运行过程
+          </button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {conclusionCards.map(([label, value, tone]) => (
+            <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+              <p className="text-xs text-slate-400">{label}</p>
+              <p className={cn('mt-2 text-xl font-bold', tone)}>{value}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  };
+
   const renderAnalysis = () => (
     <div className="space-y-5">
-      <RecommendationComparisonBoard comparison={report.recommendationComparison} targetItemId={getTargetEntry(report)?.itemId} />
+      {renderExperimentConclusion()}
       {renderTargetTrajectory()}
+      <RecommendationComparisonBoard comparison={report.recommendationComparison} targetItemId={getTargetEntry(report)?.itemId} />
       {renderPrivacyAnalysis()}
       <section className="sandbox-panel rounded-[28px] p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -812,6 +980,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const itemReport = item.report;
     const itemRanks = getRankStats(itemReport);
     const itemPrivacy = getPrivacyMetrics(itemReport);
+    const capabilityRow = itemReport.modelCapabilityMatrix?.entries.find((entry) => entry.model === itemReport.model || entry.dataset === itemReport.dataset);
     return {
       id: item.selectedScenario.scenarioId,
       name: getScenarioLabel(item.selectedScenario),
@@ -826,8 +995,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       miaAuc: itemPrivacy.miaAuc,
       interactionHit50: itemPrivacy.hit50,
       recovery: itemReport.metricsSummary?.recoveryRate ?? null,
+      status: capabilityStatusLabel(capabilityRow?.status),
     };
   });
+  const matrixRows: ShowcaseModelCapabilityRow[] = (comparisonBundles.length ? comparisonBundles : [bundle]).flatMap(
+    (item) => item.report.modelCapabilityMatrix?.entries ?? [],
+  );
 
   const renderComparison = () => (
     <div className="space-y-5">
@@ -841,7 +1014,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="text-xs text-slate-400">
               <tr className="border-b border-white/10">
-                {['模型 / 数据集', '攻击', '防御', 'Recall@50', 'NDCG@50', 'rank gain', 'target hit@50', 'MIA AUC', 'interaction hit@50', 'defense recovery'].map((head) => (
+                {['模型 / 数据集', '场景', '状态', 'Recall@50', 'NDCG@50', '目标排序提升', '目标 Top50 命中', '成员推断 AUC', '交互还原 hit@50', '防御恢复率'].map((head) => (
                   <th key={head} className="px-4 py-3 font-semibold">{head}</th>
                 ))}
               </tr>
@@ -853,8 +1026,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                     <p className="font-bold text-slate-100">{row.model}</p>
                     <p className="text-xs text-slate-400">{row.dataset}</p>
                   </td>
-                  <td className="px-4 py-4 text-slate-300">{row.attack}</td>
-                  <td className="px-4 py-4 text-slate-300">{row.defense}</td>
+                  <td className="px-4 py-4 text-slate-300">
+                    <p>{row.attack}</p>
+                    <p className="mt-1 text-xs text-slate-500">{row.defense}</p>
+                  </td>
+                  <td className="px-4 py-4 text-slate-300">{row.status}</td>
                   <td className="px-4 py-4 font-mono text-cyan-100">{formatMetricValue(row.recall)}</td>
                   <td className="px-4 py-4 font-mono text-violet-100">{formatMetricValue(row.ndcg)}</td>
                   <td className="px-4 py-4 font-mono text-rose-100">{formatSignedNumber(row.rankGain, 0)}</td>
@@ -864,6 +1040,41 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <td className="px-4 py-4 font-mono text-emerald-100">{formatPercentValue(row.recovery)}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="sandbox-panel rounded-[28px] p-5">
+        <div className="mb-5">
+          <p className="text-xs font-bold tracking-[0.2em] text-violet-100/75">模型能力矩阵</p>
+          <h2 className="mt-2 text-2xl font-bold text-white">模型 / 数据集 / 能力状态</h2>
+          <p className="mt-2 text-sm text-slate-400">来自模型能力矩阵 artifact；暂无指标的单元格显示“暂无指标”，不使用演示数据补假效果。</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left text-sm">
+            <thead className="text-xs text-slate-400">
+              <tr className="border-b border-white/10">
+                {['模型', '数据集', '能力', '状态', '证据', '推荐演示用途'].map((head) => (
+                  <th key={head} className="px-4 py-3 font-semibold">{head}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {matrixRows.length ? matrixRows.slice(0, 16).map((row, index) => (
+                <tr key={`${row.model ?? 'model'}-${row.dataset ?? 'dataset'}-${row.capability ?? index}`} className="border-b border-white/8">
+                  <td className="px-4 py-4 font-semibold text-slate-100">{row.model ?? EMPTY_VALUE}</td>
+                  <td className="px-4 py-4 text-slate-300">{datasetLabel(row.dataset)}</td>
+                  <td className="px-4 py-4 text-slate-300">{row.capability ?? EMPTY_VALUE}</td>
+                  <td className="px-4 py-4 font-semibold text-cyan-100">{capabilityStatusLabel(row.status)}</td>
+                  <td className="px-4 py-4 text-slate-400">{row.evidence ?? row.reason ?? EMPTY_VALUE}</td>
+                  <td className="px-4 py-4 text-slate-300">{row.recommendedDemoUsage ?? EMPTY_VALUE}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">当前 API 未返回模型能力矩阵，横向指标仍按已读取场景展示。</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -926,7 +1137,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   </span>
                 </div>
                 <p className="mt-2 text-xs text-slate-400">{datasetLabel(scenario.dataset)} / {formatPlainValue(scenario.model)}</p>
-                <p className="mt-3 text-xs text-slate-500">来源：{scenario.dataSource === 'api' ? 'API artifact' : 'Mock fallback'}</p>
+                <p className="mt-3 text-xs text-slate-500">来源：{scenario.dataSource === 'api' ? 'API artifact' : 'API 未连接 / 演示数据'}</p>
               </button>
             );
           })}

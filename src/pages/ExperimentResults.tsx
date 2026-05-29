@@ -119,7 +119,7 @@ export const ExperimentResults: React.FC<ExperimentResultsProps> = ({
             </p>
           </div>
           <span className="rounded-full border border-slate-700/60 bg-slate-950/50 px-3 py-1 text-xs font-bold text-slate-300">
-            {bundle.dataSource === 'api' ? 'API artifact' : bundle.dataSource === 'mixed' ? 'API + fallback' : 'Mock fallback'}
+            {bundle.dataSource === 'api' ? 'API artifact' : bundle.dataSource === 'mixed' ? 'API artifact（部分缺失）' : 'API 未连接 / 演示数据'}
           </span>
         </div>
 

@@ -32,9 +32,9 @@ const sourceLabel = (source: string) => {
     return 'API artifact';
   }
   if (source === 'mixed') {
-    return 'API + fallback';
+    return 'API artifact（部分缺失）';
   }
-  return 'mock fallback';
+  return 'API 未连接 / 演示数据';
 };
 
 export const DeliveryReport: React.FC = () => {
@@ -139,7 +139,7 @@ export const DeliveryReport: React.FC = () => {
             <h2 className="mt-3 text-2xl font-bold text-white">基于真实 artifact 的联邦推荐攻防展示平台</h2>
             <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">
               {readDeliveryText(report.delivery, 'systemSummary') ??
-                '本页面面向评审收尾，汇总数据、模型、攻防、隐私风险、鲁棒防御和边界说明。所有缺失字段显示为暂无 / 不适用，不用 mock 或展示曲线伪装完整训练过程。'}
+                '本页面面向评审收尾，汇总数据、模型、攻防、隐私风险、鲁棒防御和边界说明。所有缺失字段显示为暂无 / 不适用，不用演示数据或展示曲线伪装完整训练过程。'}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">

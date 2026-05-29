@@ -1,11 +1,11 @@
 import {useEffect, useState} from 'react';
-import {fallbackToMockShowcase, loadShowcaseBundle} from '../services/showcase';
+import {createLoadingShowcaseBundle, fallbackToMockShowcase, loadShowcaseBundle} from '../services/showcase';
 import type {ShowcaseBundle} from '../types/showcase';
 
 export const useShowcaseBundle = () => {
   const [selectedScenarioId, setSelectedScenarioId] = useState<string | undefined>();
-  const [bundle, setBundle] = useState<ShowcaseBundle>(() => fallbackToMockShowcase());
-  const [isLoading, setIsLoading] = useState(false);
+  const [bundle, setBundle] = useState<ShowcaseBundle>(() => createLoadingShowcaseBundle());
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isActive = true;

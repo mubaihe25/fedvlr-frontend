@@ -82,7 +82,7 @@ export const SandboxControls: React.FC<SandboxControlsProps> = ({
           <h3 className="mt-1 text-lg font-bold text-white">攻防控制台</h3>
         </div>
         <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-[11px] font-bold text-slate-300">
-          {isLoading ? '读取中' : bundle.dataSource === 'api' ? 'API' : bundle.dataSource === 'mixed' ? '混合' : 'Mock'}
+          {isLoading ? '读取中' : bundle.dataSource === 'api' ? 'API' : bundle.dataSource === 'mixed' ? '部分缺失' : '演示'}
         </span>
       </div>
 
@@ -123,7 +123,7 @@ export const SandboxControls: React.FC<SandboxControlsProps> = ({
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-bold">{findScenarioKeyword(scenario.scenarioId)} 线</span>
                               <span className="shrink-0 rounded-full bg-slate-800/80 px-2 py-0.5 text-[10px] text-slate-300">
-                                {scenario.dataSource === 'api' ? 'API' : 'Mock'}
+                                {scenario.dataSource === 'api' ? 'API' : '演示'}
                               </span>
                             </div>
                             <p className="mt-1 truncate text-[11px] text-slate-400">{scenario.name}</p>

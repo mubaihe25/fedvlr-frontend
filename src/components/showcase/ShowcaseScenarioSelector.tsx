@@ -11,17 +11,17 @@ interface ShowcaseScenarioSelectorProps {
 
 const sourceLabel = {
   api: 'API artifact',
-  mock: 'Mock fallback',
-  mixed: 'API + fallback',
+  mock: 'API 未连接 / 演示数据',
+  mixed: 'API artifact（部分缺失）',
 } as const;
 
 const flagLabels = [
-  {key: 'smoke', label: 'smoke'},
-  {key: 'proxy', label: 'proxy'},
-  {key: 'demo', label: 'demo'},
-  {key: 'demoOnly', label: 'demo_only'},
-  {key: 'unavailable', label: 'unavailable'},
-  {key: 'notAvailable', label: 'not_available'},
+  {key: 'smoke', label: '快速冒烟'},
+  {key: 'proxy', label: '代理证据'},
+  {key: 'demo', label: '演示验证'},
+  {key: 'demoOnly', label: '仅作演示'},
+  {key: 'unavailable', label: '暂无数据'},
+  {key: 'notAvailable', label: '不适用'},
 ] as const;
 
 export const ShowcaseScenarioSelector: React.FC<ShowcaseScenarioSelectorProps> = ({bundle, isLoading = false, onScenarioChange}) => (
@@ -35,7 +35,7 @@ export const ShowcaseScenarioSelector: React.FC<ShowcaseScenarioSelectorProps> =
         <h3 className="text-xl font-bold text-on-surface">真实 showcase artifacts</h3>
         <p className="mt-2 text-sm leading-6 text-on-surface-variant">
           当前场景来源：{sourceLabel[bundle.scenarioSource]}；页面数据来源：{sourceLabel[bundle.dataSource]}。
-          {bundle.fallbackReason ? ' 若部分 API 不可用，页面会用 mock 结构补位。' : ''}
+          {bundle.fallbackReason ? ' API 未连接时才切换到演示数据。' : ''}
         </p>
       </div>
       <span className="rounded-full border border-outline-variant/10 bg-surface-container-high px-3 py-1 text-xs font-bold text-on-surface">
@@ -62,7 +62,7 @@ export const ShowcaseScenarioSelector: React.FC<ShowcaseScenarioSelectorProps> =
           >
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-primary">{scenario.scenarioId}</p>
+                <p className="text-[10px] font-bold tracking-widest text-primary">artifact 场景</p>
                 <h4 className="mt-1 text-base font-bold text-on-surface">{scenario.name}</h4>
               </div>
               {isActive ? <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" /> : null}
@@ -70,11 +70,11 @@ export const ShowcaseScenarioSelector: React.FC<ShowcaseScenarioSelectorProps> =
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div className="rounded-lg bg-surface-container-highest px-3 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">dataset</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">数据集</p>
                 <p className="mt-1 break-words text-xs font-semibold text-on-surface">{scenario.dataset ?? '暂无 / 不适用'}</p>
               </div>
               <div className="rounded-lg bg-surface-container-highest px-3 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">model</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">模型</p>
                 <p className="mt-1 break-words text-xs font-semibold text-on-surface">{scenario.model ?? '暂无 / 不适用'}</p>
               </div>
             </div>
@@ -91,7 +91,7 @@ export const ShowcaseScenarioSelector: React.FC<ShowcaseScenarioSelectorProps> =
                   scenario.dataSource === 'api' ? 'bg-tertiary/10 text-tertiary' : 'bg-error/10 text-error',
                 )}
               >
-                {scenario.dataSource === 'api' ? 'API' : 'mock'}
+                {scenario.dataSource === 'api' ? 'API' : '演示数据'}
               </span>
               {flags.map((flag) => (
                 <span key={flag.key} className="rounded-full bg-secondary/10 px-2 py-1 text-[10px] font-bold text-secondary">
@@ -114,7 +114,7 @@ export const ShowcaseScenarioSelector: React.FC<ShowcaseScenarioSelectorProps> =
     {bundle.fallbackReason ? (
       <div className="mt-4 flex items-start gap-3 rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-on-surface">
         <Database className="mt-0.5 h-4 w-4 shrink-0 text-error" />
-        <p className="break-words">API fallback reason: {bundle.fallbackReason}</p>
+        <p className="break-words">API 未连接原因：{bundle.fallbackReason}</p>
       </div>
     ) : null}
   </section>
