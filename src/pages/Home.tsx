@@ -9,22 +9,22 @@ interface HomeProps {
 }
 
 const steps = [
-  {title: '用户数据本地保留', text: '图片、文本、交互记录在客户端侧处理。'},
-  {title: '服务端聚合推荐模型', text: '服务器只聚合模型更新，不接收原始用户数据。'},
-  {title: '攻击与防御验证', text: '用投毒、隐私攻击和鲁棒防御验证安全边界。'},
+  {title: '用户数据本地保留', text: '图片、文本和交互记录在客户端侧参与训练。'},
+  {title: '服务端聚合推荐模型', text: '服务端只接收模型更新，不接收原始用户行为。'},
+  {title: '攻击与防御验证', text: '用隐私攻击、目标投毒和鲁棒防御解释安全边界。'},
 ];
 
 const actionButtons: Array<{label: string; page: PageType; icon: React.ComponentType<{className?: string}>; primary?: boolean}> = [
   {label: '了解系统机制', page: 'systemMechanism', icon: Blocks, primary: true},
-  {label: '进入攻防实验', page: 'attackDefenseRange', icon: Swords},
-  {label: '查看结果证据', page: 'resultsEvidence', icon: BarChart3},
+  {label: '进入攻防工作台', page: 'attackDefenseRange', icon: Swords},
+  {label: '查看实验档案', page: 'history', icon: BarChart3},
 ];
 
 export const Home: React.FC<HomeProps> = ({onPageChange}) => (
-  <div className="space-y-6 pb-10">
-    <section className="sandbox-panel sandbox-glow relative overflow-hidden rounded-[32px] p-7 lg:p-9">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_16%,rgba(56,189,248,0.16),transparent_28%),radial-gradient(circle_at_88%_18%,rgba(168,85,247,0.13),transparent_30%)]" />
-      <div className="relative z-10 grid min-h-[620px] grid-cols-1 gap-8 xl:grid-cols-[0.72fr_1.28fr] xl:items-center">
+  <div className="pb-10">
+    <section className="sandbox-panel sandbox-glow relative overflow-hidden rounded-[32px] p-6 lg:p-8">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_14%,rgba(56,189,248,0.18),transparent_30%),radial-gradient(circle_at_84%_12%,rgba(168,85,247,0.12),transparent_30%),radial-gradient(circle_at_74%_82%,rgba(16,185,129,0.1),transparent_28%)]" />
+      <div className="relative z-10 grid min-h-[calc(100vh-8rem)] grid-cols-1 gap-7 xl:grid-cols-[0.68fr_1.32fr] xl:items-center">
         <div className="max-w-2xl">
           <motion.div
             className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-200/30 bg-cyan-200/10 px-3 py-1 text-xs font-bold text-cyan-100"
@@ -32,7 +32,7 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => (
             animate={{opacity: 1, y: 0}}
           >
             <ShieldCheck className="h-3.5 w-3.5" />
-            项目导览
+            安全推荐系统演示平台
           </motion.div>
           <motion.h1
             className="text-4xl font-bold leading-tight tracking-tight text-white md:text-6xl"
@@ -48,14 +48,14 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => (
             animate={{opacity: 1, y: 0}}
             transition={{delay: 0.16}}
           >
-            用一个可交互的数字沙盘，把“推荐系统如何训练、攻击如何影响推荐、防御如何过滤风险、证据边界在哪里”按评审顺序讲清楚。
+            一个可交互的数字沙盘，把推荐系统训练、恶意更新、隐私风险和防御恢复放在同一条演示链路里。
           </motion.p>
 
           <div className="mt-8 space-y-3">
             {steps.map((step, index) => (
               <motion.div
                 key={step.title}
-                className="grid grid-cols-[40px_minmax(0,1fr)] gap-3 rounded-2xl bg-white/[0.055] p-3"
+                className="grid grid-cols-[40px_minmax(0,1fr)] gap-3 rounded-2xl border border-white/8 bg-white/[0.045] p-3"
                 initial={{opacity: 0, x: -14}}
                 animate={{opacity: 1, x: 0}}
                 transition={{delay: 0.22 + index * 0.08}}
