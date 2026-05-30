@@ -218,17 +218,24 @@ const normalizeScenario = (
   const id =
     firstString(record, ['scenario_id', 'scenarioId', 'id', 'key', 'case_id', 'caseId']) ??
     `showcase-scenario-${index + 1}`;
-  const name = firstString(record, ['name', 'title', 'label', 'scenario_name', 'scenarioName']) ?? id;
+  const displayName = firstString(record, ['display_name', 'displayName']);
+  const name = displayName ?? firstString(record, ['name', 'title', 'label', 'scenario_name', 'scenarioName']) ?? id;
 
   return {
     id,
     scenarioId: id,
     name,
+    displayName,
     dataset: firstString(record, ['dataset', 'dataset_name', 'datasetName']),
     model: firstString(record, ['model', 'model_name', 'modelName']),
     tags: firstStringList(record, ['tags', 'scenario_tags', 'scenarioTags']),
     warnings: firstStringList(record, ['warnings', 'warning', 'notes', 'limitations']),
     dataSource,
+    isDisplayReady: firstBoolean(record, ['is_display_ready', 'isDisplayReady']),
+    hasRecommendations: firstBoolean(record, ['has_recommendations', 'hasRecommendations']),
+    hasPrivacy: firstBoolean(record, ['has_privacy', 'hasPrivacy']),
+    hasMetrics: firstBoolean(record, ['has_metrics', 'hasMetrics']),
+    hasImages: firstBoolean(record, ['has_images', 'hasImages']),
     unavailable: firstBoolean(record, ['unavailable']),
     notAvailable: firstBoolean(record, ['not_available', 'notAvailable']),
     smoke: firstBoolean(record, ['smoke', 'is_smoke', 'isSmoke']) ?? inferFlagFromText(record, ['smoke']),
@@ -348,8 +355,9 @@ const normalizeRecommendationItem = (value: unknown, index: number): ShowcaseRec
     itemId: readField(value, ['item_id', 'itemId', 'id', 'asin', 'product_id', 'productId']) as string | number | null | undefined,
     title: firstString(value, ['title', 'item_title', 'itemTitle', 'name', 'product_title', 'productTitle']),
     category: firstString(value, ['category', 'item_category', 'itemCategory']),
+    thumbnailUrl: toPublicAssetUrl(readField(value, ['thumbnail_url', 'thumbnailUrl', 'thumbnail'])),
     localImageUrl: toPublicAssetUrl(readField(value, ['local_image_url', 'localImageUrl'])),
-    imageUrl: toPublicAssetUrl(readField(value, ['image_url', 'imageUrl', 'image', 'thumbnail', 'thumbnail_url', 'thumbnailUrl'])),
+    imageUrl: toPublicAssetUrl(readField(value, ['image_url', 'imageUrl', 'image'])),
     score: firstNumber(value, ['score', 'prediction', 'predicted_score', 'predictedScore']),
     reason: firstString(value, ['reason', 'note', 'description']),
     mainModality: firstString(value, ['main_modality', 'mainModality', 'modality']),
@@ -380,6 +388,13 @@ const normalizeRecommendationComparison = (payload: unknown): ShowcaseRecommenda
     defense: normalizeRecommendationList(
       readField(record, ['defense', 'defended', 'defense_recommendations', 'defended_recommendations', 'defendedRecommendations', 'defense_items']),
     ),
+    totalCounts: isRecord(record.total_counts ?? record.totalCounts)
+      ? ((record.total_counts ?? record.totalCounts) as Record<string, number>)
+      : undefined,
+    hasMore: isRecord(record.has_more ?? record.hasMore)
+      ? ((record.has_more ?? record.hasMore) as Record<string, boolean>)
+      : undefined,
+    limit: firstNumber(record, ['limit', 'preview_limit', 'previewLimit']),
     warnings: firstStringList(record, ['warnings', 'warning', 'notes']),
     unavailable: firstBoolean(record, ['unavailable', 'not_available', 'notAvailable']),
     raw: record,
@@ -395,6 +410,10 @@ const normalizeTargetRankEntry = (value: unknown): ShowcaseTargetRankEntry => {
   return {
     itemId: readField(record, ['item_id', 'itemId', 'target_item_id', 'targetItemId', 'id']) as string | number | null | undefined,
     title: firstString(record, ['title', 'target_title', 'targetTitle', 'name']),
+    category: firstString(record, ['category', 'item_category', 'itemCategory']),
+    thumbnailUrl: toPublicAssetUrl(readField(record, ['thumbnail_url', 'thumbnailUrl', 'thumbnail'])),
+    localImageUrl: toPublicAssetUrl(readField(record, ['local_image_url', 'localImageUrl'])),
+    imageUrl: toPublicAssetUrl(readField(record, ['image_url', 'imageUrl', 'image'])),
     baselineRank:
       firstNumber(record, [
         'baseline_rank',
@@ -870,14 +889,28 @@ export const fetchShowcaseDataset = async (scenarioId: string): Promise<Showcase
 
 export const fetchShowcaseRecommendations = async (
   scenarioId: string,
+  options: {limit?: 5 | 15 | 50 | number; column?: 'baseline' | 'attack' | 'defense' | 'all'; allowMockFallback?: boolean} = {},
 ): Promise<ShowcaseFetchResult<ShowcaseRecommendationComparison>> => {
+  const limit = options.limit ?? 5;
+  const column = options.column ?? 'all';
+  const query = new URLSearchParams({
+    limit: String(limit),
+    column,
+  });
   try {
-    const payload = await apiGet<unknown>(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/recommendations`);
+    const payload = await apiGet<unknown>(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/recommendations?${query.toString()}`);
     return {
       source: 'api',
       data: normalizeRecommendationComparison(payload),
     };
   } catch (error) {
+    if (!options.allowMockFallback) {
+      return {
+        source: 'api',
+        data: emptyRecommendationComparison(),
+        error: toErrorMessage(error),
+      };
+    }
     const fallback = fallbackToMockShowcase(scenarioId, toErrorMessage(error));
     return {
       source: 'mock',
@@ -1084,7 +1117,7 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
   ]);
   const reportResult = reportOnlyResult.data ?? buildApiReportShell(selectedScenario, '当前场景 report 暂未返回，页面只展示已可读取的场景信息。');
   const recommendationsOnlyResult = await fetchApiOnly(
-    `${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/recommendations`,
+    `${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/recommendations?limit=5&column=all`,
     normalizeRecommendationComparison,
   );
   const metricsSummary = mergeMetricsSummary(reportResult.metricsSummary, metricsOnlyResult.data);

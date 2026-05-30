@@ -2,10 +2,12 @@ import React from 'react';
 import {motion} from 'motion/react';
 import {ChevronDown, ChevronUp, ImageOff, Target} from 'lucide-react';
 import {cn} from '../../lib/utils';
+import {fetchShowcaseRecommendations} from '../../services/showcase';
 import type {ShowcaseRecommendationComparison, ShowcaseRecommendationItem} from '../../types/showcase';
 
 interface RecommendationComparisonBoardProps {
   comparison?: ShowcaseRecommendationComparison | null;
+  scenarioId?: string | null;
   targetItemId?: string | number | null;
 }
 
@@ -28,26 +30,36 @@ const toneClass = {
 const blockedImage = (value?: string | null) => !value || /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\');
 
 const imageSources = (item: ShowcaseRecommendationItem) =>
-  [item.localImageUrl, item.imageUrl].filter((value): value is string => !blockedImage(value));
+  [item.thumbnailUrl, item.localImageUrl, item.imageUrl].filter((value): value is string => !blockedImage(value));
 
 const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; tone: keyof typeof toneClass}> = ({item, title, tone}) => {
   const sources = imageSources(item);
   const [sourceIndex, setSourceIndex] = React.useState(0);
+  const [loaded, setLoaded] = React.useState(false);
   const source = sources[sourceIndex];
 
   React.useEffect(() => {
     setSourceIndex(0);
-  }, [item.itemId, item.localImageUrl, item.imageUrl]);
+    setLoaded(false);
+  }, [item.itemId, item.thumbnailUrl, item.localImageUrl, item.imageUrl]);
 
   if (source) {
     return (
-      <img
-        className="h-20 w-20 rounded-2xl object-cover"
-        src={source}
-        alt={title}
-        referrerPolicy="no-referrer"
-        onError={() => setSourceIndex((index) => index + 1)}
-      />
+      <div className="relative h-20 w-20 overflow-hidden rounded-2xl bg-slate-800/70">
+        {!loaded ? <div className="absolute inset-0 animate-pulse bg-slate-700/70" /> : null}
+        <img
+          className={cn('h-20 w-20 object-cover transition-opacity', loaded ? 'opacity-100' : 'opacity-0')}
+          src={source}
+          alt={title}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onLoad={() => setLoaded(true)}
+          onError={() => {
+            setLoaded(false);
+            setSourceIndex((index) => index + 1);
+          }}
+        />
+      </div>
     );
   }
 
@@ -63,12 +75,56 @@ const getTitle = (item: ShowcaseRecommendationItem) => item.title ?? (item.itemI
 const sameItem = (left?: string | number | null, right?: string | number | null) =>
   left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 
-export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison, targetItemId}) => {
-  const [visibleCounts, setVisibleCounts] = React.useState<Record<string, number>>({});
+const columnTotalCount = (comparison: ShowcaseRecommendationComparison | null | undefined, key: string, fallback: number) => {
+  const totalCounts = comparison?.totalCounts;
+  if (!totalCounts) {
+    return fallback;
+  }
+  const value = totalCounts[key] ?? totalCounts[`${key}_recommendations`];
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+};
 
-  const setColumnLimit = (key: string, count: number) => {
-    setVisibleCounts((current) => ({...current, [key]: count}));
+export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison, scenarioId, targetItemId}) => {
+  const [activeComparison, setActiveComparison] = React.useState<ShowcaseRecommendationComparison | null | undefined>(comparison);
+  const [visibleLimit, setVisibleLimit] = React.useState(DEFAULT_VISIBLE_COUNT);
+  const [isLoadingLimit, setIsLoadingLimit] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setActiveComparison(comparison);
+    setVisibleLimit(DEFAULT_VISIBLE_COUNT);
+    setLoadError(null);
+  }, [comparison, scenarioId]);
+
+  const loadLimit = async (limit: number) => {
+    if (!scenarioId) {
+      setVisibleLimit(limit);
+      return;
+    }
+    try {
+      setIsLoadingLimit(true);
+      setLoadError(null);
+      const result = await fetchShowcaseRecommendations(scenarioId, {limit, column: 'all'});
+      if (result.error) {
+        setLoadError('推荐列表暂未返回，保留当前展示。');
+        setVisibleLimit(limit);
+        return;
+      }
+      setActiveComparison(result.data);
+      setVisibleLimit(limit);
+    } catch {
+      setLoadError('推荐列表暂未返回，保留当前展示。');
+      setVisibleLimit(limit);
+    } finally {
+      setIsLoadingLimit(false);
+    }
   };
+
+  const currentComparison = activeComparison ?? comparison;
+  const canRequestMore = columns.some((column) => {
+    const items = currentComparison?.[column.key] ?? [];
+    return columnTotalCount(currentComparison, column.key, items.length) > Math.min(visibleLimit, MAX_VISIBLE_COUNT);
+  });
 
   return (
     <section className="sandbox-panel sandbox-glow rounded-[28px] p-5">
@@ -78,17 +134,45 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
           <h3 className="mt-1 text-xl font-bold text-white">三列推荐商品变化</h3>
         </div>
         <p className="max-w-2xl text-xs leading-5 text-slate-400">
-          每列默认展示 5 个商品，可展开查看更多；图片优先使用本地缓存，其次使用原始链接，失败时显示占位图。分数缺失时不显示。
+          每列默认请求 5 个商品，展开 15 / 50 条时按需请求 API；图片优先使用缩略图，其次本地原图，再其次原始链接。分数缺失时不显示。
         </p>
+      </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {[
+          {label: '收起 5 条', limit: DEFAULT_VISIBLE_COUNT, icon: ChevronUp},
+          {label: '展开 15 条', limit: EXPANDED_VISIBLE_COUNT, icon: ChevronDown},
+          {label: '展开 50 条', limit: MAX_VISIBLE_COUNT, icon: ChevronDown},
+        ].map((action) => {
+          const Icon = action.icon;
+          const active = visibleLimit === action.limit;
+          return (
+            <button
+              key={action.limit}
+              type="button"
+              disabled={isLoadingLimit || (action.limit > DEFAULT_VISIBLE_COUNT && !canRequestMore)}
+              onClick={() => loadLimit(action.limit)}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition',
+                active
+                  ? 'border-cyan-200/40 bg-cyan-200/14 text-cyan-50'
+                  : 'border-white/10 bg-white/[0.04] text-slate-200 hover:border-cyan-200/35 hover:bg-cyan-300/10',
+                isLoadingLimit || (action.limit > DEFAULT_VISIBLE_COUNT && !canRequestMore) ? 'cursor-not-allowed opacity-60' : '',
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {action.label}
+            </button>
+          );
+        })}
+        {isLoadingLimit ? <span className="text-xs font-semibold text-cyan-100">正在读取推荐切片...</span> : null}
+        {loadError ? <span className="text-xs font-semibold text-amber-100">{loadError}</span> : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {columns.map((column) => {
-          const allItems = comparison?.[column.key] ?? [];
-          const visibleCount = visibleCounts[column.key] ?? DEFAULT_VISIBLE_COUNT;
-          const items = allItems.slice(0, Math.min(visibleCount, MAX_VISIBLE_COUNT));
-          const hiddenCount = Math.max(0, allItems.length - DEFAULT_VISIBLE_COUNT);
-          const maxCount = Math.min(MAX_VISIBLE_COUNT, allItems.length);
+          const allItems = currentComparison?.[column.key] ?? [];
+          const items = allItems.slice(0, Math.min(visibleLimit, MAX_VISIBLE_COUNT));
+          const totalCount = columnTotalCount(currentComparison, column.key, allItems.length);
 
           return (
             <div key={column.key} className="rounded-3xl border border-white/10 bg-white/[0.045] p-4">
@@ -97,7 +181,7 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
                   {column.title}
                 </div>
                 <span className="rounded-full bg-slate-950/45 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
-                  共 {allItems.length} 条
+                  共 {totalCount} 条，当前 {items.length} 条
                 </span>
               </div>
               <div className="space-y-3">
@@ -146,36 +230,6 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
                 )}
               </div>
 
-              {hiddenCount > 0 ? (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setColumnLimit(column.key, EXPANDED_VISIBLE_COUNT)}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                    展开 15 条
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setColumnLimit(column.key, MAX_VISIBLE_COUNT)}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                    展开 {maxCount} 条
-                  </button>
-                  {visibleCount > DEFAULT_VISIBLE_COUNT ? (
-                    <button
-                      type="button"
-                      onClick={() => setColumnLimit(column.key, DEFAULT_VISIBLE_COUNT)}
-                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/35 hover:bg-cyan-300/10"
-                    >
-                      <ChevronUp className="h-4 w-4" />
-                      收起
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           );
         })}

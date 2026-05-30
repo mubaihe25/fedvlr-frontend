@@ -6,11 +6,17 @@ export interface ShowcaseScenario {
   id: string;
   scenarioId: string;
   name: string;
+  displayName?: string | null;
   dataset?: string | null;
   model?: string | null;
   tags?: string[];
   warnings?: string[];
   dataSource: Extract<ShowcaseDataSource, 'api' | 'mock'>;
+  isDisplayReady?: boolean | null;
+  hasRecommendations?: boolean | null;
+  hasPrivacy?: boolean | null;
+  hasMetrics?: boolean | null;
+  hasImages?: boolean | null;
   unavailable?: boolean | null;
   notAvailable?: boolean | null;
   smoke?: boolean | null;
@@ -63,6 +69,7 @@ export interface ShowcaseRecommendationItem {
   itemId?: string | number | null;
   title?: string | null;
   category?: string | null;
+  thumbnailUrl?: string | null;
   localImageUrl?: string | null;
   imageUrl?: string | null;
   score?: number | null;
@@ -77,6 +84,9 @@ export interface ShowcaseRecommendationComparison {
   baseline: ShowcaseRecommendationItem[];
   attack: ShowcaseRecommendationItem[];
   defense: ShowcaseRecommendationItem[];
+  totalCounts?: Record<string, number>;
+  hasMore?: Record<string, boolean>;
+  limit?: number | null;
   warnings?: string[];
   unavailable?: boolean | null;
   raw?: ShowcaseJsonRecord;
@@ -85,6 +95,10 @@ export interface ShowcaseRecommendationComparison {
 export interface ShowcaseTargetRankEntry {
   itemId?: string | number | null;
   title?: string | null;
+  category?: string | null;
+  thumbnailUrl?: string | null;
+  localImageUrl?: string | null;
+  imageUrl?: string | null;
   baselineRank?: number | null;
   attackRank?: number | null;
   defenseRank?: number | null;

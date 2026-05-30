@@ -47,8 +47,8 @@
 - `src/pages/Home.tsx`：项目导览页，用一句话定位、三步说明和拓扑图帮助快速理解项目。
 - `src/pages/SystemMechanism.tsx`：系统机制页，包含五层系统架构图：数据层、客户端层、服务端层、安全层、展示层。
 - `src/pages/AttackDefenseRange.tsx`：攻防工作台，承载实验编排、运行监控、单次分析、横向对比、历史实验。
-- `src/components/sandbox/RecommendationComparisonBoard.tsx`：三列推荐对照，默认 5 条，支持展开 15 条、展开 50 条和收起。
-- `src/services/showcase.ts`：showcase API 读取、真实场景优先选择、artifact 正规化、API 失败时演示数据兜底、本地图片 URL 处理。
+- `src/components/sandbox/RecommendationComparisonBoard.tsx`：三列推荐对照，默认请求 5 条，支持按需请求 15 条、50 条和收起。
+- `src/services/showcase.ts`：showcase API 读取、真实场景优先选择、artifact 正规化、recommendations limit 查询、API 失败时演示数据兜底、本地图片 URL 处理。
 - `src/hooks/useShowcaseBundle.ts`：showcase bundle 状态管理，初始显示 API 加载态，不在 API 返回前先显示演示数据。
 
 ## Showcase API
@@ -59,10 +59,10 @@
 - `/showcase/scenarios/{scenario_id}/report`
 - `/showcase/scenarios/{scenario_id}/dataset`
 - `/showcase/scenarios/{scenario_id}/metrics`
-- `/showcase/scenarios/{scenario_id}/recommendations`
+- `/showcase/scenarios/{scenario_id}/recommendations?limit=5|15|50&column=baseline|attack|defense|all`
 - `/showcase/scenarios/{scenario_id}/security`
 - `/showcase/scenarios/{scenario_id}/privacy`
-- `/showcase/images/{dataset}/{item_id}`
+- `/showcase/images/{dataset}/{item_id}?size=thumb|full`
 
 默认真实场景优先级：
 
@@ -71,7 +71,7 @@
 3. `model_security_capability_matrix`
 4. `security_matrix_krum_demo`
 
-如果 API 场景列表可用，页面不使用演示数据补齐缺失指标；缺失字段显示“暂无 / 不适用”。推荐图片优先使用 `local_image_url`，失败再使用 `image_url`，再失败显示占位图；不要渲染 D 盘、UNC 或其他本地绝对路径。
+如果 API 场景列表可用，页面不使用演示数据补齐缺失指标；缺失字段显示“暂无 / 不适用”。推荐图片优先使用 `thumbnail_url`，其次 `local_image_url`，再使用 `image_url`，失败显示占位图；不要渲染 D 盘、UNC 或其他本地绝对路径。
 
 ## 当前已实现能力
 
@@ -80,7 +80,7 @@
 - 攻防工作台五个 Tab 的正式流程：实验剧本、运行监控、单次分析、指标对比、artifact 场景库。
 - 运行监控页展示联邦拓扑飞线、客户端本地训练、更新/梯度上传、服务端聚合、恶意更新、防御过滤环、终端日志和实验摘要曲线。
 - 单次分析页展示 V2.5 结果：target rank `170 -> 3`、排名提升、Top50 未命中、MIA AUC、交互候选还原 hit@50、安全聚合残差。
-- 推荐列表默认 5 条，支持展开 15/50 条；目标商品出现时高亮，未出现时在目标轨迹中说明最终推荐未曝光。
+- 推荐列表默认请求 5 条，展开 15/50 条时再次请求 API limit 切片；目标商品出现时高亮，未出现时在目标轨迹中说明最终推荐未曝光。
 - 横向对比接入场景摘要和模型能力矩阵，不展示推荐列表。
 - 历史实验接入 `/showcase/scenarios` 场景库，点击场景切换当前工作台分析对象。
 

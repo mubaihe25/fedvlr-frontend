@@ -94,9 +94,9 @@ export const getDatasetLabel = (dataset?: ShowcaseDatasetProfile | null) =>
   dataset?.dataset ?? dataset?.name ?? EMPTY_VALUE;
 
 export const getRecommendationCounts = (comparison?: ShowcaseRecommendationComparison | null) => ({
-  baseline: comparison?.baseline.length ?? 0,
-  attack: comparison?.attack.length ?? 0,
-  defense: comparison?.defense.length ?? 0,
+  baseline: comparison?.totalCounts?.baseline ?? comparison?.totalCounts?.baseline_recommendations ?? comparison?.baseline.length ?? 0,
+  attack: comparison?.totalCounts?.attack ?? comparison?.totalCounts?.attack_recommendations ?? comparison?.attack.length ?? 0,
+  defense: comparison?.totalCounts?.defense ?? comparison?.totalCounts?.defended_recommendations ?? comparison?.defense.length ?? 0,
 });
 
 export const getBoundaryItems = (report: ShowcaseReport, scenario?: ShowcaseScenario) => {

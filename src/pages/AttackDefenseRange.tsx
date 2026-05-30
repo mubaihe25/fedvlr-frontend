@@ -220,8 +220,8 @@ const findProductByItemId = (report: ShowcaseReport, itemId?: string | number | 
   return [...comparison.attack, ...comparison.baseline, ...comparison.defense].find((item) => String(item.itemId) === id) ?? null;
 };
 
-const getProductImage = (item?: ShowcaseRecommendationItem | null) => {
-  const source = item?.localImageUrl ?? item?.imageUrl;
+const getProductImage = (item?: Pick<ShowcaseRecommendationItem, 'thumbnailUrl' | 'localImageUrl' | 'imageUrl'> | null) => {
+  const source = item?.thumbnailUrl ?? item?.localImageUrl ?? item?.imageUrl;
   if (!source || /^[a-zA-Z]:[\\/]/.test(source) || source.startsWith('\\\\')) {
     return null;
   }
@@ -780,7 +780,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const renderTargetTrajectory = () => {
     const entry = getTargetEntry(report);
     const item = findProductByItemId(report, entry?.itemId);
-    const image = getProductImage(item);
+    const image = getProductImage(item ?? entry);
     const targetInRecommendationList =
       entry?.itemId !== undefined &&
       entry.itemId !== null &&
@@ -804,14 +804,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
           <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-4">
             {image ? (
-              <img src={image} alt={item?.title ?? entry?.title ?? '目标商品'} className="h-40 w-full rounded-2xl object-cover" referrerPolicy="no-referrer" />
+              <img src={image} alt={item?.title ?? entry?.title ?? '目标商品'} className="h-40 w-full rounded-2xl object-cover" loading="lazy" referrerPolicy="no-referrer" />
             ) : (
               <div className="flex h-40 items-center justify-center rounded-2xl border border-rose-200/25 bg-rose-200/10 text-rose-100">
                 <ImageOff className="h-8 w-8" />
               </div>
             )}
             <p className="mt-4 line-clamp-2 font-bold text-white">{item?.title ?? entry?.title ?? '目标商品'}</p>
-            <p className="mt-1 text-xs text-slate-400">{item?.category ?? '类目暂无'}</p>
+            <p className="mt-1 text-xs text-slate-400">{item?.category ?? entry?.category ?? '类目暂无'}</p>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {[
@@ -900,7 +900,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             return (
               <div key={`${item.itemId ?? index}`} className="rounded-2xl border border-white/10 bg-white/[0.045] p-3">
                 {image ? (
-                  <img src={image} alt={item.title ?? '候选商品'} className="h-24 w-full rounded-xl object-cover" referrerPolicy="no-referrer" />
+                  <img src={image} alt={item.title ?? '候选商品'} className="h-24 w-full rounded-xl object-cover" loading="lazy" referrerPolicy="no-referrer" />
                 ) : (
                   <div className="flex h-24 items-center justify-center rounded-xl border border-white/10 text-slate-500">
                     <ImageOff className="h-6 w-6" />
@@ -962,7 +962,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     <div className="space-y-5">
       {renderExperimentConclusion()}
       {renderTargetTrajectory()}
-      <RecommendationComparisonBoard comparison={report.recommendationComparison} targetItemId={getTargetEntry(report)?.itemId} />
+      <RecommendationComparisonBoard
+        comparison={report.recommendationComparison}
+        scenarioId={selectedScenario.scenarioId}
+        targetItemId={getTargetEntry(report)?.itemId}
+      />
       {renderPrivacyAnalysis()}
       <section className="sandbox-panel rounded-[28px] p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1119,7 +1123,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {bundle.scenarios.map((scenario) => {
-            const displayable = !scenario.unavailable && !scenario.notAvailable;
+            const displayable = scenario.isDisplayReady ?? (!scenario.unavailable && !scenario.notAvailable);
             return (
               <button
                 key={scenario.scenarioId}
