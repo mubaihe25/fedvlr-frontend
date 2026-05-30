@@ -1,6 +1,6 @@
 import React from 'react';
 import {motion} from 'motion/react';
-import {ChevronDown, ChevronUp, ImageOff, Target} from 'lucide-react';
+import {ChevronDown, ChevronUp, ImageOff, Target, TrendingDown, TrendingUp} from 'lucide-react';
 import {cn} from '../../lib/utils';
 import {fetchShowcaseRecommendations} from '../../services/showcase';
 import type {ShowcaseRecommendationComparison, ShowcaseRecommendationItem} from '../../types/showcase';
@@ -11,15 +11,18 @@ interface RecommendationComparisonBoardProps {
   targetItemId?: string | number | null;
 }
 
+type ColumnKey = 'baseline' | 'attack' | 'defense';
+type ChangeStatus = '新增' | '上升' | '下降' | '保持';
+
 const DEFAULT_VISIBLE_COUNT = 5;
 const EXPANDED_VISIBLE_COUNT = 15;
 const MAX_VISIBLE_COUNT = 50;
 
-const columns = [
-  {key: 'baseline', title: '正常推荐', tone: 'cyan', empty: '暂无正常推荐'},
-  {key: 'attack', title: '攻击后推荐', tone: 'rose', empty: '暂无攻击后推荐'},
-  {key: 'defense', title: '防御后推荐 / 暂无防御', tone: 'emerald', empty: '暂无防御结果'},
-] as const;
+const columns: Array<{key: ColumnKey; title: string; subtitle: string; tone: 'cyan' | 'rose' | 'emerald'; empty: string}> = [
+  {key: 'baseline', title: '正常推荐', subtitle: '攻击前的基准排序', tone: 'cyan', empty: '暂无正常推荐'},
+  {key: 'attack', title: '攻击后推荐', subtitle: '观察目标操纵后的排序变化', tone: 'rose', empty: '暂无攻击后推荐'},
+  {key: 'defense', title: '防御后推荐 / 暂无防御', subtitle: '有防御结果时展示恢复效果', tone: 'emerald', empty: '暂无防御结果'},
+];
 
 const toneClass = {
   cyan: 'border-sky-200/30 bg-sky-200/10 text-sky-100',
@@ -27,10 +30,54 @@ const toneClass = {
   emerald: 'border-emerald-200/30 bg-emerald-200/10 text-emerald-100',
 } as const;
 
+const changeToneClass: Record<ChangeStatus, string> = {
+  新增: 'border-violet-200/30 bg-violet-300/10 text-violet-100',
+  上升: 'border-emerald-200/30 bg-emerald-300/10 text-emerald-100',
+  下降: 'border-amber-200/30 bg-amber-300/10 text-amber-100',
+  保持: 'border-slate-200/20 bg-slate-300/10 text-slate-200',
+};
+
 const blockedImage = (value?: string | null) => !value || /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\');
 
 const imageSources = (item: ShowcaseRecommendationItem) =>
   [item.thumbnailUrl, item.localImageUrl, item.imageUrl].filter((value): value is string => !blockedImage(value));
+
+const sameItem = (left?: string | number | null, right?: string | number | null) =>
+  left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
+
+const getTitle = (item: ShowcaseRecommendationItem) => item.title ?? (item.itemId ? `商品 ${item.itemId}` : '未命名商品');
+
+const rankOf = (items: ShowcaseRecommendationItem[] | undefined, itemId?: string | number | null) => {
+  if (itemId === undefined || itemId === null) return null;
+  const matched = items?.find((item) => sameItem(item.itemId, itemId));
+  return typeof matched?.rank === 'number' ? matched.rank : null;
+};
+
+const getChangeStatus = (item: ShowcaseRecommendationItem, columnKey: ColumnKey, comparison?: ShowcaseRecommendationComparison | null): ChangeStatus => {
+  const currentRank = typeof item.rank === 'number' ? item.rank : null;
+  if (columnKey === 'baseline') {
+    const attackRank = rankOf(comparison?.attack, item.itemId);
+    if (attackRank === null || currentRank === null) return '保持';
+    if (attackRank < currentRank) return '上升';
+    if (attackRank > currentRank) return '下降';
+    return '保持';
+  }
+
+  const previous = columnKey === 'attack' ? comparison?.baseline : comparison?.attack;
+  const previousRank = rankOf(previous, item.itemId);
+  if (previousRank === null || currentRank === null) return '新增';
+  if (currentRank < previousRank) return '上升';
+  if (currentRank > previousRank) return '下降';
+  return '保持';
+};
+
+const columnTotalCount = (comparison: ShowcaseRecommendationComparison | null | undefined, key: ColumnKey, fallback: number) => {
+  const totalCounts = comparison?.totalCounts;
+  if (!totalCounts) return fallback;
+  const apiKey = key === 'defense' ? 'defended_recommendations' : `${key}_recommendations`;
+  const value = totalCounts[key] ?? totalCounts[apiKey];
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+};
 
 const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; tone: keyof typeof toneClass}> = ({item, title, tone}) => {
   const sources = imageSources(item);
@@ -70,19 +117,13 @@ const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; t
   );
 };
 
-const getTitle = (item: ShowcaseRecommendationItem) => item.title ?? (item.itemId ? `商品 ${item.itemId}` : '未命名商品');
-
-const sameItem = (left?: string | number | null, right?: string | number | null) =>
-  left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
-
-const columnTotalCount = (comparison: ShowcaseRecommendationComparison | null | undefined, key: string, fallback: number) => {
-  const totalCounts = comparison?.totalCounts;
-  if (!totalCounts) {
-    return fallback;
-  }
-  const value = totalCounts[key] ?? totalCounts[`${key}_recommendations`];
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-};
+const ChangeBadge: React.FC<{status: ChangeStatus}> = ({status}) => (
+  <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold', changeToneClass[status])}>
+    {status === '上升' ? <TrendingUp className="h-3 w-3" /> : null}
+    {status === '下降' ? <TrendingDown className="h-3 w-3" /> : null}
+    {status}
+  </span>
+);
 
 export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison, scenarioId, targetItemId}) => {
   const [activeComparison, setActiveComparison] = React.useState<ShowcaseRecommendationComparison | null | undefined>(comparison);
@@ -134,7 +175,7 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
           <h3 className="mt-1 text-xl font-bold text-white">三列推荐商品变化</h3>
         </div>
         <p className="max-w-2xl text-xs leading-5 text-slate-400">
-          每列默认请求 5 个商品，展开 15 / 50 条时按需请求 API；图片优先使用缩略图，其次本地原图，再其次原始链接。分数缺失时不显示。
+          每列默认 5 条，展开 15 / 50 条时按需读取。目标商品未进入最终推荐列表时不会被强行插入，只在目标轨迹里说明边界。
         </p>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -177,8 +218,9 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
           return (
             <div key={column.key} className="rounded-3xl border border-white/10 bg-white/[0.045] p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <div className={cn('inline-flex rounded-full border px-3 py-1 text-xs font-bold', toneClass[column.tone])}>
-                  {column.title}
+                <div>
+                  <div className={cn('inline-flex rounded-full border px-3 py-1 text-xs font-bold', toneClass[column.tone])}>{column.title}</div>
+                  <p className="mt-2 text-xs text-slate-500">{column.subtitle}</p>
                 </div>
                 <span className="rounded-full bg-slate-950/45 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
                   共 {totalCount} 条，当前 {items.length} 条
@@ -189,6 +231,7 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
                   items.map((item, index) => {
                     const title = getTitle(item);
                     const isTarget = sameItem(item.itemId, targetItemId);
+                    const changeStatus = getChangeStatus(item, column.key, currentComparison);
                     return (
                       <motion.div
                         key={`${column.key}-${item.itemId ?? index}-${item.rank ?? index}`}
@@ -207,10 +250,11 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
                             <span className={cn('rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold', toneClass[column.tone])}>
                               rank #{item.rank ?? index + 1}
                             </span>
+                            <ChangeBadge status={changeStatus} />
                             {isTarget ? (
                               <span className="inline-flex items-center gap-1 rounded-full border border-rose-300/40 bg-rose-400/15 px-2 py-0.5 text-[11px] font-bold text-rose-100">
                                 <Target className="h-3 w-3" />
-                                定向投毒目标
+                                目标商品
                               </span>
                             ) : null}
                           </div>
@@ -224,12 +268,9 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
                     );
                   })
                 ) : (
-                  <div className="rounded-2xl border border-white/10 bg-slate-900/25 px-4 py-6 text-sm text-slate-400">
-                    {column.empty}
-                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-slate-900/25 px-4 py-6 text-sm text-slate-400">{column.empty}</div>
                 )}
               </div>
-
             </div>
           );
         })}
