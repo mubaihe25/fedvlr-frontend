@@ -71,6 +71,14 @@ const getChangeStatus = (item: ShowcaseRecommendationItem, columnKey: ColumnKey,
   return '保持';
 };
 
+const getColumnChangeSummary = (items: ShowcaseRecommendationItem[], columnKey: ColumnKey, comparison?: ShowcaseRecommendationComparison | null) => {
+  const counts: Record<ChangeStatus, number> = {新增: 0, 上升: 0, 下降: 0, 保持: 0};
+  items.forEach((item) => {
+    counts[getChangeStatus(item, columnKey, comparison)] += 1;
+  });
+  return counts;
+};
+
 const columnTotalCount = (comparison: ShowcaseRecommendationComparison | null | undefined, key: ColumnKey, fallback: number) => {
   const totalCounts = comparison?.totalCounts;
   if (!totalCounts) return fallback;
@@ -214,6 +222,7 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
           const allItems = currentComparison?.[column.key] ?? [];
           const items = allItems.slice(0, Math.min(visibleLimit, MAX_VISIBLE_COUNT));
           const totalCount = columnTotalCount(currentComparison, column.key, allItems.length);
+          const changeSummary = getColumnChangeSummary(items, column.key, currentComparison);
 
           return (
             <div key={column.key} className="rounded-3xl border border-white/10 bg-white/[0.045] p-4">
@@ -225,6 +234,12 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
                 <span className="rounded-full bg-slate-950/45 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
                   共 {totalCount} 条，当前 {items.length} 条
                 </span>
+              </div>
+              <div className="mb-4 rounded-2xl border border-white/10 bg-slate-950/30 px-3 py-2">
+                <p className="text-[11px] font-bold text-slate-500">推荐变化摘要</p>
+                <p className="mt-1 text-xs font-semibold text-slate-300">
+                  新增 {changeSummary.新增} 个 / 上升 {changeSummary.上升} 个 / 下降 {changeSummary.下降} 个 / 保持 {changeSummary.保持} 个
+                </p>
               </div>
               <div className="space-y-3">
                 {items.length ? (

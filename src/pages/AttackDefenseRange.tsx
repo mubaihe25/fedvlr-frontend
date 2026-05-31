@@ -108,6 +108,87 @@ const formatRank = (value?: number | null) => (typeof value === 'number' && Numb
 const formatSigned = (value?: number | null, digits = 0) => (typeof value === 'number' && Number.isFinite(value) ? `+${value.toFixed(digits)}` : EMPTY_VALUE);
 const formatRatio = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : EMPTY_VALUE);
 const formatSmallNumber = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : EMPTY_VALUE);
+const formatCellValue = (value?: string | number | null) => {
+  if (value === null || value === undefined || value === EMPTY_VALUE || value === '') {
+    return '未导出';
+  }
+  return String(value);
+};
+
+const playDefaults: Record<
+  ExperimentPlayId,
+  {
+    dataset: string;
+    model: string;
+    attackLabel: string;
+    defenseLabel: string;
+    targetLabel: string;
+    maliciousRatio: number;
+    aggregationMode: AggregationMode;
+    robustAlgorithm: string;
+    dpLayer: boolean;
+    observations: string[];
+    scenarioKeywords: string[];
+    analysisOrder: Array<'target' | 'recommendation' | 'membership' | 'leakage' | 'defense'>;
+  }
+> = {
+  target_poisoning_play: {
+    dataset: 'AMAZON_BEAUTY_POC',
+    model: 'FedAvg',
+    attackLabel: '目标商品投毒',
+    defenseLabel: '暂无防御 / 可选鲁棒聚合',
+    targetLabel: 'Empty Amber Glass Spray Bottles',
+    maliciousRatio: 0.2,
+    aggregationMode: 'plain_updates',
+    robustAlgorithm: 'none',
+    dpLayer: false,
+    observations: ['目标排序', 'Top50 曝光', '三列推荐', 'MIA', '交互还原'],
+    scenarioKeywords: ['amazon_beauty_poc_v25_backend_smoke', 'v25', 'target', 'rank'],
+    analysisOrder: ['target', 'recommendation', 'membership', 'leakage', 'defense'],
+  },
+  membership_privacy_play: {
+    dataset: 'AMAZON_BEAUTY_POC',
+    model: 'FedAvg',
+    attackLabel: '成员推断攻击',
+    defenseLabel: '可选更新扰动 / 安全聚合模拟',
+    targetLabel: '匿名 user-item 记录',
+    maliciousRatio: 0,
+    aggregationMode: 'plain_updates',
+    robustAlgorithm: 'none',
+    dpLayer: false,
+    observations: ['AUC', '准确率', '证据类型', '训练记录 vs 非训练记录'],
+    scenarioKeywords: ['membership', 'mia', 'privacy', 'v25'],
+    analysisOrder: ['membership', 'leakage', 'target', 'defense', 'recommendation'],
+  },
+  update_leakage_play: {
+    dataset: 'AMAZON_BEAUTY_POC',
+    model: 'FedAvg',
+    attackLabel: '客户端更新泄露',
+    defenseLabel: '可选安全聚合模拟 / 更新扰动',
+    targetLabel: '候选交互集合',
+    maliciousRatio: 0,
+    aggregationMode: 'secure_aggregation',
+    robustAlgorithm: 'none',
+    dpLayer: false,
+    observations: ['hit@10', 'hit@20', 'hit@50', '最高风险模态：item embedding'],
+    scenarioKeywords: ['interaction', 'reconstruction', 'privacy', 'v25'],
+    analysisOrder: ['leakage', 'membership', 'target', 'defense', 'recommendation'],
+  },
+  robust_defense_play: {
+    dataset: 'KU',
+    model: 'MMFedRAP',
+    attackLabel: '异常客户端更新',
+    defenseLabel: 'Krum / Median / TrimmedMean / Bulyan',
+    targetLabel: '异常更新集合',
+    maliciousRatio: 0.2,
+    aggregationMode: 'plain_updates',
+    robustAlgorithm: 'Krum',
+    dpLayer: false,
+    observations: ['防御恢复率', '异常更新过滤', 'Recall@50', 'NDCG@50'],
+    scenarioKeywords: ['krum', 'robust', 'security_matrix', 'ku'],
+    analysisOrder: ['defense', 'recommendation', 'target', 'membership', 'leakage'],
+  },
+};
 
 const interpolate = (start: number, end: number, steps = 18) =>
   Array.from({length: steps}, (_, index) => {
@@ -224,11 +305,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [comparisonBundles, setComparisonBundles] = useState<ShowcaseBundle[]>([]);
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('attack');
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('全部');
+  const [switchMessage, setSwitchMessage] = useState('');
   const autoSelectedRef = useRef(false);
 
   const {report, selectedScenario} = bundle;
   const config = session.draftTrainConfig;
   const selectedPlay = EXPERIMENT_PLAYS.find((play) => play.id === selectedPlayId) ?? EXPERIMENT_PLAYS[0];
+  const selectedPlayDefaults = playDefaults[selectedPlay.id];
   const rankStats = getTargetRanks(report);
   const privacyMetrics = getPrivacyMetrics(report);
   const targetProduct = getTargetProduct(report);
@@ -295,19 +378,70 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     onDraftConfigChange({...config, ...patch});
   };
 
+  const findScenarioForPlay = (playId: ExperimentPlayId) => {
+    const defaults = playDefaults[playId];
+    return bundle.scenarios.find((scenario) => {
+      const text = scenarioText(scenario);
+      return defaults.scenarioKeywords.some((keyword) => text.includes(keyword.toLowerCase()));
+    });
+  };
+
   const applyPlayToConfig = (play: ExperimentPlay) => {
     setSelectedPlayId(play.id);
+    const defaults = playDefaults[play.id];
+    const matchedScenario = findScenarioForPlay(play.id);
+    if (matchedScenario && matchedScenario.scenarioId !== selectedScenario.scenarioId) {
+      setSelectedScenarioId(matchedScenario.scenarioId);
+      setSwitchMessage(`已切换到 ${getScenarioTitle(matchedScenario)} 场景`);
+    }
+    setAggregationMode(defaults.aggregationMode);
+    setRobustAlgorithm(defaults.robustAlgorithm);
+    setDpLayerEnabled(defaults.dpLayer);
     const attacks = play.attackModules.includes('target_poisoning') ? ['poisoning_attack'] : [];
     const privacyMetricsList = play.attackModules
       .filter((id) => id === 'membership_inference' || id === 'interaction_reconstruction')
       .map((id) => id);
+    const enabledDefenses = [
+      ...(defaults.dpLayer ? ['dp_noise'] : []),
+      ...(defaults.aggregationMode === 'secure_aggregation' ? ['secure_aggregation_sim'] : []),
+      ...(defaults.robustAlgorithm !== 'none' ? ['robust_aggregation'] : []),
+    ];
     updateConfig({
+      dataset: matchedScenario?.dataset ?? defaults.dataset,
+      model: matchedScenario?.model ?? defaults.model,
       attackEnabled: attacks.length > 0,
       attackType: attacks.length > 0 ? 'poisoning_attack' : 'none',
       enabledAttacks: attacks,
       enabledPrivacyMetrics: privacyMetricsList,
+      defenseEnabled: enabledDefenses.length > 0,
+      defenseType:
+        defaults.aggregationMode === 'secure_aggregation'
+          ? 'secure-aggregation'
+          : defaults.robustAlgorithm !== 'none'
+            ? getDefenseTypeFromRobust(defaults.robustAlgorithm)
+            : defaults.dpLayer
+              ? 'differential-privacy'
+              : 'none',
+      enabledDefenses,
+      poisoningRatio: defaults.maliciousRatio,
+      maliciousClientConfig: {
+        ...(config.maliciousClientConfig ?? {enabled: false, mode: 'ratio' as const, ratio: 0, clientIds: []}),
+        enabled: defaults.maliciousRatio > 0,
+        mode: 'ratio',
+        ratio: defaults.maliciousRatio,
+      },
+      advanced: {...config.advanced, secureAggregation: defaults.aggregationMode === 'secure_aggregation'},
+      attackParams: {
+        ...(config.attackParams ?? {}),
+        poisoning_attack: {
+          ...((config.attackParams?.poisoning_attack as Record<string, unknown> | undefined) ?? {}),
+          target_item_title: targetProduct?.title ?? defaults.targetLabel,
+          target_item_id: targetProduct?.itemId ?? undefined,
+          strength: defaults.maliciousRatio,
+        },
+      },
       scenario: attacks.length > 0 ? 'attack_and_defense' : privacyMetricsList.length ? 'privacy_observation' : 'baseline',
-      mode: attacks.length > 0 ? 'comparison' : config.defenseEnabled ? 'defense' : 'baseline',
+      mode: attacks.length > 0 ? 'comparison' : enabledDefenses.length ? 'defense' : 'baseline',
     });
   };
 
@@ -481,6 +615,31 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
         <section className="grid gap-4 xl:grid-cols-2">{EXPERIMENT_PLAYS.map(renderPlayCard)}</section>
 
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+            <div>
+              <p className="text-xs font-bold tracking-[0.18em] text-cyan-100/70">剧本联动预览</p>
+              <h3 className="mt-1 text-xl font-bold text-white">选择剧本后，参数、监控、分析会同步切换</h3>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-bold text-slate-300">
+              当前：{selectedPlay.title}
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              {label: '数据集 / 模型', value: `${datasetLabel(selectedPlayDefaults.dataset)} / ${selectedPlayDefaults.model}`},
+              {label: '攻击', value: selectedPlayDefaults.attackLabel},
+              {label: '防御', value: selectedPlayDefaults.defenseLabel},
+              {label: '观测指标', value: selectedPlayDefaults.observations.join(' / ')},
+            ].map((item) => (
+              <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+                <p className="text-xs font-bold text-slate-500">{item.label}</p>
+                <p className="mt-2 text-sm font-bold leading-5 text-slate-100">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section className="sandbox-panel rounded-[28px] p-6">
           <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
             <div>
@@ -620,8 +779,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   )}
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {renderExpertControl('目标商品', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{targetProduct?.title ?? targetProduct?.itemId ?? EMPTY_VALUE}</div>)}
-                  {renderExpertControl('攻击强度', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{formatPercentValue(config.poisoningRatio)}</div>)}
+                  {renderExpertControl('目标商品', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{targetProduct?.title ?? targetProduct?.itemId ?? selectedPlayDefaults.targetLabel}</div>)}
+                  {renderExpertControl('攻击强度', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{formatPercentValue(config.poisoningRatio || selectedPlayDefaults.maliciousRatio)}</div>)}
                   {renderExpertControl('防御算法', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{secureModeActive ? '安全聚合模拟' : robustAlgorithm !== 'none' ? robustAlgorithm : dpLayerEnabled ? '差分隐私风格加噪' : '暂无防御'}</div>)}
                   {renderExpertControl('保存 TopK', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">5 / 15 / 50 按需读取</div>)}
                 </div>
@@ -668,18 +827,61 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const recoveryValues = buildSummaryCurve([0.22, metrics?.recoveryRate], 0.2, 0.72);
     const maliciousRatio = config.poisoningRatio || config.maliciousClientConfig?.ratio || 0;
     const roundNow = Math.max(1, Math.round((config.totalRounds || 10) * 0.7));
-    const logLines = [
-      `[Round 1] 客户端完成本地训练`,
-      `[Round ${Math.max(2, Math.round(roundNow / 2))}] 检测到恶意更新`,
-      defenseActive ? '[Defense] 鲁棒聚合正在过滤异常更新' : '[Defense] 当前观察无防御聚合路径',
-      `[Audit] 目标商品排序 ${rankStats.before ?? 170} -> ${rankStats.after ?? 3}`,
-      '[Export] 推荐列表与隐私审计结果已生成',
-    ];
+    const topologyDefenseActive = selectedPlay.id === 'robust_defense_play' ? true : selectedPlay.id === 'target_poisoning_play' ? false : defenseActive;
+    const logLinesByPlay: Record<ExperimentPlayId, string[]> = {
+      target_poisoning_play: [
+        '[Round 1] 客户端完成本地训练',
+        `[Round ${Math.max(2, Math.round(roundNow / 2))}] 检测到红色恶意更新流`,
+        `[Attack] 目标商品正反馈注入已进入排序审计`,
+        `[Audit] 目标商品排序 ${rankStats.before ?? 170} -> ${rankStats.after ?? 3}`,
+        `[Audit] 最终 Top50 曝光：${getFinalExposureText(report)}`,
+      ],
+      membership_privacy_play: [
+        '[Round 1] 客户端完成本地训练',
+        '[Audit] 成员推断审计开始',
+        `[Audit] AUC=${formatMetricValue(privacyMetrics.miaAuc)}，accuracy=${formatMetricValue(privacyMetrics.miaAccuracy)}`,
+        `[Evidence] 证据类型：${privacyMetrics.miaEvidence}`,
+        '[Export] 成员推断摘要已进入单次分析',
+      ],
+      update_leakage_play: [
+        '[Round 1] 客户端完成本地训练',
+        '[Audit] 客户端更新分析开始',
+        `[Audit] hit@10=${formatMetricValue(privacyMetrics.hit10)} / hit@20=${formatMetricValue(privacyMetrics.hit20)} / hit@50=${formatMetricValue(privacyMetrics.hit50)}`,
+        `[Risk] 最高风险模态：${privacyMetrics.riskyModality}`,
+        '[Export] 候选交互还原摘要已生成',
+      ],
+      robust_defense_play: [
+        '[Round 1] 客户端完成本地训练',
+        `[Defense] ${robustAlgorithm !== 'none' ? robustAlgorithm : 'Krum'} 正在过滤异常更新`,
+        `[Defense] 当前聚合可见性：${aggregationMode === 'secure_aggregation' ? '安全聚合模拟' : '明文更新聚合'}`,
+        `[Audit] 防御恢复率：${formatPercentValue(metrics?.recoveryRate)}`,
+        '[Export] 鲁棒防御摘要已生成',
+      ],
+    };
+    const logLines = logLinesByPlay[selectedPlay.id];
+    const monitoringFocusByPlay: Record<ExperimentPlayId, Array<{label: string; value: string; tone?: string}>> = {
+      target_poisoning_play: [
+        {label: '目标排序', value: `${rankStats.before ?? 170} -> ${rankStats.after ?? 3}`, tone: 'text-rose-100'},
+        {label: '最终曝光', value: getFinalExposureText(report), tone: 'text-emerald-100'},
+      ],
+      membership_privacy_play: [
+        {label: 'MIA AUC', value: formatMetricValue(privacyMetrics.miaAuc), tone: 'text-violet-100'},
+        {label: '准确率', value: formatMetricValue(privacyMetrics.miaAccuracy), tone: 'text-violet-100'},
+      ],
+      update_leakage_play: [
+        {label: 'hit@10', value: formatMetricValue(privacyMetrics.hit10), tone: 'text-cyan-100'},
+        {label: 'hit@50', value: formatMetricValue(privacyMetrics.hit50), tone: 'text-cyan-100'},
+      ],
+      robust_defense_play: [
+        {label: '恢复率', value: formatPercentValue(metrics?.recoveryRate), tone: 'text-emerald-100'},
+        {label: '过滤算法', value: robustAlgorithm !== 'none' ? robustAlgorithm : 'Krum', tone: 'text-emerald-100'},
+      ],
+    };
 
     return (
       <div className="space-y-5">
         <section className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
-          <FederatedTopology mode="exercise" defenseActive={defenseActive} className="min-h-[520px]" />
+          <FederatedTopology mode="exercise" defenseActive={topologyDefenseActive} className="min-h-[520px]" />
           <div className="sandbox-panel rounded-[28px] p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
@@ -705,6 +907,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
                   <p className="text-xs font-bold text-slate-500">{item.label}</p>
                   <p className="mt-1 font-mono text-lg font-black text-slate-100">{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {monitoringFocusByPlay[selectedPlay.id].map((item) => (
+                <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+                  <p className="text-xs font-bold text-slate-500">{item.label}</p>
+                  <p className={cn('mt-1 font-mono text-lg font-black', item.tone ?? 'text-slate-100')}>{item.value}</p>
                 </div>
               ))}
             </div>
@@ -745,12 +956,44 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   };
 
   const renderAnalysis = () => {
-    const targetTitle = targetProduct?.title ?? '目标商品';
+    const targetTitle = targetProduct?.title ?? selectedPlayDefaults.targetLabel;
     const candidateItems = [
       ...(report.recommendationComparison?.attack ?? []),
       ...(report.recommendationComparison?.baseline ?? []),
       ...(report.recommendationComparison?.defense ?? []),
     ].slice(0, 6);
+    const analysisHeadlineByPlay: Record<ExperimentPlayId, string> = {
+      target_poisoning_play: `目标商品在未屏蔽排序中从第 ${rankStats.before ?? 170} 位提升到第 ${rankStats.after ?? 3} 位，但最终 Top50 推荐列表未曝光。`,
+      membership_privacy_play: `成员推断审计显示 AUC 为 ${formatMetricValue(privacyMetrics.miaAuc)}，攻击者尝试判断匿名 user-item 记录是否参与训练。`,
+      update_leakage_play: `客户端更新泄露审计显示 hit@50 为 ${formatMetricValue(privacyMetrics.hit50)}，这是候选交互还原，不是完整用户历史恢复。`,
+      robust_defense_play: `鲁棒聚合防御重点观察 Recall@50 / NDCG@50 恢复和异常更新过滤，当前恢复率为 ${formatPercentValue(report.metricsSummary?.recoveryRate)}。`,
+    };
+    const analysisFocusCards: Record<ExperimentPlayId, Array<{label: string; value: string; note?: string; tone?: string}>> = {
+      target_poisoning_play: [
+        {label: '目标排序', value: `${rankStats.before ?? 170} -> ${rankStats.after ?? 3}`, tone: 'text-rose-100'},
+        {label: '排名提升', value: formatSigned(rankStats.rankLift, 0), tone: 'text-rose-100'},
+        {label: '最终 Top50 曝光', value: getFinalExposureText(report), tone: 'text-emerald-100'},
+        {label: '目标操纵风险分', value: rankStats.manipulationRisk !== null ? `${rankStats.manipulationRisk.toFixed(1)}` : EMPTY_VALUE, note: '展示指标，不作为标准学术指标。', tone: 'text-rose-100'},
+      ],
+      membership_privacy_play: [
+        {label: 'MIA AUC', value: formatMetricValue(privacyMetrics.miaAuc), tone: 'text-violet-100'},
+        {label: '准确率', value: formatMetricValue(privacyMetrics.miaAccuracy), tone: 'text-violet-100'},
+        {label: '证据类型', value: privacyMetrics.miaEvidence, tone: 'text-slate-100'},
+        {label: '匿名样例', value: 'user-*** / item-***', note: '只展示匿名形式，不泄露完整历史。', tone: 'text-slate-100'},
+      ],
+      update_leakage_play: [
+        {label: 'hit@10', value: formatMetricValue(privacyMetrics.hit10), tone: 'text-cyan-100'},
+        {label: 'hit@20', value: formatMetricValue(privacyMetrics.hit20), tone: 'text-cyan-100'},
+        {label: 'hit@50', value: formatMetricValue(privacyMetrics.hit50), tone: 'text-cyan-100'},
+        {label: '最高风险模态', value: privacyMetrics.riskyModality, note: '候选还原，不是完整用户历史恢复。', tone: 'text-cyan-100'},
+      ],
+      robust_defense_play: [
+        {label: 'Recall@50', value: formatMetricValue(report.metricsSummary?.defense?.recall50 ?? report.metricsSummary?.baseline?.recall50), tone: 'text-cyan-100'},
+        {label: 'NDCG@50', value: formatMetricValue(report.metricsSummary?.defense?.ndcg50 ?? report.metricsSummary?.baseline?.ndcg50), tone: 'text-violet-100'},
+        {label: '防御恢复率', value: formatPercentValue(report.metricsSummary?.recoveryRate), tone: 'text-emerald-100'},
+        {label: '异常更新过滤', value: formatPlainValue(report.defenseTrace?.filteredClients ?? report.defenseTrace?.clippedClients), tone: 'text-emerald-100'},
+      ],
+    };
 
     return (
       <div className="space-y-5">
@@ -758,18 +1001,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
             <div>
               <p className="text-xs font-bold tracking-[0.2em] text-rose-100/75">本次实验结论</p>
-              <h2 className="mt-2 text-2xl font-black leading-tight text-white">
-                目标商品在未屏蔽排序中从第 {rankStats.before ?? 170} 位提升到第 {rankStats.after ?? 3} 位，但最终 Top50 推荐列表未曝光。
-              </h2>
+              <h2 className="mt-2 text-2xl font-black leading-tight text-white">{analysisHeadlineByPlay[selectedPlay.id]}</h2>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
-                这说明模型内部排序已被显著推动，但最终推荐曝光仍为未命中；工作台不会把这一结果写成攻击成功。
+                当前单次分析会优先展示所选剧本的关键证据，再给出推荐、隐私和防御的交叉摘要。
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <MetricTile label="排名提升" value={formatSigned(rankStats.rankLift, 0)} tone="text-rose-100" />
-              <MetricTile label="最终 Top50 曝光" value={getFinalExposureText(report)} tone="text-emerald-100" />
-              <MetricTile label="成员推断 AUC" value={formatMetricValue(privacyMetrics.miaAuc)} tone="text-violet-100" />
-              <MetricTile label="交互还原 hit@50" value={formatMetricValue(privacyMetrics.hit50)} tone="text-cyan-100" />
+              {analysisFocusCards[selectedPlay.id].map((item) => (
+                <MetricTile key={item.label} label={item.label} value={item.value} note={item.note} tone={item.tone} />
+              ))}
             </div>
           </div>
         </section>
@@ -794,6 +1034,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                     {rankStats.after ?? 3}
                   </span>
                 </div>
+                <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
+                  内部排序已推进，但最终曝光未命中。
+                </p>
                 {!targetAppearsInLoadedList && getFinalExposureText(report) === '最终曝光未命中' ? (
                   <p className="mt-4 rounded-2xl border border-emerald-200/20 bg-emerald-300/10 px-3 py-2 text-sm font-semibold text-emerald-100">
                     目标商品未进入最终推荐列表，不插入推荐对照。
@@ -940,29 +1183,29 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       attack: [
         {key: 'scenario', label: '场景', render: (row) => row.scenario},
         {key: 'attack', label: '攻击类型', render: (row) => row.attack},
-        {key: 'rankGain', label: '目标排序提升', render: (row) => formatSigned(row.rankGain, 0)},
-        {key: 'top50', label: 'Top50 命中', render: (row) => row.top50},
-        {key: 'change', label: '推荐列表变化率', render: (row) => formatRatio(row.rankGain !== null && row.rankGain !== undefined ? Math.min(1, Math.max(0, row.rankGain / 169)) : null)},
-        {key: 'miaAuc', label: 'MIA AUC', render: (row) => formatMetricValue(row.miaAuc)},
-        {key: 'hit50', label: '交互还原 hit@50', render: (row) => formatMetricValue(row.hit50)},
+        {key: 'rankGain', label: '目标排序提升', render: (row) => formatCellValue(formatSigned(row.rankGain, 0))},
+        {key: 'top50', label: 'Top50 命中', render: (row) => formatCellValue(row.top50)},
+        {key: 'change', label: '推荐列表变化率', render: (row) => formatCellValue(formatRatio(row.rankGain !== null && row.rankGain !== undefined ? Math.min(1, Math.max(0, row.rankGain / 169)) : null))},
+        {key: 'miaAuc', label: 'MIA AUC', render: (row) => formatCellValue(formatMetricValue(row.miaAuc))},
+        {key: 'hit50', label: '交互还原 hit@50', render: (row) => formatCellValue(formatMetricValue(row.hit50))},
       ],
       defense: [
         {key: 'scenario', label: '场景', render: (row) => row.scenario},
         {key: 'defense', label: '防御类型', render: (row) => row.defense},
-        {key: 'recall', label: 'Recall@50', render: (row) => formatMetricValue(row.recall)},
-        {key: 'ndcg', label: 'NDCG@50', render: (row) => formatMetricValue(row.ndcg)},
-        {key: 'recovery', label: '防御恢复率', render: (row) => formatPercentValue(row.recovery)},
+        {key: 'recall', label: 'Recall@50', render: (row) => formatCellValue(formatMetricValue(row.recall))},
+        {key: 'ndcg', label: 'NDCG@50', render: (row) => formatCellValue(formatMetricValue(row.ndcg))},
+        {key: 'recovery', label: '防御恢复率', render: (row) => formatCellValue(formatPercentValue(row.recovery))},
         {key: 'filtered', label: '异常更新过滤', render: (row) => (row.defense.includes('鲁棒') ? '已展示' : EMPTY_VALUE)},
-        {key: 'residual', label: '安全聚合残差', render: (row) => formatSmallNumber(row.residual)},
+        {key: 'residual', label: '安全聚合残差', render: (row) => formatCellValue(formatSmallNumber(row.residual))},
       ],
       privacy: [
         {key: 'scenario', label: '场景', render: (row) => row.scenario},
-        {key: 'miaAuc', label: 'MIA AUC', render: (row) => formatMetricValue(row.miaAuc)},
-        {key: 'evidence', label: '成员推断证据类型', render: (row) => row.evidence},
-        {key: 'hit10', label: 'hit@10', render: (row) => formatMetricValue(row.hit10)},
-        {key: 'hit20', label: 'hit@20', render: (row) => formatMetricValue(row.hit20)},
-        {key: 'hit50', label: 'hit@50', render: (row) => formatMetricValue(row.hit50)},
-        {key: 'modality', label: '最高风险模态', render: (row) => row.modality},
+        {key: 'miaAuc', label: 'MIA AUC', render: (row) => formatCellValue(formatMetricValue(row.miaAuc))},
+        {key: 'evidence', label: '成员推断证据类型', render: (row) => formatCellValue(row.evidence)},
+        {key: 'hit10', label: 'hit@10', render: (row) => formatCellValue(formatMetricValue(row.hit10))},
+        {key: 'hit20', label: 'hit@20', render: (row) => formatCellValue(formatMetricValue(row.hit20))},
+        {key: 'hit50', label: 'hit@50', render: (row) => formatCellValue(formatMetricValue(row.hit50))},
+        {key: 'modality', label: '最高风险模态', render: (row) => formatCellValue(row.modality)},
         {key: 'dp', label: 'DP-style noise', render: (row) => (row.defense.includes('差分') ? '使用' : '未标注')},
         {key: 'secagg', label: '安全聚合', render: (row) => (row.defense.includes('安全聚合') ? '模拟' : '未标注')},
       ],
@@ -1003,6 +1246,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               </button>
             ))}
           </div>
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3">
+            <p className="text-xs font-bold text-slate-500">当前在比什么</p>
+            <p className="mt-1 text-sm font-semibold text-slate-100">
+              {comparisonModes.find((mode) => mode.id === comparisonMode)?.description}
+            </p>
+          </div>
         </section>
 
         <section className="sandbox-panel overflow-hidden rounded-[28px] p-0">
@@ -1020,15 +1269,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <tbody className="divide-y divide-white/10">
                 {comparisonRows.map((row) => (
                   <tr key={row.id} className="hover:bg-white/[0.035]">
-                    {columns.map((column) => (
-                      <td key={column.key} className="max-w-[280px] px-4 py-4 text-sm text-slate-200">
-                        {column.render(row)}
-                      </td>
-                    ))}
+                    {columns.map((column) => {
+                      const rendered = column.render(row);
+                      return (
+                        <td key={column.key} className={cn('max-w-[280px] px-4 py-4 text-sm', rendered === '未导出' ? 'text-slate-500' : 'text-slate-200')}>
+                          {rendered}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="border-t border-white/10 px-4 py-3 text-xs text-slate-500">
+            缺失指标统一显示为“未导出”，表示当前结果文件没有该字段，不使用演示数据补齐。
           </div>
         </section>
 
@@ -1115,6 +1370,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               type="button"
               onClick={() => {
                 setSelectedScenarioId(scenario.scenarioId);
+                setSwitchMessage(`已切换到 ${getScenarioTitle(scenario, scenarioReport)} 场景`);
                 setActiveTab('analysis');
               }}
               className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 text-left transition hover:-translate-y-0.5 hover:border-cyan-200/30 hover:bg-cyan-300/10"
@@ -1122,6 +1378,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-lg font-black text-white">{getScenarioTitle(scenario, scenarioReport)}</p>
+                  <p className="mt-1 text-xs text-slate-500">{scenario.displayName ?? scenario.name}</p>
                   <p className="mt-1 text-sm text-slate-400">{datasetLabel(scenarioReport?.dataset ?? scenario.dataset)} / {scenarioReport?.model ?? scenario.model ?? EMPTY_VALUE}</p>
                 </div>
                 <span className="rounded-full border border-emerald-200/25 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-100">
@@ -1207,6 +1464,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             );
           })}
         </nav>
+
+        {switchMessage ? (
+          <div className="rounded-3xl border border-emerald-200/25 bg-emerald-300/10 px-4 py-3 text-sm font-bold text-emerald-100">
+            {switchMessage}
+          </div>
+        ) : null}
 
         {renderActiveTab()}
 
