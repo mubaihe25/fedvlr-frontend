@@ -313,6 +313,22 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const selectedPlay = EXPERIMENT_PLAYS.find((play) => play.id === selectedPlayId) ?? EXPERIMENT_PLAYS[0];
   const selectedPlayDefaults = playDefaults[selectedPlay.id];
   const rankStats = getTargetRanks(report);
+  const fallbackBefore = selectedPlay.id === 'target_poisoning_play' ? 170 : null;
+  const fallbackAfter = selectedPlay.id === 'target_poisoning_play' ? 3 : null;
+  const displayRankBefore = rankStats.before ?? fallbackBefore;
+  const displayRankAfter = rankStats.after ?? fallbackAfter;
+  const displayRankLift =
+    rankStats.rankLift ?? (typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number' ? displayRankBefore - displayRankAfter : null);
+  const displayNormalizedLift =
+    rankStats.normalizedLift ??
+    (displayRankLift !== null && typeof displayRankBefore === 'number' && displayRankBefore > 1 ? displayRankLift / (displayRankBefore - 1) : null);
+  const displayReciprocalGain =
+    rankStats.reciprocalGain ??
+    (typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number' && displayRankBefore > 0 && displayRankAfter > 0
+      ? 1 / displayRankAfter - 1 / displayRankBefore
+      : null);
+  const displayManipulationRisk =
+    rankStats.manipulationRisk ?? (displayNormalizedLift !== null ? Math.max(0, Math.min(100, displayNormalizedLift * 100)) : null);
   const privacyMetrics = getPrivacyMetrics(report);
   const targetProduct = getTargetProduct(report);
   const targetImageItem = targetProduct
@@ -505,7 +521,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   };
 
   const handleStartExperiment = () => {
-    setSubmitMessage('当前版本读取已完成结果进行演示；开始实验按钮后续连接训练任务调度。');
+    setSubmitMessage('训练任务待接入；当前读取已完成实验结果进行演示。');
     setActiveTab('monitoring');
   };
 
@@ -779,7 +795,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   )}
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {renderExpertControl('目标商品', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{targetProduct?.title ?? targetProduct?.itemId ?? selectedPlayDefaults.targetLabel}</div>)}
+                  {renderExpertControl(
+                    selectedPlay.id === 'target_poisoning_play' ? '目标商品' : '观测对象',
+                    <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">
+                      {selectedPlay.id === 'target_poisoning_play' ? targetProduct?.title ?? targetProduct?.itemId ?? selectedPlayDefaults.targetLabel : selectedPlayDefaults.targetLabel}
+                    </div>,
+                  )}
                   {renderExpertControl('攻击强度', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{formatPercentValue(config.poisoningRatio || selectedPlayDefaults.maliciousRatio)}</div>)}
                   {renderExpertControl('防御算法', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{secureModeActive ? '安全聚合模拟' : robustAlgorithm !== 'none' ? robustAlgorithm : dpLayerEnabled ? '差分隐私风格加噪' : '暂无防御'}</div>)}
                   {renderExpertControl('保存 TopK', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">5 / 15 / 50 按需读取</div>)}
@@ -809,7 +830,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200/35 bg-emerald-300/12 px-4 py-2 text-sm font-bold text-emerald-50 hover:bg-emerald-300/18"
             >
               <Play className="h-4 w-4" />
-              开始实验
+              读取已完成实验
             </button>
             {submitMessage ? <span className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-slate-300">{submitMessage}</span> : null}
           </div>
@@ -823,7 +844,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const recallValues = buildSummaryCurve([metrics?.baseline?.recall50, metrics?.attack?.recall50, metrics?.defense?.recall50], 0.31, 0.35);
     const ndcgValues = buildSummaryCurve([metrics?.baseline?.ndcg50, metrics?.attack?.ndcg50, metrics?.defense?.ndcg50], 0.18, 0.2);
     const lossValues = interpolate(0.72, 0.31);
-    const riskValues = buildSummaryCurve([0.18, rankStats.normalizedLift, privacyMetrics.miaAuc], 0.15, 0.56);
+    const riskValues = buildSummaryCurve([0.18, displayNormalizedLift, privacyMetrics.miaAuc], 0.15, 0.56);
     const recoveryValues = buildSummaryCurve([0.22, metrics?.recoveryRate], 0.2, 0.72);
     const maliciousRatio = config.poisoningRatio || config.maliciousClientConfig?.ratio || 0;
     const roundNow = Math.max(1, Math.round((config.totalRounds || 10) * 0.7));
@@ -833,7 +854,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         '[Round 1] 客户端完成本地训练',
         `[Round ${Math.max(2, Math.round(roundNow / 2))}] 检测到红色恶意更新流`,
         `[Attack] 目标商品正反馈注入已进入排序审计`,
-        `[Audit] 目标商品排序 ${rankStats.before ?? 170} -> ${rankStats.after ?? 3}`,
+        `[Audit] 目标商品排序 ${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`,
         `[Audit] 最终 Top50 曝光：${getFinalExposureText(report)}`,
       ],
       membership_privacy_play: [
@@ -861,7 +882,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const logLines = logLinesByPlay[selectedPlay.id];
     const monitoringFocusByPlay: Record<ExperimentPlayId, Array<{label: string; value: string; tone?: string}>> = {
       target_poisoning_play: [
-        {label: '目标排序', value: `${rankStats.before ?? 170} -> ${rankStats.after ?? 3}`, tone: 'text-rose-100'},
+        {label: '目标排序', value: `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`, tone: 'text-rose-100'},
         {label: '最终曝光', value: getFinalExposureText(report), tone: 'text-emerald-100'},
       ],
       membership_privacy_play: [
@@ -947,7 +968,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <Sparkline label="Loss" values={lossValues} tone="text-slate-200" valueText={lossValues.at(-1)?.toFixed(3) ?? EMPTY_VALUE} />
             <Sparkline label="Recall@50" values={recallValues} tone="text-cyan-100" valueText={formatMetricValue(metrics?.defense?.recall50 ?? metrics?.baseline?.recall50)} />
             <Sparkline label="NDCG@50" values={ndcgValues} tone="text-violet-100" valueText={formatMetricValue(metrics?.defense?.ndcg50 ?? metrics?.baseline?.ndcg50)} />
-            <Sparkline label="攻击风险" values={riskValues} tone="text-rose-100" valueText={formatRatio(rankStats.normalizedLift ?? privacyMetrics.miaAuc)} />
+            <Sparkline label="攻击风险" values={riskValues} tone="text-rose-100" valueText={formatRatio(displayNormalizedLift ?? privacyMetrics.miaAuc)} />
             <Sparkline label="防御恢复" values={recoveryValues} tone="text-emerald-100" valueText={formatPercentValue(metrics?.recoveryRate)} />
           </div>
         </section>
@@ -962,18 +983,72 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       ...(report.recommendationComparison?.baseline ?? []),
       ...(report.recommendationComparison?.defense ?? []),
     ].slice(0, 6);
+    const priorityPanel = () => {
+      if (selectedPlay.id === 'membership_privacy_play') {
+        return (
+          <section className="sandbox-panel rounded-[28px] p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <UserSearch className="h-5 w-5 text-violet-100" />
+              <h3 className="text-xl font-bold text-white">成员推断优先证据</h3>
+            </div>
+            <p className="text-sm leading-6 text-slate-400">攻击者尝试判断匿名 user-item 记录是否参与训练，不展示完整用户历史。</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <MetricTile label="MIA AUC" value={formatMetricValue(privacyMetrics.miaAuc)} tone="text-violet-100" />
+              <MetricTile label="准确率" value={formatMetricValue(privacyMetrics.miaAccuracy)} tone="text-violet-100" />
+              <MetricTile label="证据类型" value={privacyMetrics.miaEvidence} />
+              <MetricTile label="匿名样例" value="user-*** / item-***" />
+            </div>
+          </section>
+        );
+      }
+      if (selectedPlay.id === 'update_leakage_play') {
+        return (
+          <section className="sandbox-panel rounded-[28px] p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <Database className="h-5 w-5 text-cyan-100" />
+              <h3 className="text-xl font-bold text-white">客户端更新泄露优先证据</h3>
+            </div>
+            <p className="text-sm leading-6 text-slate-400">这是候选交互还原，不是完整用户历史恢复。</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <MetricTile label="hit@10" value={formatMetricValue(privacyMetrics.hit10)} />
+              <MetricTile label="hit@20" value={formatMetricValue(privacyMetrics.hit20)} />
+              <MetricTile label="hit@50" value={formatMetricValue(privacyMetrics.hit50)} />
+              <MetricTile label="最高风险模态" value={privacyMetrics.riskyModality} />
+            </div>
+          </section>
+        );
+      }
+      if (selectedPlay.id === 'robust_defense_play') {
+        return (
+          <section className="sandbox-panel rounded-[28px] p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <ShieldCheck className="h-5 w-5 text-emerald-100" />
+              <h3 className="text-xl font-bold text-white">鲁棒防御优先证据</h3>
+            </div>
+            <p className="text-sm leading-6 text-slate-400">重点观察推荐性能恢复和异常更新过滤；鲁棒聚合要求服务端能看到逐客户端更新。</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <MetricTile label="Recall@50" value={formatMetricValue(report.metricsSummary?.defense?.recall50 ?? report.metricsSummary?.baseline?.recall50)} />
+              <MetricTile label="NDCG@50" value={formatMetricValue(report.metricsSummary?.defense?.ndcg50 ?? report.metricsSummary?.baseline?.ndcg50)} />
+              <MetricTile label="恢复率" value={formatPercentValue(report.metricsSummary?.recoveryRate)} tone="text-emerald-100" />
+              <MetricTile label="过滤客户端" value={formatPlainValue(report.defenseTrace?.filteredClients ?? report.defenseTrace?.clippedClients)} />
+            </div>
+          </section>
+        );
+      }
+      return null;
+    };
     const analysisHeadlineByPlay: Record<ExperimentPlayId, string> = {
-      target_poisoning_play: `目标商品在未屏蔽排序中从第 ${rankStats.before ?? 170} 位提升到第 ${rankStats.after ?? 3} 位，但最终 Top50 推荐列表未曝光。`,
+      target_poisoning_play: `目标商品在未屏蔽排序中从第 ${displayRankBefore ?? 170} 位提升到第 ${displayRankAfter ?? 3} 位，但最终 Top50 推荐列表未曝光。`,
       membership_privacy_play: `成员推断审计显示 AUC 为 ${formatMetricValue(privacyMetrics.miaAuc)}，攻击者尝试判断匿名 user-item 记录是否参与训练。`,
       update_leakage_play: `客户端更新泄露审计显示 hit@50 为 ${formatMetricValue(privacyMetrics.hit50)}，这是候选交互还原，不是完整用户历史恢复。`,
       robust_defense_play: `鲁棒聚合防御重点观察 Recall@50 / NDCG@50 恢复和异常更新过滤，当前恢复率为 ${formatPercentValue(report.metricsSummary?.recoveryRate)}。`,
     };
     const analysisFocusCards: Record<ExperimentPlayId, Array<{label: string; value: string; note?: string; tone?: string}>> = {
       target_poisoning_play: [
-        {label: '目标排序', value: `${rankStats.before ?? 170} -> ${rankStats.after ?? 3}`, tone: 'text-rose-100'},
-        {label: '排名提升', value: formatSigned(rankStats.rankLift, 0), tone: 'text-rose-100'},
+        {label: '目标排序', value: `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`, tone: 'text-rose-100'},
+        {label: '排名提升', value: formatSigned(displayRankLift, 0), tone: 'text-rose-100'},
         {label: '最终 Top50 曝光', value: getFinalExposureText(report), tone: 'text-emerald-100'},
-        {label: '目标操纵风险分', value: rankStats.manipulationRisk !== null ? `${rankStats.manipulationRisk.toFixed(1)}` : EMPTY_VALUE, note: '展示指标，不作为标准学术指标。', tone: 'text-rose-100'},
+        {label: '目标操纵风险分', value: displayManipulationRisk !== null ? `${displayManipulationRisk.toFixed(1)}` : EMPTY_VALUE, note: '展示指标，不作为标准学术指标。', tone: 'text-rose-100'},
       ],
       membership_privacy_play: [
         {label: 'MIA AUC', value: formatMetricValue(privacyMetrics.miaAuc), tone: 'text-violet-100'},
@@ -1014,6 +1089,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           </div>
         </section>
 
+        {priorityPanel()}
+
         <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
           <div className="sandbox-panel rounded-[28px] p-5">
             <div className="mb-4 flex items-center gap-3">
@@ -1027,11 +1104,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 <p className="mt-2 text-sm text-slate-400">{targetProduct?.category ?? '暂无类目'}</p>
                 <div className="mt-4 flex items-center gap-3">
                   <span className="rounded-2xl border border-slate-200/20 bg-slate-300/10 px-4 py-2 font-mono text-2xl font-black text-slate-100">
-                    {rankStats.before ?? 170}
+                    {displayRankBefore ?? 170}
                   </span>
                   <ChevronRight className="h-6 w-6 text-rose-100" />
                   <span className="rounded-2xl border border-rose-200/35 bg-rose-300/12 px-4 py-2 font-mono text-2xl font-black text-rose-100">
-                    {rankStats.after ?? 3}
+                    {displayRankAfter ?? 3}
                   </span>
                 </div>
                 <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
@@ -1045,11 +1122,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               </div>
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <MetricTile label="原始未屏蔽排序" value={formatRank(rankStats.before)} />
-              <MetricTile label="攻击后未屏蔽排序" value={formatRank(rankStats.after)} tone="text-rose-100" />
-              <MetricTile label="归一化提升" value={formatRatio(rankStats.normalizedLift)} tone="text-rose-100" />
-              <MetricTile label="倒数排名增益" value={formatSmallNumber(rankStats.reciprocalGain)} tone="text-amber-100" />
-              <MetricTile label="目标操纵风险分" value={rankStats.manipulationRisk !== null ? `${rankStats.manipulationRisk.toFixed(1)}` : EMPTY_VALUE} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
+              <MetricTile label="原始未屏蔽排序" value={formatRank(displayRankBefore)} />
+              <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" />
+              <MetricTile label="归一化提升" value={formatRatio(displayNormalizedLift)} tone="text-rose-100" />
+              <MetricTile label="倒数排名增益" value={formatSmallNumber(displayReciprocalGain)} tone="text-amber-100" />
+              <MetricTile label="目标操纵风险分" value={displayManipulationRisk !== null ? `${displayManipulationRisk.toFixed(1)}` : EMPTY_VALUE} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
               <MetricTile label="最终 Top50 曝光" value={getFinalExposureText(report)} tone="text-emerald-100" />
             </div>
           </div>
@@ -1293,8 +1370,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <p className="text-sm font-bold text-white">{row.scenario}</p>
               {[
                 {label: '目标排序提升', value: row.rankGain ? Math.min(1, row.rankGain / 169) : 0, text: formatSigned(row.rankGain, 0), tone: 'bg-rose-300'},
-                {label: 'MIA AUC', value: row.miaAuc ?? 0, text: formatMetricValue(row.miaAuc), tone: 'bg-violet-300'},
-                {label: '防御恢复率', value: row.recovery ?? 0, text: formatPercentValue(row.recovery), tone: 'bg-emerald-300'},
+                {label: 'MIA AUC', value: row.miaAuc ?? 0, text: formatCellValue(formatMetricValue(row.miaAuc)), tone: 'bg-violet-300'},
+                {label: '防御恢复率', value: row.recovery ?? 0, text: formatCellValue(formatPercentValue(row.recovery)), tone: 'bg-emerald-300'},
               ].map((item) => (
                 <div key={item.label} className="mt-4">
                   <div className="mb-1 flex justify-between text-xs text-slate-400">

@@ -72,6 +72,12 @@ export const scenarioText = (scenario: ShowcaseScenario, report?: ShowcaseReport
 export const getScenarioTitle = (scenario: ShowcaseScenario, report?: ShowcaseReport) => {
   const text = scenarioText(scenario, report);
   if (text.includes('v25')) return 'Amazon V2.5 定向投毒链路';
+  if (text.includes('target rank comparison')) return 'Amazon 目标排序对照';
+  if (text.includes('target injection')) return 'Amazon 目标交互注入';
+  if (text.includes('target manipulation observation')) return 'Amazon 目标操纵观测';
+  if (text.includes('target manipulation')) return 'Amazon 目标操纵验证';
+  if (text.includes('baseline smoke')) return 'Amazon 基线推荐冒烟';
+  if (text.includes('product security smoke') || text.includes('security smoke')) return 'Amazon 商品安全冒烟';
   if (text.includes('krum') || text.includes('security_matrix')) return '鲁棒聚合防御链路';
   if (text.includes('matrix') || text.includes('capability')) return '模型能力矩阵';
   if (text.includes('ku')) return 'KU 多模态攻防展示';
