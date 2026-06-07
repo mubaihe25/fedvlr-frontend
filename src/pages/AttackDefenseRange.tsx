@@ -86,6 +86,11 @@ interface AttackDefenseRangeProps {
 type AggregationMode = keyof typeof AGGREGATION_VISIBILITY_MODES;
 type ComparisonMode = 'attack' | 'defense' | 'privacy' | 'capability';
 type ParamPanelId = 'basic' | 'advanced';
+type AttackStrength = '弱' | '中' | '强';
+type EvidenceSource = 'rank' | 'unmasked rank' | 'checkpoint score' | 'auto';
+type CandidateLimit = 'Top10' | 'Top20' | 'Top50';
+type RiskModality = 'item embedding' | 'image' | 'text';
+type ActionState = 'idle' | 'validating' | 'starting';
 type ArchiveFilter = '全部' | '主展示' | 'Amazon' | 'KU' | '投毒' | '隐私攻击' | '鲁棒防御' | '有图片' | '有推荐列表';
 
 const tabs: Array<{id: WorkbenchTabId; label: string; icon: React.ComponentType<{className?: string}>}> = [
@@ -215,8 +220,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   initialTab = 'orchestration',
   session,
   onDraftConfigChange,
-  onStartTrain,
-  onLaunchStatusChange,
 }) => {
   const {bundle, isLoading, setSelectedScenarioId} = useShowcaseBundle();
   const [activeTab, setActiveTab] = useState<WorkbenchTabId>(initialTab);
@@ -226,6 +229,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [aggregationMode, setAggregationMode] = useState<AggregationMode>('plain_updates');
   const [robustAlgorithm, setRobustAlgorithm] = useState('Krum');
   const [dpLayerEnabled, setDpLayerEnabled] = useState(false);
+  const [targetItemTitle, setTargetItemTitle] = useState('Empty Amber Glass Spray Bottles');
+  const [attackStrength, setAttackStrength] = useState<AttackStrength>('强');
+  const [saveTopKEnabled, setSaveTopKEnabled] = useState(true);
+  const [exportAuditEnabled, setExportAuditEnabled] = useState(true);
+  const [evidenceSource, setEvidenceSource] = useState<EvidenceSource>('auto');
+  const [membershipLabelSource, setMembershipLabelSource] = useState('membership labels');
+  const [membershipSampleCount, setMembershipSampleCount] = useState(200);
+  const [membershipMetrics, setMembershipMetrics] = useState(['AUC', 'Accuracy', 'score gap']);
+  const [candidateLimit, setCandidateLimit] = useState<CandidateLimit>('Top50');
+  const [riskModality, setRiskModality] = useState<RiskModality>('item embedding');
+  const [leakageMetrics, setLeakageMetrics] = useState(['hit@10', 'hit@20', 'hit@50']);
+  const [noiseStrength, setNoiseStrength] = useState(0.15);
+  const [defenseMetrics, setDefenseMetrics] = useState(['Recall@50', 'NDCG@50', '防御恢复率', '异常过滤']);
+  const [highlightedParam, setHighlightedParam] = useState('');
+  const [actionState, setActionState] = useState<ActionState>('idle');
   const [defenseActive, setDefenseActive] = useState(true);
   const [submitMessage, setSubmitMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -286,8 +304,20 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   ].some((item) => sameItem(item.itemId, targetProduct?.itemId));
 
   useEffect(() => {
+    if (targetProduct?.title) {
+      setTargetItemTitle(targetProduct.title);
+    }
+  }, [targetProduct?.title]);
+
+  useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    if (!highlightedParam) return;
+    const timer = window.setTimeout(() => setHighlightedParam(''), 900);
+    return () => window.clearTimeout(timer);
+  }, [highlightedParam]);
 
   useEffect(() => {
     if (autoSelectedRef.current || !bundle.scenarios.length) return;
@@ -330,8 +360,29 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     return Array.from(new Set(values));
   }, [bundle.scenarios, config.model]);
 
+  const targetOptions = useMemo(() => {
+    const items = [
+      targetProduct ? {id: targetProduct.itemId ?? targetProduct.title, title: targetProduct.title ?? targetProduct.itemId ?? 'Empty Amber Glass Spray Bottles'} : null,
+      ...(report.recommendationComparison?.attack ?? []).slice(0, 12).map((item) => ({id: item.itemId, title: item.title ?? `商品 ${item.itemId}`})),
+      ...(report.recommendationComparison?.baseline ?? []).slice(0, 8).map((item) => ({id: item.itemId, title: item.title ?? `商品 ${item.itemId}`})),
+    ].filter((item): item is {id?: string | number | null; title: string} => Boolean(item?.title));
+    const seen = new Set<string>();
+    const unique = items.filter((item) => {
+      const key = String(item.id ?? item.title);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return unique.length ? unique : [{id: 'empty-amber-glass-spray-bottles', title: 'Empty Amber Glass Spray Bottles'}];
+  }, [report.recommendationComparison?.attack, report.recommendationComparison?.baseline, targetProduct]);
+
   const updateConfig = (patch: Partial<TrainConfig>) => {
     onDraftConfigChange({...config, ...patch});
+  };
+
+  const markParamChanged = (label: string) => {
+    setHighlightedParam(label);
+    setSubmitMessage('');
   };
 
   const findScenarioForPlay = (playId: ExperimentPlayId) => {
@@ -354,6 +405,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     setAggregationMode(playbook.aggregationMode);
     setRobustAlgorithm(playbook.robustAlgorithm);
     setDpLayerEnabled(playbook.dpLayer);
+    setTargetItemTitle(targetProduct?.title ?? playbook.targetLabel);
+    setAttackStrength(playbook.id === 'target_poisoning_play' ? '强' : attackStrength);
+    setSaveTopKEnabled(true);
+    setExportAuditEnabled(true);
+    setEvidenceSource(playbook.id === 'membership_privacy_play' ? 'auto' : evidenceSource);
+    setCandidateLimit(playbook.id === 'update_leakage_play' ? 'Top50' : candidateLimit);
+    setRiskModality(playbook.id === 'update_leakage_play' ? 'item embedding' : riskModality);
+    setNoiseStrength(0.15);
     const attacks = playbook.attackModules.includes('target_poisoning') ? ['poisoning_attack'] : [];
     const privacyMetricsList = playbook.attackModules
       .filter((id) => id === 'membership_inference' || id === 'interaction_reconstruction')
@@ -461,23 +520,23 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   };
 
   const handleValidate = async () => {
-    try {
-      setIsSubmitting(true);
-      setSubmitMessage('');
-      const response = await onStartTrain(config, {validateOnly: true, dryRun: false, strictValidation: false});
-      if (response.launchResult) onLaunchStatusChange(response.launchResult);
-      setSubmitMessage(response.status === 'failed' ? response.message : '配置校验已完成，可切换到运行监控查看实验摘要。');
-      setActiveTab('monitoring');
-    } catch (error) {
-      setSubmitMessage(error instanceof Error ? error.message : '配置校验失败，请稍后重试。');
-    } finally {
+    setIsSubmitting(true);
+    setActionState('validating');
+    setSubmitMessage('');
+    window.setTimeout(() => {
+      setSubmitMessage('配置已校验：当前为 artifact 演示配置，新训练任务接口待接入。');
       setIsSubmitting(false);
-    }
+      setActionState('idle');
+    }, 800);
   };
 
   const handleStartExperiment = () => {
-    setSubmitMessage('训练任务待接入；当前读取已完成实验结果进行演示。');
-    setActiveTab('monitoring');
+    setActionState('starting');
+    setSubmitMessage('');
+    window.setTimeout(() => {
+      setSubmitMessage('当前版本暂未接入真实训练任务启动，已自动切换为读取已完成 artifact 演示。');
+      setActionState('idle');
+    }, 800);
   };
 
   const renderModulePills = (ids: string[]) => (
@@ -605,7 +664,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     > = {
       target_poisoning_play: [
         {label: 'Amazon', note: '商品数据', tone: 'data', Icon: Database},
-        {label: 'FedAvg', note: '本地训练', tone: 'train', Icon: Layers3},
+        {label: config.model || 'FedAvg', note: '本地训练', tone: 'train', Icon: Layers3},
         {label: '目标注入', note: '红色投毒', tone: 'attack', Icon: Target},
         {label: '聚合', note: '服务端', tone: 'aggregation', Icon: GitCompare},
         {label: '排序审计', note: '未屏蔽', tone: 'audit', Icon: BarChart3},
@@ -621,14 +680,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       ],
       update_leakage_play: [
         {label: '客户端更新', note: '上传向量', tone: 'data', Icon: Database},
-        {label: 'item embedding', note: '风险模态', tone: 'privacy', Icon: Layers3},
+        {label: riskModality, note: '风险模态', tone: 'privacy', Icon: Layers3},
         {label: '候选还原', note: '商品候选', tone: 'attack', Icon: Search},
-        {label: hit50Text === EMPTY_VALUE ? 'hit@50' : `hit@50 ${hit50Text}`, note: '命中摘要', tone: 'audit', Icon: BarChart3, active: true},
+        {label: candidateLimit, note: hit50Text === EMPTY_VALUE ? '命中摘要' : `hit@50 ${hit50Text}`, tone: 'audit', Icon: BarChart3, active: true},
         {label: '风险摘要', note: '非完整历史', tone: 'evidence', Icon: Archive},
       ],
       robust_defense_play: [
         {label: '客户端更新', note: '多端上传', tone: 'data', Icon: Database},
-        {label: '明文聚合', note: '可见更新', tone: 'aggregation', Icon: Layers3},
+        {label: aggregationMode === 'secure_aggregation' ? '安全聚合' : '明文聚合', note: aggregationMode === 'secure_aggregation' ? '隐藏单端' : '可见更新', tone: 'aggregation', Icon: Layers3},
         {label: robustAlgorithm !== 'none' ? robustAlgorithm : 'Krum', note: '鲁棒筛选', tone: 'defense', Icon: ShieldCheck, active: true},
         {label: '过滤异常', note: '拦截红点', tone: 'defense', Icon: Filter},
         {label: '性能恢复', note: 'Recall/NDCG', tone: 'audit', Icon: LineChart},
@@ -636,12 +695,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
     const basicParamsByPlay: Record<ExperimentPlayId, Array<{label: string; value: string}>> = {
       target_poisoning_play: [
-        {label: '数据集', value: 'Amazon Beauty'},
-        {label: '模型', value: 'FedAvg'},
+        {label: '数据集', value: datasetLabel(config.dataset || 'AMAZON_BEAUTY_POC')},
+        {label: '模型', value: config.model || 'FedAvg'},
         {label: '攻击方向', value: '目标商品投毒'},
         {label: '防御策略', value: robustAlgorithm !== 'none' ? robustAlgorithm : '暂无 / 可选鲁棒聚合'},
-        {label: '目标商品', value: targetProduct?.title ?? selectedPlay.targetLabel},
-        {label: '输出证据', value: '排序 / Top50 / 推荐列表'},
+        {label: '目标商品', value: targetItemTitle},
+        {label: '输出证据', value: `${saveTopKEnabled ? '排序 / Top50' : '排序'}${exportAuditEnabled ? ' / 推荐列表' : ''}`},
       ],
       membership_privacy_play: [
         {label: '数据集', value: 'Amazon Beauty / KU'},
@@ -649,15 +708,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '攻击方向', value: '成员推断'},
         {label: '防御策略', value: dpLayerEnabled ? '更新扰动层' : '可选扰动 / 安全聚合'},
         {label: '观测对象', value: '匿名 user-item 记录'},
-        {label: '输出证据', value: 'AUC / Accuracy / score gap'},
+        {label: '输出证据', value: membershipMetrics.join(' / ')},
       ],
       update_leakage_play: [
         {label: '数据集', value: 'Amazon Beauty'},
         {label: '模型', value: 'FedAvg'},
         {label: '攻击方向', value: '客户端更新泄露'},
         {label: '防御策略', value: aggregationMode === 'secure_aggregation' ? '安全聚合模拟' : '可选扰动层'},
-        {label: '观测对象', value: 'item embedding / Top50 候选'},
-        {label: '输出证据', value: 'hit@10 / hit@20 / hit@50'},
+        {label: '观测对象', value: `${riskModality} / ${candidateLimit} 候选`},
+        {label: '输出证据', value: leakageMetrics.join(' / ')},
       ],
       robust_defense_play: [
         {label: '数据集', value: 'KU / Amazon Beauty'},
@@ -665,52 +724,19 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '攻击方向', value: '异常客户端更新'},
         {label: '防御策略', value: robustAlgorithm !== 'none' ? robustAlgorithm : 'Krum / Median / TrimmedMean'},
         {label: '观测对象', value: '异常过滤 / 性能恢复'},
-        {label: '输出证据', value: 'Recall@50 / NDCG@50 / 恢复率'},
-      ],
-    };
-    const advancedParamsByPlay: Record<ExperimentPlayId, Array<{label: string; value: string}>> = {
-      target_poisoning_play: [
-        {label: '训练轮数', value: '10'},
-        {label: '本地轮数', value: '5'},
-        {label: '客户端采样比例', value: '0.25'},
-        {label: '恶意客户端比例', value: '20%'},
-        {label: '攻击强度', value: '强'},
-        {label: '保存 TopK', value: '开启'},
-        {label: '导出审计结果', value: '开启'},
-      ],
-      membership_privacy_play: [
-        {label: '证据来源', value: 'rank / unmasked rank / checkpoint score'},
-        {label: '标签来源', value: 'membership labels'},
-        {label: '观测指标', value: 'AUC / Accuracy / score gap'},
-        {label: '当前口径', value: '排名证据 / 混合证据'},
-        {label: '样例展示', value: '匿名 user-item'},
-      ],
-      update_leakage_play: [
-        {label: '输入', value: '客户端上传更新'},
-        {label: '候选数量', value: 'Top50'},
-        {label: '风险模态', value: 'item embedding'},
-        {label: '观测指标', value: 'hit@10 / hit@20 / hit@50'},
-        {label: '口径边界', value: '候选还原，不是完整历史'},
-      ],
-      robust_defense_play: [
-        {label: '聚合模式', value: '明文更新'},
-        {label: '防御算法', value: 'Krum / Median / TrimmedMean / Bulyan'},
-        {label: '观测指标', value: 'Recall@50 / NDCG@50'},
-        {label: '恢复指标', value: '防御恢复率'},
-        {label: '过滤摘要', value: '异常更新过滤'},
+        {label: '输出证据', value: defenseMetrics.join(' / ')},
       ],
     };
     const nextStepByPlay: Record<ExperimentPlayId, string> = {
-      target_poisoning_play: '建议读取 V2.5 定向投毒链路，再到单次分析查看 170→3 与 Top50 未命中。',
+      target_poisoning_play: `建议用 ${targetItemTitle} 读取 V2.5 定向投毒链路，再到单次分析查看 170→3 与 Top50 未命中。`,
       membership_privacy_play: '建议查看成员推断 AUC、准确率和训练/非训练记录区分。',
-      update_leakage_play: '建议查看候选商品还原 hit@10 / hit@20 / hit@50。',
-      robust_defense_play: '建议查看防御恢复率、异常过滤和 Recall/NDCG 变化。',
+      update_leakage_play: `建议查看 ${candidateLimit} 候选商品还原和 ${leakageMetrics.join(' / ')}。`,
+      robust_defense_play: `建议查看 ${robustAlgorithm !== 'none' ? robustAlgorithm : '无防御'} 下的防御恢复率、异常过滤和 Recall/NDCG 变化。`,
     };
-    const visibleParams = paramPanel === 'basic' ? basicParamsByPlay[selectedPlay.id] : advancedParamsByPlay[selectedPlay.id];
     const renderDirectionVisual = (playId: ExperimentPlayId) => {
       if (playId === 'target_poisoning_play') {
         return (
-          <div className="relative h-14 w-20">
+          <div className="relative h-14 w-20 transition duration-300 group-hover:scale-105">
             {[0, 1, 2].map((item) => (
               <span key={item} className="absolute left-1 h-2.5 rounded-full bg-slate-500/45" style={{top: 8 + item * 14, width: 46 - item * 8}} />
             ))}
@@ -722,7 +748,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       }
       if (playId === 'membership_privacy_play') {
         return (
-          <div className="relative h-14 w-20">
+          <div className="relative h-14 w-20 transition duration-300 group-hover:scale-105">
             {[8, 18, 30, 42].map((top, index) => <span key={`a-${top}`} className="absolute h-2.5 w-2.5 rounded-full bg-violet-300/80" style={{top, left: 8 + index * 7}} />)}
             {[10, 22, 34, 44].map((top, index) => <span key={`b-${top}`} className="absolute h-2.5 w-2.5 rounded-full bg-cyan-300/80" style={{top, right: 8 + index * 7}} />)}
             <span className="absolute left-1/2 top-1 h-12 w-px rotate-12 bg-violet-100/60 shadow-[0_0_12px_rgba(196,181,253,0.55)]" />
@@ -731,7 +757,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       }
       if (playId === 'update_leakage_play') {
         return (
-          <div className="relative h-14 w-20">
+          <div className="relative h-14 w-20 transition duration-300 group-hover:scale-105">
             {[8, 22, 36].map((top) => <span key={top} className="absolute left-1 h-1 w-12 rounded-full bg-cyan-300/70 shadow-[0_0_10px_rgba(56,189,248,0.35)]" style={{top}} />)}
             <span className="absolute right-3 top-3 h-9 w-9 rounded-2xl border border-cyan-200/40 bg-cyan-300/10" />
             <span className="absolute right-7 top-6 h-3 w-3 rounded-full bg-cyan-100/80" />
@@ -739,12 +765,346 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         );
       }
       return (
-        <div className="relative h-14 w-20">
+        <div className="relative h-14 w-20 transition duration-300 group-hover:scale-105">
           <span className="absolute left-5 top-1 h-12 w-12 rounded-full border border-emerald-200/45 bg-emerald-300/10 shadow-[0_0_18px_rgba(52,211,153,0.28)]" />
           <ShieldCheck className="absolute left-8 top-4 h-6 w-6 text-emerald-100" />
           <span className="absolute right-2 top-3 h-2.5 w-2.5 rounded-full bg-rose-300" />
           <span className="absolute right-8 top-0 h-2 w-2 rounded-full bg-rose-300/70" />
           <span className="absolute bottom-2 left-1 h-2 w-2 rounded-full bg-emerald-200" />
+        </div>
+      );
+    };
+    const inputClass =
+      'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-200/45';
+    const fieldShell = (label: string, control: React.ReactNode, note?: string) => (
+      <div className="block rounded-2xl border border-white/10 bg-slate-950/25 p-3">
+        <span className="mb-2 block text-xs font-bold text-slate-500">{label}</span>
+        {control}
+        {note ? <span className="mt-2 block text-[11px] leading-4 text-slate-500">{note}</span> : null}
+      </div>
+    );
+    const segmented = <T extends string,>(
+      value: T,
+      options: T[],
+      onChange: (value: T) => void,
+      disabled?: (value: T) => boolean,
+      title?: (value: T) => string,
+    ) => (
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const isDisabled = disabled?.(option) ?? false;
+          return (
+            <button
+              key={option}
+              type="button"
+              disabled={isDisabled}
+              title={title?.(option)}
+              onClick={() => onChange(option)}
+              className={cn(
+                'rounded-full border px-3 py-1.5 text-xs font-black transition',
+                value === option ? 'border-cyan-200/45 bg-cyan-300/15 text-cyan-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-cyan-200/25',
+                isDisabled ? 'cursor-not-allowed border-slate-700/60 bg-slate-900/40 text-slate-600 hover:border-slate-700/60' : '',
+              )}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+    );
+    const switchControl = (checked: boolean, onChange: () => void, label: string) => (
+      <button
+        type="button"
+        onClick={onChange}
+        className={cn(
+          'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black transition',
+          checked ? 'border-emerald-200/40 bg-emerald-300/15 text-emerald-50' : 'border-white/10 bg-white/[0.045] text-slate-400 hover:border-emerald-200/25',
+        )}
+      >
+        <span className={cn('relative h-4 w-8 rounded-full transition', checked ? 'bg-emerald-300/60' : 'bg-slate-700')}>
+          <span className={cn('absolute top-0.5 h-3 w-3 rounded-full bg-white transition', checked ? 'left-4' : 'left-0.5')} />
+        </span>
+        {label}
+      </button>
+    );
+    const tagToggle = (selected: string[], value: string, onChange: (next: string[]) => void) => {
+      const checked = selected.includes(value);
+      return (
+        <button
+          key={value}
+          type="button"
+          onClick={() => {
+            const next = checked ? selected.filter((item) => item !== value) : [...selected, value];
+            onChange(next.length ? next : [value]);
+          }}
+          className={cn(
+            'rounded-full border px-3 py-1.5 text-xs font-black transition',
+            checked ? 'border-violet-200/40 bg-violet-300/15 text-violet-50' : 'border-white/10 bg-white/[0.045] text-slate-400 hover:border-violet-200/25',
+          )}
+        >
+          {value}
+        </button>
+      );
+    };
+    const updateDataset = (dataset: string) => {
+      markParamChanged('数据集');
+      updateConfig({dataset});
+    };
+    const updateModel = (model: string) => {
+      markParamChanged('模型');
+      updateConfig({model});
+    };
+    const updateTotalRounds = (totalRounds: number) => {
+      markParamChanged('训练轮数');
+      updateConfig({totalRounds});
+    };
+    const updateLocalEpochs = (localEpochs: number) => {
+      markParamChanged('本地轮数');
+      updateConfig({advanced: {...config.advanced, localEpochs}});
+    };
+    const updateClientSamplingRate = (clientSamplingRate: number) => {
+      markParamChanged('客户端采样比例');
+      updateConfig({clientSamplingRate});
+    };
+    const updatePoisoningRatio = (ratio: number) => {
+      markParamChanged('恶意客户端比例');
+      updateConfig({
+        poisoningRatio: ratio,
+        maliciousClientConfig: {
+          ...(config.maliciousClientConfig ?? {enabled: true, mode: 'ratio' as const, ratio: 0, clientIds: []}),
+          enabled: ratio > 0,
+          mode: 'ratio',
+          ratio,
+        },
+      });
+    };
+    const renderAdvancedControls = () => {
+      if (selectedPlay.id === 'target_poisoning_play') {
+        return (
+          <div className="grid gap-3">
+            {fieldShell(
+              '数据集',
+              <select className={inputClass} value={config.dataset || 'AMAZON_BEAUTY_POC'} onChange={(event) => updateDataset(event.target.value)}>
+                {datasetOptions.map((item) => (
+                  <option key={item} value={item}>
+                    {datasetLabel(item)}
+                  </option>
+                ))}
+              </select>,
+            )}
+            {fieldShell(
+              '模型',
+              <select className={inputClass} value={config.model || 'FedAvg'} onChange={(event) => updateModel(event.target.value)}>
+                {modelOptions.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>,
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {fieldShell('训练轮数', <input className={inputClass} type="number" min={1} max={200} value={config.totalRounds || 10} onChange={(event) => updateTotalRounds(Number(event.target.value))} />)}
+              {fieldShell('本地轮数', <input className={inputClass} type="number" min={1} max={50} value={config.advanced.localEpochs || 5} onChange={(event) => updateLocalEpochs(Number(event.target.value))} />)}
+            </div>
+            {fieldShell(
+              '客户端采样比例',
+              <div className="flex items-center gap-3">
+                <input className="w-full accent-cyan-300" type="range" min={0.05} max={1} step={0.05} value={config.clientSamplingRate || 0.25} onChange={(event) => updateClientSamplingRate(Number(event.target.value))} />
+                <span className="w-12 text-right font-mono text-sm font-bold text-cyan-100">{(config.clientSamplingRate || 0.25).toFixed(2)}</span>
+              </div>,
+            )}
+            {fieldShell(
+              '恶意客户端比例',
+              <div className="flex items-center gap-3">
+                <input className="w-full accent-rose-300" type="range" min={0} max={0.6} step={0.05} value={config.poisoningRatio || 0.2} onChange={(event) => updatePoisoningRatio(Number(event.target.value))} />
+                <span className="w-12 text-right font-mono text-sm font-bold text-rose-100">{formatRatio(config.poisoningRatio || 0.2)}</span>
+              </div>,
+            )}
+            {fieldShell(
+              '目标商品',
+              <select
+                className={inputClass}
+                value={targetItemTitle}
+                onChange={(event) => {
+                  markParamChanged('目标商品');
+                  setTargetItemTitle(event.target.value);
+                }}
+              >
+                {targetOptions.map((item) => (
+                  <option key={String(item.id ?? item.title)} value={item.title}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>,
+            )}
+            {fieldShell(
+              '攻击强度',
+              segmented<AttackStrength>(attackStrength, ['弱', '中', '强'], (value) => {
+                markParamChanged('攻击强度');
+                setAttackStrength(value);
+              }),
+            )}
+            <div className="flex flex-wrap gap-2">
+              {switchControl(saveTopKEnabled, () => {
+                markParamChanged('输出证据');
+                setSaveTopKEnabled((value) => !value);
+              }, '保存 TopK')}
+              {switchControl(exportAuditEnabled, () => {
+                markParamChanged('输出证据');
+                setExportAuditEnabled((value) => !value);
+              }, '导出审计结果')}
+            </div>
+          </div>
+        );
+      }
+      if (selectedPlay.id === 'membership_privacy_play') {
+        return (
+          <div className="grid gap-3">
+            {fieldShell(
+              '证据来源',
+              segmented<EvidenceSource>(evidenceSource, ['rank', 'unmasked rank', 'checkpoint score', 'auto'], (value) => {
+                markParamChanged('输出证据');
+                setEvidenceSource(value);
+              }),
+            )}
+            {fieldShell(
+              '标签来源',
+              <select
+                className={inputClass}
+                value={membershipLabelSource}
+                onChange={(event) => {
+                  markParamChanged('观测对象');
+                  setMembershipLabelSource(event.target.value);
+                }}
+              >
+                {['membership labels', 'scenario labels', 'auto labels'].map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>,
+            )}
+            {fieldShell('采样数量', <input className={inputClass} type="number" min={20} max={5000} step={20} value={membershipSampleCount} onChange={(event) => {
+              markParamChanged('观测对象');
+              setMembershipSampleCount(Number(event.target.value));
+            }} />)}
+            {fieldShell('观测指标', <div className="flex flex-wrap gap-2">{['AUC', 'Accuracy', 'score gap'].map((item) => tagToggle(membershipMetrics, item, (next) => {
+              markParamChanged('输出证据');
+              setMembershipMetrics(next);
+            }))}</div>)}
+          </div>
+        );
+      }
+      if (selectedPlay.id === 'update_leakage_play') {
+        return (
+          <div className="grid gap-3">
+            {fieldShell('输入来源', <select className={inputClass} value="客户端上传更新" onChange={() => undefined}><option>客户端上传更新</option></select>)}
+            {fieldShell(
+              '候选数量',
+              segmented<CandidateLimit>(candidateLimit, ['Top10', 'Top20', 'Top50'], (value) => {
+                markParamChanged('观测对象');
+                setCandidateLimit(value);
+              }),
+            )}
+            {fieldShell(
+              '风险模态',
+              segmented<RiskModality>(riskModality, ['item embedding', 'image', 'text'], (value) => {
+                markParamChanged('观测对象');
+                setRiskModality(value);
+              }),
+            )}
+            {fieldShell('观测指标', <div className="flex flex-wrap gap-2">{['hit@10', 'hit@20', 'hit@50'].map((item) => tagToggle(leakageMetrics, item, (next) => {
+              markParamChanged('输出证据');
+              setLeakageMetrics(next);
+            }))}</div>)}
+          </div>
+        );
+      }
+      return (
+        <div className="grid gap-3">
+          {fieldShell(
+            '聚合模式',
+            <div className="flex flex-wrap gap-2">
+              {[
+                {id: 'plain_updates' as AggregationMode, label: '明文更新'},
+                {id: 'secure_aggregation' as AggregationMode, label: '安全聚合'},
+              ].map((mode) => {
+                const disabled = mode.id === 'secure_aggregation' && robustActive;
+                return (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    disabled={disabled}
+                    title={disabled ? '鲁棒聚合需要观察单客户端更新。' : ''}
+                    onClick={() => {
+                      markParamChanged('防御策略');
+                      setAggregationVisibility(mode.id);
+                    }}
+                    className={cn(
+                      'rounded-full border px-3 py-1.5 text-xs font-black transition',
+                      aggregationMode === mode.id ? 'border-cyan-200/45 bg-cyan-300/15 text-cyan-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-cyan-200/25',
+                      disabled ? 'cursor-not-allowed border-slate-700/60 bg-slate-900/40 text-slate-600' : '',
+                    )}
+                  >
+                    {mode.label}
+                  </button>
+                );
+              })}
+            </div>,
+            '安全聚合隐藏单客户端更新，不做逐客户端鲁棒筛选。',
+          )}
+          {fieldShell(
+            '防御算法',
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  markParamChanged('防御策略');
+                  clearRobustAlgorithm();
+                }}
+                className={cn('rounded-full border px-3 py-1.5 text-xs font-black transition', robustAlgorithm === 'none' ? 'border-slate-200/35 bg-slate-300/12 text-slate-100' : 'border-white/10 bg-white/[0.045] text-slate-300')}
+              >
+                无防御
+              </button>
+              {ROBUST_AGGREGATORS.map((algorithm) => (
+                <button
+                  key={algorithm}
+                  type="button"
+                  disabled={secureModeActive}
+                  title={secureModeActive ? '安全聚合隐藏单客户端更新，不做逐客户端鲁棒筛选。' : ''}
+                  onClick={() => {
+                    markParamChanged('防御策略');
+                    selectRobustAlgorithm(algorithm);
+                  }}
+                  className={cn(
+                    'rounded-full border px-3 py-1.5 text-xs font-black transition',
+                    robustAlgorithm === algorithm && !secureModeActive ? 'border-emerald-200/45 bg-emerald-300/15 text-emerald-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-emerald-200/25',
+                    secureModeActive ? 'cursor-not-allowed border-slate-700/60 bg-slate-900/40 text-slate-600' : '',
+                  )}
+                >
+                  {algorithm}
+                </button>
+              ))}
+            </div>,
+          )}
+          {fieldShell('更新扰动', switchControl(dpLayerEnabled, () => {
+            markParamChanged('防御策略');
+            toggleDpLayer();
+          }, '差分隐私风格加噪'), '风格加噪 / 非 formal DP accountant')}
+          {dpLayerEnabled
+            ? fieldShell(
+                '噪声强度',
+                <div className="flex items-center gap-3">
+                  <input className="w-full accent-amber-300" type="range" min={0.01} max={1} step={0.01} value={noiseStrength} onChange={(event) => {
+                    markParamChanged('防御策略');
+                    setNoiseStrength(Number(event.target.value));
+                  }} />
+                  <span className="w-12 text-right font-mono text-sm font-bold text-amber-100">{noiseStrength.toFixed(2)}</span>
+                </div>,
+              )
+            : null}
+          {fieldShell('观测指标', <div className="flex flex-wrap gap-2">{['Recall@50', 'NDCG@50', '防御恢复率', '异常过滤'].map((item) => tagToggle(defenseMetrics, item, (next) => {
+            markParamChanged('输出证据');
+            setDefenseMetrics(next);
+          }))}</div>)}
         </div>
       );
     };
@@ -803,9 +1163,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             </div>
             <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-slate-950/35 px-5 py-8">
               <svg className="pointer-events-none absolute inset-x-10 top-[4.15rem] hidden h-16 lg:block" viewBox="0 0 760 64" preserveAspectRatio="none">
-                <path d="M0 32 C120 4 160 60 260 32 S420 6 520 32 S650 58 760 32" fill="none" stroke="url(#flowLine)" strokeWidth="2" strokeLinecap="round" strokeDasharray="8 10">
+                <path id="orchestration-flow-line" d="M0 32 C120 4 160 60 260 32 S420 6 520 32 S650 58 760 32" fill="none" stroke="url(#flowLine)" strokeWidth="2" strokeLinecap="round" strokeDasharray="8 10">
                   <animate attributeName="stroke-dashoffset" from="0" to="-36" dur="3.6s" repeatCount="indefinite" />
                 </path>
+                {[0, 1, 2].map((item) => (
+                  <circle key={item} r="3" fill={item === 1 ? '#fb7185' : '#67e8f9'} opacity="0.85">
+                    <animateMotion dur="4.8s" begin={`${item * 0.9}s`} repeatCount="indefinite">
+                      <mpath href="#orchestration-flow-line" />
+                    </animateMotion>
+                  </circle>
+                ))}
                 <defs>
                   <linearGradient id="flowLine" x1="0%" x2="100%" y1="0%" y2="0%">
                     <stop offset="0%" stopColor="rgba(56,189,248,0.2)" />
@@ -816,17 +1183,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 </defs>
               </svg>
               <div className="relative z-10 grid gap-4 lg:grid-cols-7">
-                {compactFlowNodes[selectedPlay.id].map((node) => {
+                {compactFlowNodes[selectedPlay.id].map((node, index) => {
                   const Icon = node.Icon;
                   return (
                     <div key={`${node.label}-${node.note}`} className="min-w-0 text-center">
                       <div
                         className={cn(
-                          'mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border transition',
+                          'relative mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border transition',
                           routeToneClass(node.tone),
-                          node.active ? 'animate-pulse scale-105' : '',
+                          node.active || node.tone === 'attack' || node.tone === 'defense' || node.tone === 'audit' || node.tone === 'evidence' ? 'animate-pulse scale-105' : '',
                         )}
+                        style={{animationDelay: `${index * 120}ms`}}
                       >
+                        {node.tone === 'audit' ? <span className="absolute inset-x-1 top-2 h-px bg-violet-100/70 shadow-[0_0_10px_rgba(196,181,253,0.7)]" /> : null}
+                        {node.tone === 'defense' ? <span className="absolute inset-1 rounded-xl border border-emerald-100/30" /> : null}
+                        {node.tone === 'evidence' ? <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-cyan-100 shadow-[0_0_10px_rgba(103,232,249,0.8)]" /> : null}
                         <Icon className="h-6 w-6" />
                       </div>
                       <p className="mt-3 truncate text-sm font-black text-white">{node.label}</p>
@@ -856,7 +1227,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                           key={mode.id}
                           type="button"
                           disabled={disabled}
-                          onClick={() => setAggregationVisibility(mode.id)}
+                          title={disabled ? '鲁棒聚合需要观察单客户端更新。' : ''}
+                          onClick={() => {
+                            markParamChanged('防御策略');
+                            setAggregationVisibility(mode.id);
+                          }}
                           className={cn(
                             'rounded-full border px-4 py-2 text-xs font-black transition',
                             aggregationMode === mode.id ? 'border-cyan-200/45 bg-cyan-300/15 text-cyan-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-cyan-200/25',
@@ -874,7 +1249,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={clearRobustAlgorithm}
+                      onClick={() => {
+                        markParamChanged('防御策略');
+                        clearRobustAlgorithm();
+                      }}
                       className={cn(
                         'rounded-full border px-4 py-2 text-xs font-black transition',
                         robustAlgorithm === 'none' ? 'border-slate-200/35 bg-slate-300/12 text-slate-100' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-slate-200/25',
@@ -887,7 +1265,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                         key={algorithm}
                         type="button"
                         disabled={secureModeActive}
-                        onClick={() => selectRobustAlgorithm(algorithm)}
+                        title={secureModeActive ? '安全聚合隐藏单客户端更新，不做逐客户端鲁棒筛选。' : ''}
+                        onClick={() => {
+                          markParamChanged('防御策略');
+                          selectRobustAlgorithm(algorithm);
+                        }}
                         className={cn(
                           'rounded-full border px-4 py-2 text-xs font-black transition',
                           robustAlgorithm === algorithm && !secureModeActive
@@ -903,7 +1285,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={toggleDpLayer}
+                  onClick={() => {
+                    markParamChanged('防御策略');
+                    toggleDpLayer();
+                  }}
                   className={cn(
                     'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-black transition',
                     dpLayerEnabled ? 'border-amber-200/45 bg-amber-300/15 text-amber-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-amber-200/25',
@@ -946,15 +1331,25 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               </div>
             </div>
 
-            <div className="rounded-[26px] border border-white/10 bg-white/[0.04] p-3">
-              <div className="grid gap-2">
-                {visibleParams.map((param) => (
-                  <div key={param.label} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-950/35 px-3 py-2">
-                    <p className="text-xs font-bold text-slate-500">{param.label}</p>
-                    <p className="text-right text-sm font-black text-slate-100">{param.value}</p>
-                  </div>
-                ))}
-              </div>
+            <div key={paramPanel} className="rounded-[26px] border border-white/10 bg-white/[0.04] p-3 transition-all duration-200 ease-out">
+              {paramPanel === 'basic' ? (
+                <div className="grid gap-2">
+                  {basicParamsByPlay[selectedPlay.id].map((param) => (
+                    <div
+                      key={param.label}
+                      className={cn(
+                        'flex items-center justify-between gap-3 rounded-2xl bg-slate-950/35 px-3 py-2 transition',
+                        highlightedParam === param.label ? 'ring-1 ring-cyan-200/50 bg-cyan-300/10' : '',
+                      )}
+                    >
+                      <p className="text-xs font-bold text-slate-500">{param.label}</p>
+                      <p className="text-right text-sm font-black text-slate-100">{param.value}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                renderAdvancedControls()
+              )}
             </div>
           </div>
         </section>
@@ -969,20 +1364,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <div className="flex shrink-0 flex-wrap items-center gap-3">
               <button
                 type="button"
-                disabled={isSubmitting}
+                disabled={actionState !== 'idle'}
                 onClick={handleValidate}
-                className="inline-flex items-center gap-2 rounded-2xl border border-cyan-200/35 bg-cyan-300/12 px-4 py-2 text-sm font-bold text-cyan-50 hover:bg-cyan-300/18"
+                className="inline-flex items-center gap-2 rounded-2xl border border-cyan-200/35 bg-cyan-300/12 px-4 py-2 text-sm font-bold text-cyan-50 transition hover:bg-cyan-300/18 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <CheckCircle2 className="h-4 w-4" />
-                校验配置
+                <CheckCircle2 className={cn('h-4 w-4', actionState === 'validating' ? 'animate-pulse' : '')} />
+                {actionState === 'validating' ? '校验中...' : '校验配置'}
               </button>
               <button
                 type="button"
+                disabled={actionState !== 'idle'}
                 onClick={handleStartExperiment}
-                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200/35 bg-emerald-300/12 px-4 py-2 text-sm font-bold text-emerald-50 hover:bg-emerald-300/18"
+                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200/35 bg-emerald-300/12 px-4 py-2 text-sm font-bold text-emerald-50 transition hover:bg-emerald-300/18 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Archive className="h-4 w-4" />
-                读取已完成实验
+                <Play className={cn('h-4 w-4', actionState === 'starting' ? 'animate-pulse' : '')} />
+                {actionState === 'starting' ? '切换中...' : '开始实验'}
               </button>
               <span className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-bold text-slate-500">
                 <Play className="h-4 w-4" />
@@ -1225,11 +1621,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             </button>
             <button
               type="button"
+              disabled={actionState !== 'idle'}
               onClick={handleStartExperiment}
-              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200/35 bg-emerald-300/12 px-4 py-2 text-sm font-bold text-emerald-50 hover:bg-emerald-300/18"
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200/35 bg-emerald-300/12 px-4 py-2 text-sm font-bold text-emerald-50 hover:bg-emerald-300/18 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Play className="h-4 w-4" />
-              读取已完成实验
+              <Play className={cn('h-4 w-4', actionState === 'starting' ? 'animate-pulse' : '')} />
+              {actionState === 'starting' ? '切换中...' : '开始实验'}
             </button>
             {submitMessage ? <span className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-slate-300">{submitMessage}</span> : null}
           </div>
