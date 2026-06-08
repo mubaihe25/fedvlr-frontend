@@ -86,7 +86,7 @@
 
 左侧是真按钮式实验方向选择；中间用短关键词、图标和发光连线展示攻防流程；右侧是基础参数 / 高级参数分段抽屉。基础参数用于快速确认当前配置摘要，高级参数是可编辑表单控件，修改后要同步基础摘要、流程图关键词和下一步建议。剧本字段统一来自 `src/lib/experimentPlaybooks.ts`，不要在页面里再维护第二套普通/专家参数。
 
-方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。底部执行区只保留“校验配置”和“开始实验”两个主按钮，并用小状态标注“新训练任务待接入”。“开始实验”只能提示训练任务接口待接入并切换到已完成 artifact 演示流程，不要假装启动真实训练。
+方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。底部执行区只保留“校验配置”和“开始实验”两个主按钮。“开始实验”调用受限 smoke job 接口并切换到运行监控；如果后端返回 `source=existing_artifact`，必须写成复用已导出证据，不要写成刚训练完成。
 
 聚合可见性有互斥逻辑：
 
@@ -195,6 +195,7 @@ npm run preview
 
 - `src/services/workbench.ts` 负责调用 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、`/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=200` 和 `/workbench/jobs/{job_id}/result`。
 - 攻防工作台的“校验配置”调用 `/workbench/validate`；“开始实验”调用 `/workbench/jobs` 并切换到运行监控。
-- 当前 API 只写入受限 workbench job 档案，状态会如实显示为训练任务待接入；前端继续读取已完成 showcase/V3 证据，不要展示为真实训练已启动。
+- 当前 API 会创建并启动受限 smoke job，状态可能为 `queued`、`running`、`completed`、`partial` 或 `failed`。前端在有 `job_id` 时优先轮询 job 状态、日志和 result；没有 job 时继续读取已完成 showcase/V3 证据。
+- `metrics_summary.source=existing_artifact` 表示复用已导出的安全证据，不要展示为本次刚训练出的完整 benchmark。`partial` 表示只有部分或 config-only evidence，不要补写成功效果。
 - 工作台模型选择只展示可进入 smoke 配置的 8 个模型；MGCN 系列继续作为需要适配器的边界说明，不放进启动 select。
 - 运行监控如果有 `job_id`，优先轮询 workbench job 日志；没有 job 时继续使用 V3 运行时间线或摘要曲线。

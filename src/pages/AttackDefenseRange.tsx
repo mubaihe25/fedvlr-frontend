@@ -59,13 +59,13 @@ import type {ExperimentPlaybook, PlaybookRouteTone} from '../lib/experimentPlayb
 import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPlainValue, getRecommendationCounts, toChineseLabel} from '../lib/showcaseFormat';
 import {cn} from '../lib/utils';
 import {loadShowcaseBundle} from '../services/showcase';
-import {createWorkbenchJob, fetchWorkbenchJob, fetchWorkbenchLogs, fetchWorkbenchOptions, validateWorkbenchConfig} from '../services/workbench';
+import {createWorkbenchJob, fetchWorkbenchJob, fetchWorkbenchLogs, fetchWorkbenchOptions, fetchWorkbenchResult, validateWorkbenchConfig} from '../services/workbench';
 import type {ExperimentConfigurationSource} from '../services/experiment';
 import type {StartTrainResponse} from '../services/train';
 import type {ConsoleSessionState} from '../types/common';
 import type {DefenseType, LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../types/train';
 import type {ShowcaseBundle, ShowcaseModelCapabilityMatrix, ShowcaseModelSmokeEvidence, ShowcaseRecommendationItem, ShowcaseReport, ShowcaseScenario} from '../types/showcase';
-import type {WorkbenchJobStatusResponse, WorkbenchLogsResponse, WorkbenchOptionsResponse, WorkbenchPayload, WorkbenchValidationResponse} from '../types/workbench';
+import type {WorkbenchJobStatusResponse, WorkbenchLogsResponse, WorkbenchOptionsResponse, WorkbenchPayload, WorkbenchResultResponse, WorkbenchValidationResponse} from '../types/workbench';
 
 export type WorkbenchTabId = 'orchestration' | 'monitoring' | 'analysis' | 'comparison' | 'history';
 
@@ -94,6 +94,22 @@ type CandidateLimit = 'Top10' | 'Top20' | 'Top50';
 type RiskModality = 'item embedding' | 'image' | 'text';
 type ActionState = 'idle' | 'validating' | 'starting';
 type ArchiveFilter = '全部' | '主展示' | 'Amazon' | 'KU' | '投毒' | '隐私攻击' | '鲁棒防御' | '有图片' | '有推荐列表';
+
+const WORKBENCH_TERMINAL_STATUSES = new Set(['completed', 'partial', 'failed']);
+const WORKBENCH_STATUS_LABELS: Record<string, string> = {
+  queued: '排队中',
+  preparing_config: '准备配置',
+  running: '运行中',
+  exporting_artifacts: '导出证据',
+  completed: '已完成',
+  failed: '失败',
+  partial: '部分完成',
+  invalid: '配置未通过',
+};
+
+const workbenchStatusLabel = (value?: string | null) => WORKBENCH_STATUS_LABELS[value ?? ''] ?? '读取中';
+const shortWorkbenchJobId = (value?: string | null) => (value ? value.replace(/^workbench_/, '').slice(-8) : EMPTY_VALUE);
+const workbenchSourceLabel = (value?: string | null) => (value === 'existing_artifact' ? '复用已导出证据' : value ? toChineseLabel(value) : EMPTY_VALUE);
 
 const tabs: Array<{id: WorkbenchTabId; label: string; icon: React.ComponentType<{className?: string}>}> = [
   {id: 'orchestration', label: '实验编排', icon: ListChecks},
@@ -341,6 +357,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [workbenchOptionsError, setWorkbenchOptionsError] = useState('');
   const [validationResult, setValidationResult] = useState<WorkbenchValidationResponse | null>(null);
   const [workbenchJob, setWorkbenchJob] = useState<WorkbenchJobStatusResponse | null>(null);
+  const [workbenchResult, setWorkbenchResult] = useState<WorkbenchResultResponse | null>(null);
   const [workbenchLogs, setWorkbenchLogs] = useState<string[]>([]);
   const [workbenchJobId, setWorkbenchJobId] = useState('');
   const [logPollingPaused, setLogPollingPaused] = useState(false);
@@ -486,6 +503,17 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           if (!active) return;
           setWorkbenchJob(job);
           setWorkbenchLogs(logs.lines ?? []);
+          if (job.status && WORKBENCH_TERMINAL_STATUSES.has(job.status)) {
+            fetchWorkbenchResult(workbenchJobId)
+              .then((result) => {
+                if (active) setWorkbenchResult(result);
+              })
+              .catch(() => {
+                if (active) {
+                  setWorkbenchResult((current) => current);
+                }
+              });
+          }
         })
         .catch(() => {
           if (!active) return;
@@ -744,15 +772,28 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const handleStartExperiment = async () => {
     setActionState('starting');
     setSubmitMessage('');
+    setWorkbenchResult(null);
+    setLogPollingPaused(false);
     try {
       await new Promise((resolve) => window.setTimeout(resolve, 800));
       const result = await createWorkbenchJob(buildWorkbenchPayload());
       setValidationResult(result);
       if (result.job_id) {
         setWorkbenchJobId(result.job_id);
-        setWorkbenchLogs([`[Workbench] 任务 ${result.job_id} 已记录。`, '[Boundary] 当前版本不启动真实训练，进入已完成证据演示流程。']);
+        setWorkbenchJob({
+          job_id: result.job_id,
+          status: result.status ?? result.job_status ?? 'queued',
+          stage: result.stage ?? 'queued',
+          progress: result.progress ?? 0,
+          valid: result.valid,
+          direction: result.normalized_config?.direction ? String(result.normalized_config.direction) : null,
+          scenario_id: result.normalized_config?.scenario_id ? String(result.normalized_config.scenario_id) : null,
+          warnings: result.warnings ?? [],
+          errors: result.errors ?? [],
+        });
+        setWorkbenchLogs([`[Workbench] 任务 ${result.job_id} 已进入队列。`, '[Smoke] 正在启动受限 smoke job；不会执行长训练或任意命令。']);
       }
-      setSubmitMessage(result.message ?? '训练任务待接入，已进入已完成证据演示流程。');
+      setSubmitMessage(result.message ?? '已提交受限 smoke job，正在进入运行监控。');
       setActiveTab('monitoring');
     } catch (error) {
       setSubmitMessage(`启动失败：${error instanceof Error ? error.message : String(error)}`);
@@ -1665,8 +1706,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <span className={cn('rounded-full border px-2.5 py-1', validationResult.valid ? 'border-emerald-200/30 bg-emerald-300/10 text-emerald-100' : 'border-rose-200/30 bg-rose-300/10 text-rose-100')}>
                     {validationResult.valid ? '配置已校验' : '配置需调整'}
                   </span>
-                  {validationResult.disabled_reason ? <span className="rounded-full border border-amber-200/25 bg-amber-300/10 px-2.5 py-1 text-amber-100">训练任务待接入</span> : null}
-                  {workbenchJobId ? <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-2.5 py-1 text-cyan-100">job {workbenchJobId}</span> : null}
+                  {validationResult.disabled_reason && !workbenchJobId ? <span className="rounded-full border border-amber-200/25 bg-amber-300/10 px-2.5 py-1 text-amber-100">受限 smoke 配置</span> : null}
+                  {workbenchJobId ? <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-2.5 py-1 text-cyan-100">job {shortWorkbenchJobId(workbenchJobId)} · {workbenchStatusLabel(workbenchJob?.status)}</span> : null}
                   {validationResult.warnings?.slice(0, 2).map((warning) => (
                     <span key={warning} className="rounded-full border border-white/10 bg-white/[0.045] px-2.5 py-1 text-slate-400">{toChineseLabel(warning)}</span>
                   ))}
@@ -2016,6 +2057,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '过滤算法', value: robustAlgorithm !== 'none' ? robustAlgorithm : 'Krum', tone: 'text-emerald-100'},
       ],
     };
+    const jobMetricsSummary = workbenchResult?.metrics_summary;
+    const jobMetricsSource = typeof jobMetricsSummary?.source === 'string' ? jobMetricsSummary.source : workbenchResult?.source;
+    const jobMetrics = jobMetricsSummary?.metrics && typeof jobMetricsSummary.metrics === 'object' && !Array.isArray(jobMetricsSummary.metrics)
+      ? (jobMetricsSummary.metrics as Record<string, unknown>)
+      : null;
+    const jobMetricEntries = Object.entries(jobMetrics ?? {})
+      .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) || value === null)
+      .slice(0, 6);
 
     return (
       <div className="space-y-5">
@@ -2044,6 +2093,22 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 </button>
               ) : null}
             </div>
+
+            {workbenchJobId ? (
+              <div className="mb-4 grid gap-3 md:grid-cols-4">
+                {[
+                  {label: 'Job', value: shortWorkbenchJobId(workbenchJobId)},
+                  {label: '状态', value: workbenchStatusLabel(workbenchJob?.status)},
+                  {label: '阶段', value: workbenchStatusLabel(workbenchJob?.stage ?? workbenchJob?.status)},
+                  {label: '进度', value: `${Math.round(workbenchJob?.progress ?? 0)}%`},
+                ].map((item) => (
+                  <div key={item.label} className="rounded-2xl border border-cyan-200/15 bg-cyan-300/[0.06] p-3">
+                    <p className="text-[11px] font-bold text-cyan-100/65">{item.label}</p>
+                    <p className="mt-1 font-mono text-base font-black text-cyan-50">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
             <div className="grid gap-3">
               {[
@@ -2085,6 +2150,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                     ? '运行时间线来自 V3 证据；不额外补写训练全过程。'
                     : '日志用于串联已完成结果摘要，不伪造完整训练全过程。'}
               </p>
+              {workbenchJob?.status && WORKBENCH_TERMINAL_STATUSES.has(workbenchJob.status) ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('analysis')}
+                  className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-200/30 bg-emerald-300/10 px-3 py-2 text-xs font-bold text-emerald-50 hover:bg-emerald-300/15"
+                >
+                  <Search className="h-4 w-4" />
+                  查看单次分析
+                </button>
+              ) : null}
             </div>
           </div>
         </section>
@@ -2209,6 +2284,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '异常更新过滤', value: formatPlainValue(report.defenseTrace?.filteredClients ?? report.defenseTrace?.clippedClients), tone: 'text-emerald-100'},
       ],
     };
+    const jobMetricsSummary = workbenchResult?.metrics_summary;
+    const jobMetricsSource = typeof jobMetricsSummary?.source === 'string' ? jobMetricsSummary.source : workbenchResult?.source;
+    const jobMetrics = jobMetricsSummary?.metrics && typeof jobMetricsSummary.metrics === 'object' && !Array.isArray(jobMetricsSummary.metrics)
+      ? (jobMetricsSummary.metrics as Record<string, unknown>)
+      : null;
+    const jobMetricEntries = Object.entries(jobMetrics ?? {})
+      .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) || value === null)
+      .slice(0, 6);
 
     return (
       <div className="space-y-5">
@@ -2228,6 +2311,35 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             </div>
           </div>
         </section>
+
+        {workbenchResult?.metrics_summary ? (
+          <section className="sandbox-panel rounded-[28px] p-5">
+            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+              <div>
+                <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">WORKBENCH 结果回填</p>
+                <h3 className="mt-1 text-xl font-bold text-white">{workbenchStatusLabel(workbenchResult.status)} · {workbenchSourceLabel(jobMetricsSource)}</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                  {typeof jobMetricsSummary.message === 'string' ? jobMetricsSummary.message : '受限 smoke job 已返回结果摘要。'}
+                </p>
+              </div>
+              <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">
+                job {shortWorkbenchJobId(workbenchResult.job_id)}
+              </span>
+            </div>
+            {jobMetricEntries.length ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {jobMetricEntries.map(([key, value]) => (
+                  <MetricTile key={key} label={toChineseLabel(key)} value={typeof value === 'boolean' ? (value ? '是' : '否') : formatPlainValue(value as string | number | null)} />
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-400">该 job 尚未导出可展示指标。</p>
+            )}
+            {jobMetricsSource === 'existing_artifact' ? (
+              <p className="mt-3 text-xs font-semibold text-amber-100">该结果复用已导出的安全证据，不表述为本次刚训练完成。</p>
+            ) : null}
+          </section>
+        ) : null}
 
         {priorityPanel()}
 

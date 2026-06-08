@@ -91,8 +91,11 @@ export interface WorkbenchValidationResponse {
 export interface WorkbenchJobResponse extends WorkbenchValidationResponse {
   job_id?: string;
   job_status?: string;
+  stage?: string;
+  progress?: number;
   job_dir?: string;
   files?: Record<string, string>;
+  pid?: number;
   launch_enabled?: boolean;
   message?: string;
 }
@@ -100,13 +103,21 @@ export interface WorkbenchJobResponse extends WorkbenchValidationResponse {
 export interface WorkbenchJobStatusResponse {
   job_id: string;
   status?: string | null;
+  stage?: string | null;
+  progress?: number | null;
   valid?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
   direction?: string | null;
   scenario_id?: string | null;
   message?: string | null;
   disabled_reason?: string | null;
+  error_message?: string | null;
+  result_dir?: string | null;
+  artifact_dir?: string | null;
+  source?: string | null;
   warnings: string[];
   errors: string[];
   config_summary?: Record<string, unknown>;
@@ -122,6 +133,8 @@ export interface WorkbenchLogsResponse {
 export interface WorkbenchResultResponse {
   job_id: string;
   status?: string | null;
+  stage?: string | null;
+  source?: string | null;
   result_pointer?: Record<string, unknown>;
   metrics_summary?: Record<string, unknown>;
   message?: string | null;

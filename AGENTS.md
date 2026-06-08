@@ -99,7 +99,7 @@
 
 左侧是真按钮式实验方向选择；中间用短关键词、图标和发光连线展示攻防流程；右侧是基础参数 / 高级参数分段抽屉。基础参数用于快速确认当前配置摘要，高级参数是可编辑表单控件，修改后必须同步基础摘要、流程图关键词和下一步建议。剧本字段必须统一来自 `src/lib/experimentPlaybooks.ts`，不要在页面里再维护第二套普通/专家参数。
 
-方向选择必须驱动完整工作流：自动更新当前参数和推荐场景，运行监控日志随方向变化，单次分析优先展示当前方向证据，横向对比说明当前在比什么，历史实验点击后切换场景并进入单次分析。底部执行区只允许“校验配置”和“开始实验”两个主按钮，并用小状态标注“新训练任务待接入”。“开始实验”只能提示训练任务接口待接入并切换到已完成 artifact 演示流程，不要假装启动真实训练。
+方向选择必须驱动完整工作流：自动更新当前参数和推荐场景，运行监控日志随方向变化，单次分析优先展示当前方向证据，横向对比说明当前在比什么，历史实验点击后切换场景并进入单次分析。底部执行区只允许“校验配置”和“开始实验”两个主按钮。“开始实验”调用 `/workbench/jobs` 创建受限 smoke job 并切换到运行监控；如果 job 返回 `source=existing_artifact`，只能写成复用已导出证据，不要写成刚训练完成。
 
 聚合可见性必须体现互斥：
 
@@ -206,7 +206,8 @@ npm run build
 ## Workbench API 联动补充
 
 - `src/services/workbench.ts` 是攻防工作台的 API service，负责 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、job 状态、job 日志和 job result。
-- “校验配置”必须调用 `/workbench/validate`；“开始实验”必须调用 `/workbench/jobs`，但当前语义是生成受限 job 档案并进入已完成证据演示流程，不代表真实训练已启动。
-- 运行监控有 `job_id` 时优先轮询 `/workbench/jobs/{job_id}/logs`；没有 `job_id` 时继续使用 V3 runtime/curves 或摘要曲线。
-- 高级参数提交给 workbench 时要保持受限 smoke 边界：总轮数/epoch 不超过 10，本地轮数不超过 5，默认客户端采样比例不超过 0.2。
+- “校验配置”必须调用 `/workbench/validate`；“开始实验”必须调用 `/workbench/jobs`，并显示 `queued` / `running` / `completed` / `partial` / `failed` 等真实 job 状态。
+- 运行监控有 `job_id` 时优先轮询 `/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs` 和 `/workbench/jobs/{job_id}/result`；没有 `job_id` 时继续使用 V3 runtime/curves 或摘要曲线。
+- 单次分析如有 job `metrics_summary`，可优先显示结果回填；`source=existing_artifact` 必须标注为复用已导出证据，`partial` 必须保留部分完成或 config-only 边界。
+- 高级参数提交给 workbench 时要保持受限 smoke 边界；前端可以提交普通范围参数，但后端 runner 会进一步限制实际执行轮数、本地轮数和采样比例。
 - 鲁棒聚合算法在前端是多选；没有选中算法表示不启用鲁棒聚合，不要恢复“无防御”按钮。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。
