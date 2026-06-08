@@ -190,3 +190,11 @@ npm run preview
 ```
 
 不要提交 `node_modules`、`dist`、`.env.local`、日志或本地构建产物。
+
+## Workbench API 联动
+
+- `src/services/workbench.ts` 负责调用 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、`/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=200` 和 `/workbench/jobs/{job_id}/result`。
+- 攻防工作台的“校验配置”调用 `/workbench/validate`；“开始实验”调用 `/workbench/jobs` 并切换到运行监控。
+- 当前 API 只写入受限 workbench job 档案，状态会如实显示为训练任务待接入；前端继续读取已完成 showcase/V3 证据，不要展示为真实训练已启动。
+- 工作台模型选择只展示可进入 smoke 配置的 8 个模型；MGCN 系列继续作为需要适配器的边界说明，不放进启动 select。
+- 运行监控如果有 `job_id`，优先轮询 workbench job 日志；没有 job 时继续使用 V3 运行时间线或摘要曲线。

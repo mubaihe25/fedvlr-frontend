@@ -63,6 +63,14 @@ export const showcaseLabelMap: Record<string, string> = {
   has_v3: 'V3 证据',
   runtime_timeline: '运行时间线',
   training_curves: '训练曲线',
+  client_sampling_ratio_clamped_to_bounded_smoke_default: '采样比例已按受限 smoke 收束',
+  dataset_not_smoke_verified_for_model: '该模型/数据集尚未完成 smoke 验证',
+  target_item_not_in_target_options: '目标商品不在推荐候选中',
+  candidate_k_clamped_to_50: '候选数量已收束到 Top50',
+  secure_aggregation_conflicts_with_robust_aggregation: '安全聚合与鲁棒聚合互斥',
+  adapter_required_model: '模型需要适配器',
+  unknown_model: '未知模型',
+  unknown_dataset: '未知数据集',
 };
 
 export const toChineseLabel = (value?: string | number | null) => {
@@ -71,7 +79,9 @@ export const toChineseLabel = (value?: string | number | null) => {
   }
 
   const rawValue = String(value);
-  return showcaseLabelMap[rawValue] ?? showcaseLabelMap[rawValue.trim()] ?? rawValue.replaceAll('_', ' ');
+  const trimmedValue = rawValue.trim();
+  const prefix = trimmedValue.split(':')[0];
+  return showcaseLabelMap[rawValue] ?? showcaseLabelMap[trimmedValue] ?? showcaseLabelMap[prefix] ?? rawValue.replaceAll('_', ' ');
 };
 
 export const formatMetricValue = (value?: number | null) =>

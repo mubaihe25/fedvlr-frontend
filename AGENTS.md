@@ -202,3 +202,11 @@ npm run build
 ```
 
 完成修改后汇报文件改动、验证结果和 `git status`。不要提交 `dist` 或本地构建产物。
+
+## Workbench API 联动补充
+
+- `src/services/workbench.ts` 是攻防工作台的 API service，负责 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、job 状态、job 日志和 job result。
+- “校验配置”必须调用 `/workbench/validate`；“开始实验”必须调用 `/workbench/jobs`，但当前语义是生成受限 job 档案并进入已完成证据演示流程，不代表真实训练已启动。
+- 运行监控有 `job_id` 时优先轮询 `/workbench/jobs/{job_id}/logs`；没有 `job_id` 时继续使用 V3 runtime/curves 或摘要曲线。
+- 高级参数提交给 workbench 时要保持受限 smoke 边界：总轮数/epoch 不超过 10，本地轮数不超过 5，默认客户端采样比例不超过 0.2。
+- 鲁棒聚合算法在前端是多选；没有选中算法表示不启用鲁棒聚合，不要恢复“无防御”按钮。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。

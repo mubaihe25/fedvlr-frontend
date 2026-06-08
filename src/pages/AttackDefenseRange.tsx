@@ -59,11 +59,13 @@ import type {ExperimentPlaybook, PlaybookRouteTone} from '../lib/experimentPlayb
 import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPlainValue, getRecommendationCounts, toChineseLabel} from '../lib/showcaseFormat';
 import {cn} from '../lib/utils';
 import {loadShowcaseBundle} from '../services/showcase';
+import {createWorkbenchJob, fetchWorkbenchJob, fetchWorkbenchLogs, fetchWorkbenchOptions, validateWorkbenchConfig} from '../services/workbench';
 import type {ExperimentConfigurationSource} from '../services/experiment';
 import type {StartTrainResponse} from '../services/train';
 import type {ConsoleSessionState} from '../types/common';
 import type {DefenseType, LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../types/train';
 import type {ShowcaseBundle, ShowcaseModelCapabilityMatrix, ShowcaseModelSmokeEvidence, ShowcaseRecommendationItem, ShowcaseReport, ShowcaseScenario} from '../types/showcase';
+import type {WorkbenchJobStatusResponse, WorkbenchLogsResponse, WorkbenchOptionsResponse, WorkbenchPayload, WorkbenchValidationResponse} from '../types/workbench';
 
 export type WorkbenchTabId = 'orchestration' | 'monitoring' | 'analysis' | 'comparison' | 'history';
 
@@ -305,10 +307,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [expertOpen, setExpertOpen] = useState(true);
   const [paramPanel, setParamPanel] = useState<ParamPanelId>('basic');
   const [aggregationMode, setAggregationMode] = useState<AggregationMode>('plain_updates');
-  const [robustAlgorithm, setRobustAlgorithm] = useState('Krum');
+  const [robustAlgorithms, setRobustAlgorithms] = useState<string[]>(['Krum']);
   const [dpLayerEnabled, setDpLayerEnabled] = useState(false);
   const [targetItemTitle, setTargetItemTitle] = useState('Empty Amber Glass Spray Bottles');
+  const [targetItemId, setTargetItemId] = useState('0');
   const [attackStrength, setAttackStrength] = useState<AttackStrength>('强');
+  const [injectionRatio, setInjectionRatio] = useState(0.2);
+  const [maxInjectionsPerClient, setMaxInjectionsPerClient] = useState(10);
   const [saveTopKEnabled, setSaveTopKEnabled] = useState(true);
   const [exportAuditEnabled, setExportAuditEnabled] = useState(true);
   const [evidenceSource, setEvidenceSource] = useState<EvidenceSource>('auto');
@@ -319,6 +324,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [riskModality, setRiskModality] = useState<RiskModality>('item embedding');
   const [leakageMetrics, setLeakageMetrics] = useState(['hit@10', 'hit@20', 'hit@50']);
   const [noiseStrength, setNoiseStrength] = useState(0.15);
+  const [trimRatio, setTrimRatio] = useState(0.2);
+  const [krumF, setKrumF] = useState(1);
+  const [bulyanF, setBulyanF] = useState(1);
   const [defenseMetrics, setDefenseMetrics] = useState(['Recall@50', 'NDCG@50', '防御恢复率', '异常过滤']);
   const [highlightedParam, setHighlightedParam] = useState('');
   const [actionState, setActionState] = useState<ActionState>('idle');
@@ -329,7 +337,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('attack');
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('全部');
   const [switchMessage, setSwitchMessage] = useState('');
+  const [workbenchOptions, setWorkbenchOptions] = useState<WorkbenchOptionsResponse | null>(null);
+  const [workbenchOptionsError, setWorkbenchOptionsError] = useState('');
+  const [validationResult, setValidationResult] = useState<WorkbenchValidationResponse | null>(null);
+  const [workbenchJob, setWorkbenchJob] = useState<WorkbenchJobStatusResponse | null>(null);
+  const [workbenchLogs, setWorkbenchLogs] = useState<string[]>([]);
+  const [workbenchJobId, setWorkbenchJobId] = useState('');
+  const [logPollingPaused, setLogPollingPaused] = useState(false);
   const autoSelectedRef = useRef(false);
+  const robustAlgorithm = robustAlgorithms[0] ?? 'none';
 
   const {report, selectedScenario} = bundle;
   const config = session.draftTrainConfig;
@@ -390,7 +406,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     if (targetProduct?.title) {
       setTargetItemTitle(targetProduct.title);
     }
-  }, [targetProduct?.title]);
+    if (targetProduct?.itemId !== undefined && targetProduct?.itemId !== null) {
+      setTargetItemId(String(targetProduct.itemId));
+    }
+  }, [targetProduct?.itemId, targetProduct?.title]);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -436,17 +455,70 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
   }, [bundle.scenarios, selectedScenario.scenarioId]);
 
+  useEffect(() => {
+    let active = true;
+    fetchWorkbenchOptions()
+      .then((options) => {
+        if (!active) return;
+        setWorkbenchOptions(options);
+        setWorkbenchOptionsError('');
+        const defaultTarget = options.target_items?.[0];
+        if (defaultTarget?.item_id) {
+          setTargetItemId(String(defaultTarget.item_id));
+          setTargetItemTitle(defaultTarget.short_title ?? defaultTarget.title);
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setWorkbenchOptionsError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!workbenchJobId || logPollingPaused) return;
+    let active = true;
+    const refresh = () => {
+      Promise.all([fetchWorkbenchJob(workbenchJobId), fetchWorkbenchLogs(workbenchJobId, 200)])
+        .then(([job, logs]: [WorkbenchJobStatusResponse, WorkbenchLogsResponse]) => {
+          if (!active) return;
+          setWorkbenchJob(job);
+          setWorkbenchLogs(logs.lines ?? []);
+        })
+        .catch(() => {
+          if (!active) return;
+          setWorkbenchLogs((lines) => (lines.length ? lines : ['[Workbench] 暂时无法读取任务日志。']));
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [logPollingPaused, workbenchJobId]);
+
   const datasetOptions = useMemo(() => {
-    const values = [config.dataset, ...bundle.scenarios.map((scenario) => scenario.dataset).filter((value): value is string => Boolean(value))];
+    const optionValues = workbenchOptions?.datasets?.map((item) => item.id) ?? [];
+    const values = [config.dataset, ...optionValues, ...bundle.scenarios.map((scenario) => scenario.dataset).filter((value): value is string => Boolean(value))];
     return Array.from(new Set(values));
-  }, [bundle.scenarios, config.dataset]);
+  }, [bundle.scenarios, config.dataset, workbenchOptions?.datasets]);
 
   const modelOptions = useMemo(() => {
-    const values = [config.model, ...bundle.scenarios.map((scenario) => scenario.model).filter((value): value is string => Boolean(value))];
+    const optionValues = workbenchOptions?.models?.map((item) => item.id) ?? [];
+    const values = [config.model, ...optionValues, ...bundle.scenarios.map((scenario) => scenario.model).filter((value): value is string => Boolean(value))];
     return Array.from(new Set(values));
-  }, [bundle.scenarios, config.model]);
+  }, [bundle.scenarios, config.model, workbenchOptions?.models]);
 
   const targetOptions = useMemo(() => {
+    if (workbenchOptions?.target_items?.length) {
+      return workbenchOptions.target_items.map((item) => ({
+        id: item.item_id,
+        title: item.short_title ?? item.title,
+      }));
+    }
     const items = [
       targetProduct ? {id: targetProduct.itemId ?? targetProduct.title, title: targetProduct.title ?? targetProduct.itemId ?? 'Empty Amber Glass Spray Bottles'} : null,
       ...(report.recommendationComparison?.attack ?? []).slice(0, 12).map((item) => ({id: item.itemId, title: item.title ?? `商品 ${item.itemId}`})),
@@ -460,7 +532,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       return true;
     });
     return unique.length ? unique : [{id: 'empty-amber-glass-spray-bottles', title: 'Empty Amber Glass Spray Bottles'}];
-  }, [report.recommendationComparison?.attack, report.recommendationComparison?.baseline, targetProduct]);
+  }, [report.recommendationComparison?.attack, report.recommendationComparison?.baseline, targetProduct, workbenchOptions?.target_items]);
 
   const updateConfig = (patch: Partial<TrainConfig>) => {
     onDraftConfigChange({...config, ...patch});
@@ -489,9 +561,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       setSwitchMessage(`已切换到 ${getScenarioTitle(matchedScenario)} 场景`);
     }
     setAggregationMode(playbook.aggregationMode);
-    setRobustAlgorithm(playbook.robustAlgorithm);
+    setRobustAlgorithms(playbook.robustAlgorithm !== 'none' ? [playbook.robustAlgorithm] : []);
     setDpLayerEnabled(playbook.dpLayer);
     setTargetItemTitle(targetProduct?.title ?? playbook.targetLabel);
+    setTargetItemId(targetProduct?.itemId !== undefined && targetProduct?.itemId !== null ? String(targetProduct.itemId) : '0');
     setAttackStrength(playbook.id === 'target_poisoning_play' ? '强' : attackStrength);
     setSaveTopKEnabled(true);
     setExportAuditEnabled(true);
@@ -550,7 +623,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const setAggregationVisibility = (mode: AggregationMode) => {
     setAggregationMode(mode);
     if (mode === 'secure_aggregation') {
-      setRobustAlgorithm('none');
+      setRobustAlgorithms([]);
       updateConfig({
         defenseEnabled: true,
         defenseType: 'secure-aggregation',
@@ -570,17 +643,20 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   const selectRobustAlgorithm = (algorithm: string) => {
     setAggregationMode('plain_updates');
-    setRobustAlgorithm(algorithm);
+    const nextAlgorithms = robustAlgorithms.includes(algorithm)
+      ? robustAlgorithms.filter((item) => item !== algorithm)
+      : [...robustAlgorithms, algorithm];
+    setRobustAlgorithms(nextAlgorithms);
     updateConfig({
-      defenseEnabled: true,
-      defenseType: getDefenseTypeFromRobust(algorithm),
-      enabledDefenses: Array.from(new Set<string>([...(dpLayerEnabled ? ['dp_noise'] : []), 'robust_aggregation'])),
+      defenseEnabled: nextAlgorithms.length > 0 || dpLayerEnabled,
+      defenseType: nextAlgorithms.length > 0 ? getDefenseTypeFromRobust(nextAlgorithms[0]) : dpLayerEnabled ? 'differential-privacy' : 'none',
+      enabledDefenses: Array.from(new Set<string>([...(dpLayerEnabled ? ['dp_noise'] : []), ...(nextAlgorithms.length > 0 ? ['robust_aggregation'] : [])])),
       advanced: {...config.advanced, secureAggregation: false},
     });
   };
 
   const clearRobustAlgorithm = () => {
-    setRobustAlgorithm('none');
+    setRobustAlgorithms([]);
     const defenses = new Set<string>(config.enabledDefenses ?? []);
     defenses.delete('robust_aggregation');
     if (aggregationMode === 'secure_aggregation') defenses.add('secure_aggregation_sim');
@@ -605,24 +681,84 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     });
   };
 
-  const handleValidate = async () => {
-    setIsSubmitting(true);
-    setActionState('validating');
-    setSubmitMessage('');
-    window.setTimeout(() => {
-      setSubmitMessage('配置已校验：当前为 artifact 演示配置，新训练任务接口待接入。');
-      setIsSubmitting(false);
-      setActionState('idle');
-    }, 800);
+  const buildWorkbenchPayload = (): WorkbenchPayload => {
+    const directionByPlay: Record<ExperimentPlayId, WorkbenchPayload['direction']> = {
+      target_poisoning_play: 'recommendation_manipulation',
+      membership_privacy_play: 'membership_inference',
+      update_leakage_play: 'update_leakage',
+      robust_defense_play: 'aggregation_defense',
+    };
+    return {
+      direction: directionByPlay[selectedPlay.id],
+      scenario_id: selectedScenario.scenarioId,
+      dataset: config.dataset || selectedPlayDefaults.dataset,
+      model: config.model || selectedPlayDefaults.model,
+      total_rounds: config.totalRounds || 10,
+      local_epochs: config.advanced.localEpochs || 5,
+      client_sampling_ratio: config.clientSamplingRate || 0.2,
+      malicious_client_ratio: config.poisoningRatio ?? config.maliciousClientConfig?.ratio ?? selectedPlayDefaults.maliciousRatio,
+      learning_rate: config.learningRate || 0.001,
+      weight_decay: config.advanced.weightDecay ?? 0,
+      gradient_clip: config.advanced.gradientClip ?? 5,
+      aggregation_mode: aggregationMode,
+      robust_aggregators: aggregationMode === 'secure_aggregation' ? [] : robustAlgorithms,
+      dp_noise_enabled: dpLayerEnabled,
+      dp_noise_std: noiseStrength,
+      trim_ratio: trimRatio,
+      krum_f: krumF,
+      bulyan_f: bulyanF,
+      target_item_id: targetItemId,
+      target_item_title: targetItemTitle,
+      attack_strength: attackStrength,
+      injection_ratio: injectionRatio,
+      max_injections_per_client: maxInjectionsPerClient,
+      candidate_k: Number(candidateLimit.replace('Top', '')) || 50,
+      risk_modality: riskModality,
+      mia_evidence_source: evidenceSource,
+      membership_sample_count: membershipSampleCount,
+      save_topk: saveTopKEnabled,
+      export_artifact: exportAuditEnabled,
+    };
   };
 
-  const handleStartExperiment = () => {
+  const handleValidate = async () => {
+    setActionState('validating');
+    setSubmitMessage('');
+    setValidationResult(null);
+    try {
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+      const result = await validateWorkbenchConfig(buildWorkbenchPayload());
+      setValidationResult(result);
+      setSubmitMessage(
+        result.valid
+          ? '配置已校验：当前为受限 smoke / 已完成证据读取配置。'
+          : `配置未通过校验：${result.errors.slice(0, 2).join(' / ') || '请检查参数'}`,
+      );
+    } catch (error) {
+      setSubmitMessage(`校验失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setActionState('idle');
+    }
+  };
+
+  const handleStartExperiment = async () => {
     setActionState('starting');
     setSubmitMessage('');
-    window.setTimeout(() => {
-      setSubmitMessage('当前版本暂未接入真实训练任务启动，已自动切换为读取已完成 artifact 演示。');
+    try {
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+      const result = await createWorkbenchJob(buildWorkbenchPayload());
+      setValidationResult(result);
+      if (result.job_id) {
+        setWorkbenchJobId(result.job_id);
+        setWorkbenchLogs([`[Workbench] 任务 ${result.job_id} 已记录。`, '[Boundary] 当前版本不启动真实训练，进入已完成证据演示流程。']);
+      }
+      setSubmitMessage(result.message ?? '训练任务待接入，已进入已完成证据演示流程。');
+      setActiveTab('monitoring');
+    } catch (error) {
+      setSubmitMessage(`启动失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
       setActionState('idle');
-    }, 800);
+    }
   };
 
   const renderModulePills = (ids: string[]) => (
@@ -988,6 +1124,20 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 ))}
               </select>,
             )}
+            <div className="grid gap-3 sm:grid-cols-3">
+              {fieldShell('学习率', <input className={inputClass} type="number" min={0.00001} max={0.1} step={0.0001} value={config.learningRate || 0.001} onChange={(event) => {
+                markParamChanged('学习率');
+                updateConfig({learningRate: Number(event.target.value)});
+              }} />)}
+              {fieldShell('权重衰减', <input className={inputClass} type="number" min={0} max={1} step={0.0001} value={config.advanced.weightDecay ?? 0} onChange={(event) => {
+                markParamChanged('权重衰减');
+                updateConfig({advanced: {...config.advanced, weightDecay: Number(event.target.value)}});
+              }} />)}
+              {fieldShell('梯度裁剪', <input className={inputClass} type="number" min={0} max={20} step={0.5} value={config.advanced.gradientClip ?? 5} onChange={(event) => {
+                markParamChanged('梯度裁剪');
+                updateConfig({advanced: {...config.advanced, gradientClip: Number(event.target.value)}});
+              }} />)}
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {fieldShell('训练轮数', <input className={inputClass} type="number" min={1} max={200} value={config.totalRounds || 10} onChange={(event) => updateTotalRounds(Number(event.target.value))} />)}
               {fieldShell('本地轮数', <input className={inputClass} type="number" min={1} max={50} value={config.advanced.localEpochs || 5} onChange={(event) => updateLocalEpochs(Number(event.target.value))} />)}
@@ -995,8 +1145,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             {fieldShell(
               '客户端采样比例',
               <div className="flex items-center gap-3">
-                <input className="w-full accent-cyan-300" type="range" min={0.05} max={1} step={0.05} value={config.clientSamplingRate || 0.25} onChange={(event) => updateClientSamplingRate(Number(event.target.value))} />
-                <span className="w-12 text-right font-mono text-sm font-bold text-cyan-100">{(config.clientSamplingRate || 0.25).toFixed(2)}</span>
+                <input className="w-full accent-cyan-300" type="range" min={0.05} max={0.2} step={0.05} value={Math.min(config.clientSamplingRate || 0.2, 0.2)} onChange={(event) => updateClientSamplingRate(Number(event.target.value))} />
+                <span className="w-12 text-right font-mono text-sm font-bold text-cyan-100">{Math.min(config.clientSamplingRate || 0.2, 0.2).toFixed(2)}</span>
               </div>,
             )}
             {fieldShell(
@@ -1010,14 +1160,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               '目标商品',
               <select
                 className={inputClass}
-                value={targetItemTitle}
+                value={targetItemId}
                 onChange={(event) => {
                   markParamChanged('目标商品');
-                  setTargetItemTitle(event.target.value);
+                  const selectedTarget = targetOptions.find((item) => String(item.id ?? item.title) === event.target.value);
+                  setTargetItemId(event.target.value);
+                  setTargetItemTitle(selectedTarget?.title ?? event.target.value);
                 }}
               >
                 {targetOptions.map((item) => (
-                  <option key={String(item.id ?? item.title)} value={item.title}>
+                  <option key={String(item.id ?? item.title)} value={String(item.id ?? item.title)}>
                     {item.title}
                   </option>
                 ))}
@@ -1030,6 +1182,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 setAttackStrength(value);
               }),
             )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {fieldShell('注入比例', <input className={inputClass} type="number" min={0} max={1} step={0.05} value={injectionRatio} onChange={(event) => {
+                markParamChanged('攻击强度');
+                setInjectionRatio(Number(event.target.value));
+              }} />)}
+              {fieldShell('每客户端上限', <input className={inputClass} type="number" min={1} max={100} step={1} value={maxInjectionsPerClient} onChange={(event) => {
+                markParamChanged('攻击强度');
+                setMaxInjectionsPerClient(Number(event.target.value));
+              }} />)}
+            </div>
             <div className="flex flex-wrap gap-2">
               {switchControl(saveTopKEnabled, () => {
                 markParamChanged('输出证据');
@@ -1046,6 +1208,24 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (selectedPlay.id === 'membership_privacy_play') {
         return (
           <div className="grid gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {fieldShell(
+                '数据集',
+                <select className={inputClass} value={config.dataset || selectedPlayDefaults.dataset} onChange={(event) => updateDataset(event.target.value)}>
+                  {datasetOptions.map((item) => (
+                    <option key={item} value={item}>{datasetLabel(item)}</option>
+                  ))}
+                </select>,
+              )}
+              {fieldShell(
+                '模型',
+                <select className={inputClass} value={config.model || selectedPlayDefaults.model} onChange={(event) => updateModel(event.target.value)}>
+                  {modelOptions.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>,
+              )}
+            </div>
             {fieldShell(
               '证据来源',
               segmented<EvidenceSource>(evidenceSource, ['rank', 'unmasked rank', 'checkpoint score', 'auto'], (value) => {
@@ -1082,6 +1262,24 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (selectedPlay.id === 'update_leakage_play') {
         return (
           <div className="grid gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {fieldShell(
+                '数据集',
+                <select className={inputClass} value={config.dataset || selectedPlayDefaults.dataset} onChange={(event) => updateDataset(event.target.value)}>
+                  {datasetOptions.map((item) => (
+                    <option key={item} value={item}>{datasetLabel(item)}</option>
+                  ))}
+                </select>,
+              )}
+              {fieldShell(
+                '模型',
+                <select className={inputClass} value={config.model || selectedPlayDefaults.model} onChange={(event) => updateModel(event.target.value)}>
+                  {modelOptions.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>,
+              )}
+            </div>
             {fieldShell('输入来源', <select className={inputClass} value="客户端上传更新" onChange={() => undefined}><option>客户端上传更新</option></select>)}
             {fieldShell(
               '候选数量',
@@ -1106,6 +1304,24 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       }
       return (
         <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {fieldShell(
+              '数据集',
+              <select className={inputClass} value={config.dataset || selectedPlayDefaults.dataset} onChange={(event) => updateDataset(event.target.value)}>
+                {datasetOptions.map((item) => (
+                  <option key={item} value={item}>{datasetLabel(item)}</option>
+                ))}
+              </select>,
+            )}
+            {fieldShell(
+              '模型',
+              <select className={inputClass} value={config.model || selectedPlayDefaults.model} onChange={(event) => updateModel(event.target.value)}>
+                {modelOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>,
+            )}
+          </div>
           {fieldShell(
             '聚合模式',
             <div className="flex flex-wrap gap-2">
@@ -1140,16 +1356,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           {fieldShell(
             '防御算法',
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  markParamChanged('防御策略');
-                  clearRobustAlgorithm();
-                }}
-                className={cn('rounded-full border px-3 py-1.5 text-xs font-black transition', robustAlgorithm === 'none' ? 'border-slate-200/35 bg-slate-300/12 text-slate-100' : 'border-white/10 bg-white/[0.045] text-slate-300')}
-              >
-                无防御
-              </button>
+              <span className="rounded-full border border-slate-700/70 bg-slate-950/35 px-3 py-1.5 text-xs font-bold text-slate-500">
+                {robustAlgorithms.length ? `已选 ${robustAlgorithms.length} 项` : '未选择鲁棒聚合'}
+              </span>
               {ROBUST_AGGREGATORS.map((algorithm) => (
                 <button
                   key={algorithm}
@@ -1160,9 +1369,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                     markParamChanged('防御策略');
                     selectRobustAlgorithm(algorithm);
                   }}
-                  className={cn(
-                    'rounded-full border px-3 py-1.5 text-xs font-black transition',
-                    robustAlgorithm === algorithm && !secureModeActive ? 'border-emerald-200/45 bg-emerald-300/15 text-emerald-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-emerald-200/25',
+                    className={cn(
+                      'rounded-full border px-3 py-1.5 text-xs font-black transition',
+                    robustAlgorithms.includes(algorithm) && !secureModeActive ? 'border-emerald-200/45 bg-emerald-300/15 text-emerald-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-emerald-200/25',
                     secureModeActive ? 'cursor-not-allowed border-slate-700/60 bg-slate-900/40 text-slate-600' : '',
                   )}
                 >
@@ -1187,6 +1396,20 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 </div>,
               )
             : null}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {fieldShell('Trim 比例', <input className={inputClass} type="number" min={0} max={0.49} step={0.01} value={trimRatio} onChange={(event) => {
+              markParamChanged('防御策略');
+              setTrimRatio(Number(event.target.value));
+            }} />)}
+            {fieldShell('Krum f', <input className={inputClass} type="number" min={0} max={10} step={1} value={krumF} onChange={(event) => {
+              markParamChanged('防御策略');
+              setKrumF(Number(event.target.value));
+            }} />)}
+            {fieldShell('Bulyan f', <input className={inputClass} type="number" min={0} max={10} step={1} value={bulyanF} onChange={(event) => {
+              markParamChanged('防御策略');
+              setBulyanF(Number(event.target.value));
+            }} />)}
+          </div>
           {fieldShell('观测指标', <div className="flex flex-wrap gap-2">{['Recall@50', 'NDCG@50', '防御恢复率', '异常过滤'].map((item) => tagToggle(defenseMetrics, item, (next) => {
             markParamChanged('输出证据');
             setDefenseMetrics(next);
@@ -1333,19 +1556,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 <div>
                   <p className="mb-2 text-xs font-bold text-slate-500">防御算法</p>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        markParamChanged('防御策略');
-                        clearRobustAlgorithm();
-                      }}
-                      className={cn(
-                        'rounded-full border px-4 py-2 text-xs font-black transition',
-                        robustAlgorithm === 'none' ? 'border-slate-200/35 bg-slate-300/12 text-slate-100' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-slate-200/25',
-                      )}
-                    >
-                      无防御
-                    </button>
+                    <span className="rounded-full border border-slate-700/70 bg-slate-950/35 px-4 py-2 text-xs font-bold text-slate-500">
+                      {robustAlgorithms.length ? `已选 ${robustAlgorithms.length} 项` : '未选择鲁棒聚合'}
+                    </span>
                     {ROBUST_AGGREGATORS.map((algorithm) => (
                       <button
                         key={algorithm}
@@ -1358,7 +1571,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                         }}
                         className={cn(
                           'rounded-full border px-4 py-2 text-xs font-black transition',
-                          robustAlgorithm === algorithm && !secureModeActive
+                          robustAlgorithms.includes(algorithm) && !secureModeActive
                             ? 'border-emerald-200/45 bg-emerald-300/15 text-emerald-50'
                             : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-emerald-200/25',
                           secureModeActive ? 'cursor-not-allowed opacity-45' : '',
@@ -1446,6 +1659,19 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <p className="text-xs font-bold tracking-[0.18em] text-cyan-100/70">下一步建议</p>
               <h3 className="mt-1 max-w-3xl text-lg font-black leading-7 text-white">{nextStepByPlay[selectedPlay.id]}</h3>
               {submitMessage ? <p className="mt-2 text-sm font-semibold text-emerald-100">{submitMessage}</p> : null}
+              {workbenchOptionsError ? <p className="mt-2 text-sm font-semibold text-amber-100">工作台选项暂不可用：{workbenchOptionsError}</p> : null}
+              {validationResult ? (
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold">
+                  <span className={cn('rounded-full border px-2.5 py-1', validationResult.valid ? 'border-emerald-200/30 bg-emerald-300/10 text-emerald-100' : 'border-rose-200/30 bg-rose-300/10 text-rose-100')}>
+                    {validationResult.valid ? '配置已校验' : '配置需调整'}
+                  </span>
+                  {validationResult.disabled_reason ? <span className="rounded-full border border-amber-200/25 bg-amber-300/10 px-2.5 py-1 text-amber-100">训练任务待接入</span> : null}
+                  {workbenchJobId ? <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-2.5 py-1 text-cyan-100">job {workbenchJobId}</span> : null}
+                  {validationResult.warnings?.slice(0, 2).map((warning) => (
+                    <span key={warning} className="rounded-full border border-white/10 bg-white/[0.045] px-2.5 py-1 text-slate-400">{toChineseLabel(warning)}</span>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-3">
               <button
@@ -1598,7 +1824,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                       onClick={() => selectRobustAlgorithm(algorithm)}
                       className={cn(
                         'rounded-2xl border px-3 py-3 text-sm font-bold transition',
-                        robustAlgorithm === algorithm && !secureModeActive
+                        robustAlgorithms.includes(algorithm) && !secureModeActive
                           ? 'border-emerald-200/45 bg-emerald-300/12 text-emerald-50'
                           : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-emerald-200/30',
                         secureModeActive ? 'cursor-not-allowed opacity-50' : '',
@@ -1771,7 +1997,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       const prefix = event.round ? `[Round ${event.round}]` : event.type ? `[${toChineseLabel(event.type)}]` : '[V3]';
       return `${prefix} ${event.message}`;
     }) ?? [];
-    const logLines = v3LogLines.length ? v3LogLines : logLinesByPlay[selectedPlay.id];
+    const logLines = workbenchJobId && workbenchLogs.length ? workbenchLogs : v3LogLines.length ? v3LogLines : logLinesByPlay[selectedPlay.id];
     const monitoringFocusByPlay: Record<ExperimentPlayId, Array<{label: string; value: string; tone?: string}>> = {
       target_poisoning_play: [
         {label: '目标排序', value: `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`, tone: 'text-rose-100'},
@@ -1808,6 +2034,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               >
                 {defenseActive ? '关闭防御视图' : '开启防御视图'}
               </button>
+              {workbenchJobId ? (
+                <button
+                  type="button"
+                  onClick={() => setLogPollingPaused((value) => !value)}
+                  className="rounded-2xl border border-cyan-200/25 bg-cyan-300/10 px-3 py-2 text-xs font-bold text-cyan-100 hover:bg-cyan-300/15"
+                >
+                  {logPollingPaused ? '继续日志' : '暂停日志'}
+                </button>
+              ) : null}
             </div>
 
             <div className="grid gap-3">
@@ -1815,7 +2050,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 {label: '当前轮次', value: `${roundNow} / ${totalRounds}`},
                 {label: '客户端数', value: `${v3RuntimePanel?.clientCount ?? config.clientCount ?? report.defenseTrace?.totalClients ?? 8}`},
                 {label: '恶意客户端比例', value: formatRatio(maliciousRatio)},
-                {label: '当前防御策略', value: v3RuntimePanel?.defenseStrategy ?? (defenseActive ? inferDefenseType(selectedScenario, report) : '无防御观察')},
+                {label: '当前防御策略', value: workbenchJob?.config_summary?.robust_aggregators ? String(workbenchJob.config_summary.robust_aggregators) : v3RuntimePanel?.defenseStrategy ?? (defenseActive ? inferDefenseType(selectedScenario, report) : '无防御观察')},
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
                   <p className="text-xs font-bold text-slate-500">{item.label}</p>
@@ -1843,7 +2078,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <p key={line}>{line}</p>
                 ))}
               </div>
-              <p className="mt-3 text-[11px] text-slate-500">{v3LogLines.length ? '运行时间线来自 V3 证据；不额外补写训练全过程。' : '日志用于串联已完成结果摘要，不伪造完整训练全过程。'}</p>
+              <p className="mt-3 text-[11px] text-slate-500">
+                {workbenchJobId
+                  ? `日志来自 workbench job：${workbenchJob?.status ?? '读取中'}；当前不伪造真实训练进度。`
+                  : v3LogLines.length
+                    ? '运行时间线来自 V3 证据；不额外补写训练全过程。'
+                    : '日志用于串联已完成结果摘要，不伪造完整训练全过程。'}
+              </p>
             </div>
           </div>
         </section>

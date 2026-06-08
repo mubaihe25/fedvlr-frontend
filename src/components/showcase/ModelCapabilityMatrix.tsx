@@ -121,7 +121,7 @@ export const ModelCapabilityMatrix: React.FC<ModelCapabilityMatrixProps> = ({mat
         </>
       ) : (
         <div className="rounded-xl border border-white/10 bg-white/[0.045] px-4 py-5 text-sm text-slate-400">
-          暂无 / 不适用。请选择“模型安全能力矩阵”场景或等待 API artifact 返回矩阵。
+          暂无 / 不适用。请选择“模型安全能力矩阵”场景或等待真实数据返回矩阵。
         </div>
       )}
     </section>

@@ -73,7 +73,7 @@ export const ResultsEvidence: React.FC<ResultsEvidenceProps> = ({onPageChange}) 
             </p>
           </div>
           <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-xs font-bold text-slate-300">
-            {bundle.dataSource === 'api' ? 'API artifact' : bundle.dataSource === 'mixed' ? 'API artifact（部分缺失）' : 'API 未连接 / 演示数据'}
+            {bundle.dataSource === 'api' ? '真实数据' : bundle.dataSource === 'mixed' ? '真实数据（部分缺失）' : 'API 未连接 / 演示数据'}
           </span>
         </div>
 

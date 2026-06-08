@@ -19,7 +19,7 @@ const clients = [
   {id: 'C7', x: 50, y: 226, tone: 'malicious', label: '异常更新', delay: 0.78},
 ] as const;
 
-const server = {x: 304, y: 238};
+const server = {x: 310, y: 235};
 
 const toneStyle = {
   benign: {
@@ -153,6 +153,33 @@ export const FederatedTopology: React.FC<FederatedTopologyProps> = ({mode = 'exe
               <>
                 <circle cx={server.x} cy={server.y} r="78" fill="none" stroke="#86efac" strokeOpacity="0.5" strokeWidth="2" className="sandbox-orbit" />
                 <circle cx={server.x} cy={server.y} r="94" fill="none" stroke="#86efac" strokeOpacity="0.16" strokeWidth="2" className="sandbox-defense-ring" />
+                <motion.circle
+                  cx={server.x}
+                  cy={server.y}
+                  r="86"
+                  fill="none"
+                  stroke="#86efac"
+                  strokeDasharray="36 160"
+                  strokeLinecap="round"
+                  strokeOpacity="0.7"
+                  strokeWidth="3"
+                  style={{transformOrigin: `${server.x}px ${server.y}px`}}
+                  animate={{rotate: [0, 360], opacity: [0.45, 0.88, 0.45]}}
+                  transition={{rotate: {duration: 5.4, repeat: Infinity, ease: 'linear'}, opacity: {duration: 2.6, repeat: Infinity, ease: 'easeInOut'}}}
+                />
+                {[0, 1, 2, 3].map((item) => (
+                  <motion.circle
+                    key={`intercept-${item}`}
+                    cx={server.x + 64 + item * 4}
+                    cy={server.y - 26 + item * 14}
+                    r="2"
+                    fill="#fb7185"
+                    filter="url(#fedvlrSoftGlow)"
+                    initial={{opacity: 0, scale: 0.4}}
+                    animate={{opacity: [0, 0.9, 0], scale: [0.4, 1.8, 0.2], x: [0, 10 + item * 3, 18 + item * 5], y: [0, -8 + item * 4, -18 + item * 6]}}
+                    transition={{duration: 1.7, repeat: Infinity, delay: item * 0.28, ease: 'easeOut'}}
+                  />
+                ))}
                 {[0, 1, 2].map((item) => (
                   <motion.path
                     key={item}

@@ -121,7 +121,6 @@ export const SystemMechanism: React.FC = () => {
         </div>
 
         <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/35 p-5">
-          <div className="absolute left-8 right-8 top-1/2 hidden h-px bg-gradient-to-r from-sky-200/20 via-emerald-200/35 to-violet-200/20 xl:block" />
           <div className="grid gap-4 xl:grid-cols-5">
             {architectureLayers.map((layer, index) => (
               <motion.div

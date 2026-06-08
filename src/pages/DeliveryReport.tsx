@@ -29,10 +29,10 @@ const readDeliveryText = (delivery: unknown, key: string) => {
 
 const sourceLabel = (source: string) => {
   if (source === 'api') {
-    return 'API artifact';
+    return '真实数据';
   }
   if (source === 'mixed') {
-    return 'API artifact（部分缺失）';
+    return '真实数据（部分缺失）';
   }
   return 'API 未连接 / 演示数据';
 };
@@ -125,7 +125,7 @@ export const DeliveryReport: React.FC = () => {
         eyebrow="评委结尾页"
         title="交付报告"
         description="从当前 showcase artifact 生成可讲解的交付摘要：已实现能力、可展示实验、当前边界、后续增强和适用场景。"
-        chips={['中文化交付摘要', 'API artifact 优先', '代理证据 / 演示验证 / 快速冒烟不写成完整实现']}
+        chips={['中文化交付摘要', '真实数据优先', '代理证据 / 演示验证 / 快速冒烟不写成完整实现']}
         icon={FileText}
         tone="secondary"
       />

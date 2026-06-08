@@ -10,9 +10,9 @@ interface ShowcaseScenarioSelectorProps {
 }
 
 const sourceLabel = {
-  api: 'API artifact',
+  api: '真实数据',
   mock: 'API 未连接 / 演示数据',
-  mixed: 'API artifact（部分缺失）',
+  mixed: '真实数据（部分缺失）',
 } as const;
 
 const flagLabels = [
