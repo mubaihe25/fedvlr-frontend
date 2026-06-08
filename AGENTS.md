@@ -21,11 +21,11 @@
 - `src/pages`：页面级功能。主路径为项目导览、系统机制、攻防工作台。
 - `src/components/sandbox`：数字沙盘视觉组件，包括联邦拓扑、动态飞线、运行监控、target rank 轨迹和推荐三列对照。
 - `src/components/showcase`：showcase 复用组件，包括场景选择器、指标卡、模型能力矩阵、V2.5 摘要等。
-- `src/services/showcase.ts`：showcase artifact 读取、真实场景优先选择、字段正规化、recommendations limit 查询、图片 URL 过滤和 API 失败兜底。
+- `src/services/showcase.ts`：showcase artifact 读取、V3 report/panel 接入、真实场景优先选择、字段正规化、recommendations limit 查询、图片 URL 过滤和 API 失败兜底。
 - `src/hooks/useShowcaseBundle.ts`：showcase bundle 状态管理；初始为 API 加载态，不要在 API 响应前先显示演示数据。
 - `src/lib/securityTaxonomy.ts`：前端攻防语义模型，统一攻击、防御、观测、证据分类。
 - `src/lib/experimentPlaybooks.ts`：实验剧本数据模型，统一驱动实验编排三栏、攻防路径图、当前参数、推荐场景和执行区文案。
-- `src/lib/scenarioNarratives.ts`：场景叙事工具，负责中文场景名、攻防类型、证据标签、用途和 target rank 口径。
+- `src/lib/scenarioNarratives.ts`：场景叙事工具，负责中文场景名、V3 panel 证据、攻防类型、证据标签、用途和 target rank 口径。
 - `src/lib/showcaseFormat.ts`：中文 label map、指标格式化和边界说明。
 - `src/mock`：离线演示数据，只能在 API 入口失败时兜底。
 
@@ -108,9 +108,9 @@
 
 选择安全聚合模拟时，Krum / Median / TrimmedMean / Bulyan 置灰并显示原因。选择鲁棒聚合算法时，安全聚合模拟置灰并显示原因。差分隐私风格加噪作为更新扰动层单独展示。
 
-运行监控要表达本地训练、更新/梯度上传、服务端聚合、恶意更新、防御过滤、终端日志、状态摘要和实验摘要曲线。若没有真实曲线，必须标注“实验摘要曲线”，不要伪造完整训练全过程。
+运行监控要表达本地训练、更新/梯度上传、服务端聚合、恶意更新、防御过滤、终端日志、状态摘要和曲线来源。优先读取 V3 运行时间线和训练曲线；`summary_curve` 显示“摘要曲线”，`real_points` 显示“真实记录点”。若没有真实曲线，必须标注“实验摘要曲线”，不要伪造完整训练全过程。
 
-单次分析必须先给一句话实验结论，再展示目标商品轨迹、推荐三列、成员推断和客户端更新泄露。候选还原不是完整用户历史恢复；不要把 DLG/IG 写成已完整还原真实图片。
+单次分析必须先给一句话实验结论，再展示目标商品轨迹、推荐三列、成员推断和客户端更新泄露。优先读取 V3 推荐操纵、成员推断、更新泄露和聚合防御 panel；缺失 panel 显示“未导出 / 暂无证据”，不要用 mock 补齐。候选还原不是完整用户历史恢复；不要把 DLG/IG 写成已完整还原真实图片。
 
 推荐三列默认请求 5 条，支持展开 15 条、展开 50 条和收起；展开动作应按需请求 recommendations endpoint，不要一次渲染全量推荐。推荐项应显示图片、标题、类目、rank、变化状态和是否目标商品。目标商品不在 Top50 时不要插入列表，只在目标轨迹中说明。
 
@@ -130,15 +130,28 @@
 - `/showcase/scenarios/{scenario_id}/security`
 - `/showcase/scenarios/{scenario_id}/privacy`
 - `/showcase/images/{dataset}/{item_id}?size=thumb|full`
+- `/showcase/scenarios/{scenario_id}/v3/report`
+- `/showcase/scenarios/{scenario_id}/v3/profile`
+- `/showcase/scenarios/{scenario_id}/v3/runtime`
+- `/showcase/scenarios/{scenario_id}/v3/curves`
+- `/showcase/scenarios/{scenario_id}/v3/target-manipulation`
+- `/showcase/scenarios/{scenario_id}/v3/membership`
+- `/showcase/scenarios/{scenario_id}/v3/update-leakage`
+- `/showcase/scenarios/{scenario_id}/v3/aggregation-defense`
+- `/showcase/scenarios/{scenario_id}/v3/privacy-defense`
+- `/showcase/scenarios/{scenario_id}/v3/model-support`
+- `/showcase/scenarios/{scenario_id}/v3/frontend-summary`
 
 默认真实场景优先级：
 
-1. `amazon_beauty_poc_v25_backend_smoke`
-2. `mmfedrap_ku_attack_defense_demo`
-3. `model_security_capability_matrix`
+1. `amazon_beauty_poc_security_v3`
+2. `amazon_beauty_poc_v25_backend_smoke`
+3. `mmfedrap_ku_attack_defense_demo`
 4. `security_matrix_krum_demo`
 
-`/showcase/scenarios` 可用时，不要用演示数据补齐单个 artifact 缺口；缺失指标显示“暂无 / 不适用”。只有 API 入口真正不可用时，才允许 fallback 到 `src/mock/showcase.ts`。页面不能白屏。
+`/v3/report` 优先于旧版 `/report`。单个 V3 panel 缺失时只显示“未导出 / 暂无证据”，不要回退到 mock 补造该 panel。`/showcase/scenarios` 可用时，不要用演示数据补齐单个 artifact 缺口；缺失指标显示“未导出”或“暂无 / 不适用”。只有 API 入口真正不可用时，才允许 fallback 到 `src/mock/showcase.ts`。页面不能白屏。
+
+`/showcase/scenarios` 返回 `has_v3`、`available_panels`、`supported_directions`、`has_runtime`、`has_curves`、`has_target_manipulation`、`has_membership`、`has_update_leakage`、`has_aggregation_defense`、`has_privacy_defense`、`has_model_support`、`has_images` 时，主 UI 必须转成中文标签，例如“V3 证据”“有运行时间线”“有曲线”“有推荐操纵”“有成员推断”“有更新泄露”“有聚合防御”“有图片”，不要直接显示字段名。
 
 推荐图片优先使用 `thumbnail_url`，其次 `local_image_url`，再 fallback 到 `image_url`，再失败显示占位图。不要渲染 D 盘路径、UNC 路径或其他本地绝对路径。
 

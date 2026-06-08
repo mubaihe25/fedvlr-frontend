@@ -56,7 +56,7 @@ import {
 } from '../lib/securityTaxonomy';
 import {EXPERIMENT_PLAYBOOKS, getExperimentPlaybook} from '../lib/experimentPlaybooks';
 import type {ExperimentPlaybook, PlaybookRouteTone} from '../lib/experimentPlaybooks';
-import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPlainValue, getRecommendationCounts} from '../lib/showcaseFormat';
+import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPlainValue, getRecommendationCounts, toChineseLabel} from '../lib/showcaseFormat';
 import {cn} from '../lib/utils';
 import {loadShowcaseBundle} from '../services/showcase';
 import type {ExperimentConfigurationSource} from '../services/experiment';
@@ -114,11 +114,36 @@ const formatRank = (value?: number | null) => (typeof value === 'number' && Numb
 const formatSigned = (value?: number | null, digits = 0) => (typeof value === 'number' && Number.isFinite(value) ? `+${value.toFixed(digits)}` : EMPTY_VALUE);
 const formatRatio = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : EMPTY_VALUE);
 const formatSmallNumber = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : EMPTY_VALUE);
+const formatExportedValue = (value?: number | string | null) => (value === null || value === undefined || value === '' || value === EMPTY_VALUE ? '未导出' : String(value));
 const formatCellValue = (value?: string | number | null) => {
   if (value === null || value === undefined || value === EMPTY_VALUE || value === '') {
     return '未导出';
   }
   return String(value);
+};
+
+const curveSourceLabel = (value?: string | null) => {
+  if (value === 'real_points') return '真实记录点';
+  if (value === 'summary_curve') return '摘要曲线';
+  return value ? toChineseLabel(value) : '摘要曲线';
+};
+
+const defenseStatusLabel = (value?: string | null) => {
+  if (value === 'configured_only') return '已配置 / 未形成完整 benchmark';
+  return value ? toChineseLabel(value) : EMPTY_VALUE;
+};
+
+const getV3EvidenceBadges = (scenario: ShowcaseScenario, report?: ShowcaseReport | null) => {
+  const badges: string[] = [];
+  if (scenario.hasV3 || report?.v3) badges.push('V3 证据');
+  if (scenario.hasRuntime || report?.v3?.runtime?.events.length) badges.push('有运行时间线');
+  if (scenario.hasCurves || report?.v3?.curves) badges.push('有曲线');
+  if (scenario.hasTargetManipulation || report?.v3?.targetManipulation) badges.push('有推荐操纵');
+  if (scenario.hasMembership || report?.v3?.membership) badges.push('有成员推断');
+  if (scenario.hasUpdateLeakage || report?.v3?.updateLeakage) badges.push('有更新泄露');
+  if (scenario.hasAggregationDefense || report?.v3?.aggregationDefense) badges.push('有聚合防御');
+  if (scenario.hasImages || report?.recommendationComparison?.baseline.some((item) => item.thumbnailUrl || item.localImageUrl || item.imageUrl)) badges.push('有图片');
+  return Array.from(new Set(badges));
 };
 
 const interpolate = (start: number, end: number, steps = 18) =>
@@ -285,9 +310,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     (typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number' && displayRankBefore > 0 && displayRankAfter > 0
       ? 1 / displayRankAfter - 1 / displayRankBefore
       : null);
-  const displayManipulationRisk =
-    rankStats.manipulationRisk ?? (displayNormalizedLift !== null ? Math.max(0, Math.min(100, displayNormalizedLift * 100)) : null);
   const privacyMetrics = getPrivacyMetrics(report);
+  const v3TargetPanel = report.v3?.targetManipulation ?? null;
+  const v3MembershipPanel = report.v3?.membership ?? null;
+  const v3LeakagePanel = report.v3?.updateLeakage ?? null;
+  const v3AggregationPanel = report.v3?.aggregationDefense ?? null;
+  const v3CurvesPanel = report.v3?.curves ?? null;
+  const v3RuntimePanel = report.v3?.runtime ?? null;
+  const v3EvidenceAvailable = Boolean(report.v3 || selectedScenario.hasV3);
   const targetProduct = getTargetProduct(report);
   const targetImageItem = targetProduct
     ? {
@@ -321,7 +351,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   useEffect(() => {
     if (autoSelectedRef.current || !bundle.scenarios.length) return;
-    const preferred = bundle.scenarios.find((scenario) => scenario.scenarioId.includes('amazon_beauty_poc_v25_backend_smoke')) ??
+    const preferred =
+      bundle.scenarios.find((scenario) => scenario.scenarioId.includes('amazon_beauty_poc_security_v3')) ??
+      bundle.scenarios.find((scenario) => scenario.hasV3) ??
+      bundle.scenarios.find((scenario) => scenario.scenarioId.includes('amazon_beauty_poc_v25_backend_smoke')) ??
       bundle.scenarios.find((scenario) => scenario.scenarioId.toLowerCase().includes('v25'));
     if (preferred && selectedScenario.scenarioId !== preferred.scenarioId) {
       autoSelectedRef.current = true;
@@ -1637,13 +1670,19 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   const renderMonitoring = () => {
     const metrics = report.metricsSummary;
-    const recallValues = buildSummaryCurve([metrics?.baseline?.recall50, metrics?.attack?.recall50, metrics?.defense?.recall50], 0.31, 0.35);
-    const ndcgValues = buildSummaryCurve([metrics?.baseline?.ndcg50, metrics?.attack?.ndcg50, metrics?.defense?.ndcg50], 0.18, 0.2);
-    const lossValues = interpolate(0.72, 0.31);
-    const riskValues = buildSummaryCurve([0.18, displayNormalizedLift, privacyMetrics.miaAuc], 0.15, 0.56);
-    const recoveryValues = buildSummaryCurve([0.22, metrics?.recoveryRate], 0.2, 0.72);
-    const maliciousRatio = config.poisoningRatio || config.maliciousClientConfig?.ratio || 0;
-    const roundNow = Math.max(1, Math.round((config.totalRounds || 10) * 0.7));
+    const recallValues = v3CurvesPanel?.recallAt50?.length
+      ? v3CurvesPanel.recallAt50
+      : buildSummaryCurve([metrics?.baseline?.recall50, metrics?.attack?.recall50, metrics?.defense?.recall50], 0.31, 0.35);
+    const ndcgValues = v3CurvesPanel?.ndcgAt50?.length
+      ? v3CurvesPanel.ndcgAt50
+      : buildSummaryCurve([metrics?.baseline?.ndcg50, metrics?.attack?.ndcg50, metrics?.defense?.ndcg50], 0.18, 0.2);
+    const lossValues = v3CurvesPanel?.loss?.length ? v3CurvesPanel.loss : interpolate(0.72, 0.31);
+    const riskValues = v3CurvesPanel?.attackRisk?.length ? v3CurvesPanel.attackRisk : buildSummaryCurve([0.18, displayNormalizedLift, privacyMetrics.miaAuc], 0.15, 0.56);
+    const recoveryValues = v3CurvesPanel?.defenseRecovery?.length ? v3CurvesPanel.defenseRecovery : buildSummaryCurve([0.22, metrics?.recoveryRate], 0.2, 0.72);
+    const maliciousRatio = v3RuntimePanel?.maliciousClientRatio ?? config.poisoningRatio ?? config.maliciousClientConfig?.ratio ?? 0;
+    const roundNow = v3RuntimePanel?.currentRound ?? Math.max(1, Math.round((config.totalRounds || 10) * 0.7));
+    const totalRounds = v3RuntimePanel?.totalRounds ?? config.totalRounds ?? 10;
+    const curveBadge = curveSourceLabel(v3CurvesPanel?.curveSource);
     const topologyDefenseActive = selectedPlay.id === 'robust_defense_play' ? true : selectedPlay.id === 'target_poisoning_play' ? false : defenseActive;
     const logLinesByPlay: Record<ExperimentPlayId, string[]> = {
       target_poisoning_play: [
@@ -1675,7 +1714,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         '[Export] 鲁棒防御摘要已生成',
       ],
     };
-    const logLines = logLinesByPlay[selectedPlay.id];
+    const v3LogLines = v3RuntimePanel?.events?.map((event) => {
+      const prefix = event.round ? `[Round ${event.round}]` : event.type ? `[${toChineseLabel(event.type)}]` : '[V3]';
+      return `${prefix} ${event.message}`;
+    }) ?? [];
+    const logLines = v3LogLines.length ? v3LogLines : logLinesByPlay[selectedPlay.id];
     const monitoringFocusByPlay: Record<ExperimentPlayId, Array<{label: string; value: string; tone?: string}>> = {
       target_poisoning_play: [
         {label: '目标排序', value: `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`, tone: 'text-rose-100'},
@@ -1716,10 +1759,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
             <div className="grid gap-3">
               {[
-                {label: '当前轮次', value: `${roundNow} / ${config.totalRounds || 10}`},
-                {label: '客户端数', value: `${config.clientCount || report.defenseTrace?.totalClients || 8}`},
+                {label: '当前轮次', value: `${roundNow} / ${totalRounds}`},
+                {label: '客户端数', value: `${v3RuntimePanel?.clientCount ?? config.clientCount ?? report.defenseTrace?.totalClients ?? 8}`},
                 {label: '恶意客户端比例', value: formatRatio(maliciousRatio)},
-                {label: '当前防御策略', value: defenseActive ? inferDefenseType(selectedScenario, report) : '无防御观察'},
+                {label: '当前防御策略', value: v3RuntimePanel?.defenseStrategy ?? (defenseActive ? inferDefenseType(selectedScenario, report) : '无防御观察')},
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
                   <p className="text-xs font-bold text-slate-500">{item.label}</p>
@@ -1747,7 +1790,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <p key={line}>{line}</p>
                 ))}
               </div>
-              <p className="mt-3 text-[11px] text-slate-500">日志用于串联已完成结果摘要，不伪造完整训练全过程。</p>
+              <p className="mt-3 text-[11px] text-slate-500">{v3LogLines.length ? '运行时间线来自 V3 证据；不额外补写训练全过程。' : '日志用于串联已完成结果摘要，不伪造完整训练全过程。'}</p>
             </div>
           </div>
         </section>
@@ -1755,10 +1798,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">实验摘要曲线</p>
+              <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">{curveBadge}</p>
               <h3 className="mt-1 text-xl font-bold text-white">Loss / Recall@50 / NDCG@50 / 风险 / 恢复</h3>
             </div>
-            <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">实验摘要曲线</span>
+            <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">{curveBadge}</span>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Sparkline label="Loss" values={lossValues} tone="text-slate-200" valueText={lossValues.at(-1)?.toFixed(3) ?? EMPTY_VALUE} />
@@ -1774,11 +1817,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   const renderAnalysis = () => {
     const targetTitle = targetProduct?.title ?? selectedPlayDefaults.targetLabel;
-    const candidateItems = [
-      ...(report.recommendationComparison?.attack ?? []),
-      ...(report.recommendationComparison?.baseline ?? []),
-      ...(report.recommendationComparison?.defense ?? []),
-    ].slice(0, 6);
+    const candidateItems = (v3LeakagePanel?.candidateItems?.length
+      ? v3LeakagePanel.candidateItems
+      : [
+          ...(report.recommendationComparison?.attack ?? []),
+          ...(report.recommendationComparison?.baseline ?? []),
+          ...(report.recommendationComparison?.defense ?? []),
+        ]).slice(0, 6);
     const priorityPanel = () => {
       if (selectedPlay.id === 'membership_privacy_play') {
         return (
@@ -1791,9 +1836,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <div className="mt-4 grid gap-3 md:grid-cols-4">
               <MetricTile label="MIA AUC" value={formatMetricValue(privacyMetrics.miaAuc)} tone="text-violet-100" />
               <MetricTile label="准确率" value={formatMetricValue(privacyMetrics.miaAccuracy)} tone="text-violet-100" />
+              <MetricTile label="F1" value={formatMetricValue(privacyMetrics.miaF1)} tone="text-violet-100" />
               <MetricTile label="证据类型" value={privacyMetrics.miaEvidence} />
-              <MetricTile label="匿名样例" value="user-*** / item-***" />
             </div>
+            {privacyMetrics.anonymizedExamples?.length ? (
+              <p className="mt-4 rounded-2xl border border-white/10 bg-slate-950/35 px-3 py-2 text-sm text-slate-300">
+                匿名样例：{privacyMetrics.anonymizedExamples.slice(0, 2).map((item) => (typeof item === 'string' ? item : 'user-*** / item-***')).join(' / ')}
+              </p>
+            ) : null}
           </section>
         );
       }
@@ -1823,10 +1873,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             </div>
             <p className="text-sm leading-6 text-slate-400">重点观察推荐性能恢复和异常更新过滤；鲁棒聚合要求服务端能看到逐客户端更新。</p>
             <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <MetricTile label="Recall@50" value={formatMetricValue(report.metricsSummary?.defense?.recall50 ?? report.metricsSummary?.baseline?.recall50)} />
-              <MetricTile label="NDCG@50" value={formatMetricValue(report.metricsSummary?.defense?.ndcg50 ?? report.metricsSummary?.baseline?.ndcg50)} />
+              <MetricTile label="Recall@50" value={formatMetricValue(v3AggregationPanel?.recallAfter ?? report.metricsSummary?.defense?.recall50 ?? report.metricsSummary?.baseline?.recall50)} />
+              <MetricTile label="NDCG@50" value={formatMetricValue(v3AggregationPanel?.ndcgAfter ?? report.metricsSummary?.defense?.ndcg50 ?? report.metricsSummary?.baseline?.ndcg50)} />
               <MetricTile label="恢复率" value={formatPercentValue(report.metricsSummary?.recoveryRate)} tone="text-emerald-100" />
-              <MetricTile label="过滤客户端" value={formatPlainValue(report.defenseTrace?.filteredClients ?? report.defenseTrace?.clippedClients)} />
+              <MetricTile label="状态" value={defenseStatusLabel(v3AggregationPanel?.status)} />
             </div>
           </section>
         );
@@ -1844,7 +1894,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '目标排序', value: `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`, tone: 'text-rose-100'},
         {label: '排名提升', value: formatSigned(displayRankLift, 0), tone: 'text-rose-100'},
         {label: '最终 Top50 曝光', value: getFinalExposureText(report), tone: 'text-emerald-100'},
-        {label: '目标操纵风险分', value: displayManipulationRisk !== null ? `${displayManipulationRisk.toFixed(1)}` : EMPTY_VALUE, note: '展示指标，不作为标准学术指标。', tone: 'text-rose-100'},
+        {label: '目标操纵指数', value: formatMetricValue(v3TargetPanel?.targetManipulationIndex ?? null), note: '展示指标，不作为标准学术指标。', tone: 'text-rose-100'},
       ],
       membership_privacy_play: [
         {label: 'MIA AUC', value: formatMetricValue(privacyMetrics.miaAuc), tone: 'text-violet-100'},
@@ -1922,8 +1972,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" />
               <MetricTile label="归一化提升" value={formatRatio(displayNormalizedLift)} tone="text-rose-100" />
               <MetricTile label="倒数排名增益" value={formatSmallNumber(displayReciprocalGain)} tone="text-amber-100" />
-              <MetricTile label="目标操纵风险分" value={displayManipulationRisk !== null ? `${displayManipulationRisk.toFixed(1)}` : EMPTY_VALUE} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
+              <MetricTile label="目标操纵指数" value={formatMetricValue(v3TargetPanel?.targetManipulationIndex ?? null)} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
               <MetricTile label="最终 Top50 曝光" value={getFinalExposureText(report)} tone="text-emerald-100" />
+              <MetricTile label="推荐 Jaccard" value={formatMetricValue(v3TargetPanel?.recommendationJaccard ?? null)} />
+              <MetricTile label="变化用户" value={formatPlainValue(v3TargetPanel?.changedUserCount)} />
+              <MetricTile label="变化商品" value={formatPlainValue(v3TargetPanel?.changedItemCount)} />
             </div>
           </div>
 
@@ -1956,6 +2009,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <MetricTile label="AUC" value={formatMetricValue(privacyMetrics.miaAuc)} tone="text-violet-100" />
               <MetricTile label="准确率" value={formatMetricValue(privacyMetrics.miaAccuracy)} tone="text-violet-100" />
               <MetricTile label="证据类型" value={privacyMetrics.miaEvidence} tone="text-slate-100" />
+              <MetricTile label="Precision" value={formatMetricValue(privacyMetrics.miaPrecision)} tone="text-violet-100" />
+              <MetricTile label="Recall" value={formatMetricValue(privacyMetrics.miaRecall)} tone="text-violet-100" />
+              <MetricTile label="Score gap" value={formatMetricValue(privacyMetrics.miaScoreGap)} tone="text-violet-100" />
             </div>
             <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/35 p-4">
               {[
@@ -2009,9 +2065,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           </div>
           <div className="grid gap-3 md:grid-cols-4">
             <MetricTile label="聚合规则" value={report.defenseTrace?.aggregationRule ?? inferDefenseType(selectedScenario, report)} tone="text-emerald-100" />
-            <MetricTile label="过滤客户端" value={formatPlainValue(report.defenseTrace?.filteredClients ?? report.defenseTrace?.clippedClients)} />
+            <MetricTile label="选中/拒绝客户端" value={`${v3AggregationPanel?.selectedClients?.length ?? report.defenseTrace?.krumSelected?.length ?? 0} / ${v3AggregationPanel?.rejectedClients?.length ?? report.defenseTrace?.krumRejected?.length ?? report.defenseTrace?.filteredClients ?? 0}`} />
             <MetricTile label="安全聚合残差" value={formatSmallNumber(report.v25Summary?.secAggResidual)} tone="text-emerald-100" />
-            <MetricTile label="恢复率" value={formatPercentValue(report.metricsSummary?.recoveryRate)} tone="text-emerald-100" />
+            <MetricTile label="防御状态" value={defenseStatusLabel(v3AggregationPanel?.status)} tone="text-emerald-100" />
           </div>
           <p className="mt-4 text-sm leading-6 text-slate-400">安全聚合为模拟展示；差分隐私风格加噪没有正式隐私会计；鲁棒聚合需要可观察逐客户端更新。</p>
         </section>
@@ -2026,6 +2082,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       const itemScenario = item.selectedScenario;
       const itemRanks = getTargetRanks(itemReport);
       const itemPrivacy = getPrivacyMetrics(itemReport);
+      const itemTarget = itemReport.v3?.targetManipulation;
+      const itemAggregation = itemReport.v3?.aggregationDefense;
+      const supportRows = itemReport.modelCapabilityMatrix?.entries ?? [];
+      const supportedCapability = supportRows.find((row) => row.model === itemReport.model || row.dataset === itemReport.dataset) ?? supportRows[0];
       return {
         id: itemScenario.scenarioId,
         scenario: getScenarioTitle(itemScenario, itemReport),
@@ -2034,19 +2094,31 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         attack: inferAttackType(itemScenario, itemReport),
         defense: inferDefenseType(itemScenario, itemReport),
         rankGain: itemRanks.rankLift,
+        targetManipulationIndex: itemTarget?.targetManipulationIndex ?? null,
+        recommendationJaccard: itemTarget?.recommendationJaccard ?? null,
+        changedUserCount: itemTarget?.changedUserCount ?? null,
         top50: getFinalExposureText(itemReport),
-        recall: itemReport.metricsSummary?.defense?.recall50 ?? itemReport.metricsSummary?.baseline?.recall50 ?? null,
-        ndcg: itemReport.metricsSummary?.defense?.ndcg50 ?? itemReport.metricsSummary?.baseline?.ndcg50 ?? null,
+        recall: itemAggregation?.recallAfter ?? itemReport.metricsSummary?.defense?.recall50 ?? itemReport.metricsSummary?.baseline?.recall50 ?? null,
+        ndcg: itemAggregation?.ndcgAfter ?? itemReport.metricsSummary?.defense?.ndcg50 ?? itemReport.metricsSummary?.baseline?.ndcg50 ?? null,
+        recallBefore: itemAggregation?.recallBefore ?? itemReport.metricsSummary?.baseline?.recall50 ?? null,
+        ndcgBefore: itemAggregation?.ndcgBefore ?? itemReport.metricsSummary?.baseline?.ndcg50 ?? null,
         miaAuc: itemPrivacy.miaAuc,
+        miaAccuracy: itemPrivacy.miaAccuracy,
         hit10: itemPrivacy.hit10,
         hit20: itemPrivacy.hit20,
         hit50: itemPrivacy.hit50,
         evidence: itemPrivacy.miaEvidence,
         modality: itemPrivacy.riskyModality,
-        recovery: itemReport.metricsSummary?.recoveryRate ?? null,
+        recovery: itemAggregation?.recoveryRate ?? itemReport.metricsSummary?.recoveryRate ?? null,
         residual: itemReport.v25Summary?.secAggResidual ?? null,
+        selectedClients: itemAggregation?.selectedClients?.length ?? itemReport.defenseTrace?.krumSelected?.length ?? null,
+        rejectedClients: itemAggregation?.rejectedClients?.length ?? itemReport.defenseTrace?.krumRejected?.length ?? null,
+        defenseStatus: defenseStatusLabel(itemAggregation?.status),
         usage: inferScenarioUsage(itemScenario, itemReport),
         evidenceLabels: inferEvidenceLabels(itemScenario, itemReport).join(' / '),
+        hasV3: Boolean(itemScenario.hasV3 || itemReport.v3),
+        supportEvidence: supportedCapability?.evidence ?? supportedCapability?.recommendedDemoUsage ?? null,
+        supportStatus: supportedCapability?.status ? toChineseLabel(supportedCapability.status) : null,
       };
     });
   }, [bundle, comparisonBundles]);
@@ -2056,24 +2128,29 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       attack: [
         {key: 'scenario', label: '场景', render: (row) => row.scenario},
         {key: 'attack', label: '攻击类型', render: (row) => row.attack},
+        {key: 'targetManipulationIndex', label: '目标操纵指数', render: (row) => formatCellValue(formatMetricValue(row.targetManipulationIndex))},
         {key: 'rankGain', label: '目标排序提升', render: (row) => formatCellValue(formatSigned(row.rankGain, 0))},
         {key: 'top50', label: 'Top50 命中', render: (row) => formatCellValue(row.top50)},
-        {key: 'change', label: '推荐列表变化率', render: (row) => formatCellValue(formatRatio(row.rankGain !== null && row.rankGain !== undefined ? Math.min(1, Math.max(0, row.rankGain / 169)) : null))},
+        {key: 'change', label: '推荐 Jaccard', render: (row) => formatCellValue(formatMetricValue(row.recommendationJaccard))},
+        {key: 'changedUserCount', label: '变化用户', render: (row) => formatCellValue(formatExportedValue(row.changedUserCount))},
         {key: 'miaAuc', label: 'MIA AUC', render: (row) => formatCellValue(formatMetricValue(row.miaAuc))},
         {key: 'hit50', label: '交互还原 hit@50', render: (row) => formatCellValue(formatMetricValue(row.hit50))},
       ],
       defense: [
         {key: 'scenario', label: '场景', render: (row) => row.scenario},
         {key: 'defense', label: '防御类型', render: (row) => row.defense},
+        {key: 'status', label: '状态', render: (row) => formatCellValue(row.defenseStatus)},
+        {key: 'recallBefore', label: 'Recall 前', render: (row) => formatCellValue(formatMetricValue(row.recallBefore))},
         {key: 'recall', label: 'Recall@50', render: (row) => formatCellValue(formatMetricValue(row.recall))},
+        {key: 'ndcgBefore', label: 'NDCG 前', render: (row) => formatCellValue(formatMetricValue(row.ndcgBefore))},
         {key: 'ndcg', label: 'NDCG@50', render: (row) => formatCellValue(formatMetricValue(row.ndcg))},
         {key: 'recovery', label: '防御恢复率', render: (row) => formatCellValue(formatPercentValue(row.recovery))},
-        {key: 'filtered', label: '异常更新过滤', render: (row) => (row.defense.includes('鲁棒') ? '已展示' : EMPTY_VALUE)},
-        {key: 'residual', label: '安全聚合残差', render: (row) => formatCellValue(formatSmallNumber(row.residual))},
+        {key: 'filtered', label: '选中/拒绝客户端', render: (row) => formatCellValue(`${formatExportedValue(row.selectedClients)} / ${formatExportedValue(row.rejectedClients)}`)},
       ],
       privacy: [
         {key: 'scenario', label: '场景', render: (row) => row.scenario},
         {key: 'miaAuc', label: 'MIA AUC', render: (row) => formatCellValue(formatMetricValue(row.miaAuc))},
+        {key: 'miaAccuracy', label: 'Accuracy', render: (row) => formatCellValue(formatMetricValue(row.miaAccuracy))},
         {key: 'evidence', label: '成员推断证据类型', render: (row) => formatCellValue(row.evidence)},
         {key: 'hit10', label: 'hit@10', render: (row) => formatCellValue(formatMetricValue(row.hit10))},
         {key: 'hit20', label: 'hit@20', render: (row) => formatCellValue(formatMetricValue(row.hit20))},
@@ -2086,8 +2163,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {key: 'model', label: '模型', render: (row) => row.model},
         {key: 'dataset', label: '数据集', render: (row) => row.dataset},
         {key: 'usage', label: '主用途', render: (row) => row.usage},
+        {key: 'supportStatus', label: '支持状态', render: (row) => formatCellValue(row.supportStatus)},
         {key: 'evidence', label: '已有证据', render: (row) => row.evidenceLabels},
-        {key: 'good', label: '适合展示的能力', render: (row) => (row.scenario.includes('KU') ? '多模态主展示' : row.scenario.includes('V2.5') ? '攻防强验证' : row.usage)},
+        {key: 'good', label: '适合展示的能力', render: (row) => formatCellValue(row.supportEvidence ?? (row.scenario.includes('KU') ? '多模态主展示' : row.scenario.includes('V2.5') || row.hasV3 ? '攻防强验证' : row.usage))},
         {key: 'limit', label: '不适合泛化的点', render: (row) => (row.scenario.includes('V2.5') ? '170 -> 3 不代表所有模型' : '按场景证据解释')},
       ],
     };
@@ -2196,8 +2274,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (archiveFilter === 'Amazon') return text.includes('amazon');
       if (archiveFilter === 'KU') return text.includes('ku');
       if (archiveFilter === '投毒') return inferAttackType(scenario, reportForScenario).includes('投毒');
-      if (archiveFilter === '隐私攻击') return /privacy|mia|membership|interaction|reconstruction/.test(text);
-      if (archiveFilter === '鲁棒防御') return /krum|robust|median|trimmed/.test(text);
+      if (archiveFilter === '隐私攻击') return Boolean(scenario.hasMembership || scenario.hasUpdateLeakage || reportForScenario?.v3?.membership || reportForScenario?.v3?.updateLeakage || /privacy|mia|membership|interaction|reconstruction/.test(text));
+      if (archiveFilter === '鲁棒防御') return Boolean(scenario.hasAggregationDefense || reportForScenario?.v3?.aggregationDefense || /krum|robust|median|trimmed/.test(text));
       if (archiveFilter === '有图片') return Boolean(scenario.hasImages || reportForScenario?.recommendationComparison?.baseline.some((item) => item.thumbnailUrl || item.localImageUrl || item.imageUrl));
       if (archiveFilter === '有推荐列表') return Boolean(scenario.hasRecommendations || reportForScenario?.recommendationComparison);
       return true;
@@ -2237,6 +2315,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           const scenarioBundle = comparisonBundles.find((item) => item.selectedScenario.scenarioId === scenario.scenarioId);
           const scenarioReport = scenarioBundle?.report;
           const evidenceLabels = inferEvidenceLabels(scenario, scenarioReport);
+          const v3Badges = getV3EvidenceBadges(scenario, scenarioReport);
+          const displayBadges = Array.from(new Set([...v3Badges, ...evidenceLabels]));
           return (
             <button
               key={scenario.scenarioId}
@@ -2251,6 +2331,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-lg font-black text-white">{getScenarioTitle(scenario, scenarioReport)}</p>
+                  <p className="mt-1 text-xs text-slate-500">{scenario.scenarioId}</p>
                   <p className="mt-1 text-xs text-slate-500">{scenario.displayName ?? scenario.name}</p>
                   <p className="mt-1 text-sm text-slate-400">{datasetLabel(scenarioReport?.dataset ?? scenario.dataset)} / {scenarioReport?.model ?? scenario.model ?? EMPTY_VALUE}</p>
                 </div>
@@ -2269,7 +2350,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                {evidenceLabels.map((label) => (
+                {displayBadges.map((label) => (
                   <span key={label} className="rounded-full border border-white/10 bg-slate-950/35 px-2.5 py-1 text-[11px] font-bold text-slate-300">
                     {label}
                   </span>
@@ -2301,6 +2382,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">攻防工作台</span>
               <span className={cn('rounded-full border px-3 py-1 text-xs font-bold', getScenarioSourceTone(bundle))}>{getScenarioSourceLabel(bundle)}</span>
+              {v3EvidenceAvailable ? <span className="rounded-full border border-violet-200/25 bg-violet-300/10 px-3 py-1 text-xs font-bold text-violet-100">V3 证据</span> : null}
               {isLoading ? <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-bold text-slate-300">正在读取数据</span> : null}
             </div>
             <h1 className="text-3xl font-black tracking-tight text-white md:text-4xl">联邦推荐攻防工作台</h1>

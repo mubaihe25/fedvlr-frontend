@@ -21,14 +21,23 @@ import type {
   ShowcaseTargetRankEntry,
   ShowcaseTargetRankSummary,
   ShowcaseV25Summary,
+  ShowcaseV3AggregationDefensePanel,
+  ShowcaseV3CurvesPanel,
+  ShowcaseV3MembershipPanel,
+  ShowcaseV3PanelName,
+  ShowcaseV3PrivacyDefensePanel,
+  ShowcaseV3Report,
+  ShowcaseV3RuntimePanel,
+  ShowcaseV3TargetManipulationPanel,
+  ShowcaseV3UpdateLeakagePanel,
 } from '../types/showcase';
 import {apiGet, buildApiUrl} from './api';
 
 const SHOWCASE_BASE_PATH = '/showcase/scenarios';
 export const DEFAULT_SHOWCASE_SCENARIO_PREFERENCE = [
+  'amazon_beauty_poc_security_v3',
   'amazon_beauty_poc_v25_backend_smoke',
   'mmfedrap_ku_attack_defense_demo',
-  'model_security_capability_matrix',
   'security_matrix_krum_demo',
 ] as const;
 
@@ -123,6 +132,9 @@ const toNumberValue = (value: unknown): number | null => {
       return value.includes('%') ? parsed / 100 : parsed;
     }
   }
+  if (isRecord(value)) {
+    return toNumberValue(readField(value, ['value', 'metric', 'score', 'y']));
+  }
   return null;
 };
 
@@ -167,6 +179,26 @@ const toIdList = (value: unknown): Array<string | number> => {
       return null;
     })
     .filter((item): item is string | number => item !== null);
+};
+
+const toNumberList = (value: unknown): number[] => {
+  if (!Array.isArray(value)) {
+    if (isRecord(value)) {
+      const nested = readField(value, ['values', 'points', 'data', 'series']);
+      if (Array.isArray(nested)) {
+        return toNumberList(nested);
+      }
+    }
+    const single = toNumberValue(value);
+    return single === null ? [] : [single];
+  }
+
+  return value.map(toNumberValue).filter((item): item is number => item !== null);
+};
+
+const toStringOrNumberValue = (value: unknown): string | number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return toStringValue(value);
 };
 
 const firstString = (record: ShowcaseJsonRecord | undefined, keys: string[]) => toStringValue(readField(record, keys));
@@ -236,6 +268,17 @@ const normalizeScenario = (
     hasPrivacy: firstBoolean(record, ['has_privacy', 'hasPrivacy']),
     hasMetrics: firstBoolean(record, ['has_metrics', 'hasMetrics']),
     hasImages: firstBoolean(record, ['has_images', 'hasImages']),
+    hasV3: firstBoolean(record, ['has_v3', 'hasV3', 'v3']),
+    availablePanels: firstStringList(record, ['available_panels', 'availablePanels']),
+    supportedDirections: firstStringList(record, ['supported_directions', 'supportedDirections']),
+    hasRuntime: firstBoolean(record, ['has_runtime', 'hasRuntime']),
+    hasCurves: firstBoolean(record, ['has_curves', 'hasCurves']),
+    hasTargetManipulation: firstBoolean(record, ['has_target_manipulation', 'hasTargetManipulation']),
+    hasMembership: firstBoolean(record, ['has_membership', 'hasMembership']),
+    hasUpdateLeakage: firstBoolean(record, ['has_update_leakage', 'hasUpdateLeakage']),
+    hasAggregationDefense: firstBoolean(record, ['has_aggregation_defense', 'hasAggregationDefense']),
+    hasPrivacyDefense: firstBoolean(record, ['has_privacy_defense', 'hasPrivacyDefense']),
+    hasModelSupport: firstBoolean(record, ['has_model_support', 'hasModelSupport']),
     unavailable: firstBoolean(record, ['unavailable']),
     notAvailable: firstBoolean(record, ['not_available', 'notAvailable']),
     smoke: firstBoolean(record, ['smoke', 'is_smoke', 'isSmoke']) ?? inferFlagFromText(record, ['smoke']),
@@ -677,6 +720,281 @@ const normalizeV25Summary = (
   };
 };
 
+const panelRecord = (payload: unknown, keys: string[]) => pickRecord(payload, keys) ?? (isRecord(unwrapPayload(payload)) ? (unwrapPayload(payload) as ShowcaseJsonRecord) : {});
+
+const normalizeV3RuntimeEvent = (value: unknown, index: number) => {
+  const record = isRecord(value) ? value : {};
+  const fallbackMessage = toStringValue(value) ?? `步骤 ${index + 1}`;
+
+  return {
+    round: toStringOrNumberValue(readField(record, ['round', 'round_id', 'roundId'])),
+    step: toStringOrNumberValue(readField(record, ['step', 'step_id', 'stepId', 'index'])),
+    time: firstString(record, ['time', 'timestamp', 'created_at', 'createdAt']),
+    type: firstString(record, ['type', 'event_type', 'eventType', 'stage']),
+    message: firstString(record, ['message', 'text', 'label', 'description', 'summary']) ?? fallbackMessage,
+    raw: isRecord(value) ? value : undefined,
+  };
+};
+
+const normalizeV3RuntimePanel = (payload: unknown): ShowcaseV3RuntimePanel => {
+  const record = panelRecord(payload, ['runtime_timeline', 'runtimeTimeline', 'runtime', 'timeline']);
+  const events =
+    pickArray(record, ['events', 'items', 'steps', 'timeline', 'runtime_timeline', 'runtimeTimeline']) ??
+    pickArray(payload, ['events', 'items', 'steps', 'timeline']) ??
+    [];
+
+  return {
+    events: events.map(normalizeV3RuntimeEvent),
+    currentRound: firstNumber(record, ['current_round', 'currentRound', 'round']),
+    totalRounds: firstNumber(record, ['total_rounds', 'totalRounds', 'rounds']),
+    clientCount: firstNumber(record, ['client_count', 'clientCount', 'clients', 'num_clients', 'numClients']),
+    maliciousClientRatio: firstNumber(record, ['malicious_client_ratio', 'maliciousClientRatio', 'poisoning_ratio', 'poisoningRatio']),
+    defenseStrategy: firstString(record, ['defense_strategy', 'defenseStrategy', 'defense', 'defense_algorithm', 'defenseAlgorithm']),
+    status: firstString(record, ['status', 'state']),
+    raw: record,
+  };
+};
+
+const normalizeV3CurvesPanel = (payload: unknown): ShowcaseV3CurvesPanel => {
+  const record = panelRecord(payload, ['training_curves', 'trainingCurves', 'curves']);
+
+  return {
+    curveSource: firstString(record, ['curve_source', 'curveSource', 'source']),
+    loss: toNumberList(readField(record, ['loss', 'loss_curve', 'lossCurve'])),
+    recallAt50: toNumberList(readField(record, ['recall_at_50', 'recallAt50', 'recall@50', 'Recall@50', 'recall50'])),
+    ndcgAt50: toNumberList(readField(record, ['ndcg_at_50', 'ndcgAt50', 'ndcg@50', 'NDCG@50', 'ndcg50'])),
+    attackRisk: toNumberList(readField(record, ['attack_risk', 'attackRisk', 'risk'])),
+    defenseRecovery: toNumberList(readField(record, ['defense_recovery', 'defenseRecovery', 'recovery'])),
+    raw: record,
+  };
+};
+
+const normalizeV3TargetManipulationPanel = (payload: unknown): ShowcaseV3TargetManipulationPanel => {
+  const record = panelRecord(payload, [
+    'target_manipulation_metrics',
+    'targetManipulationMetrics',
+    'target_manipulation',
+    'targetManipulation',
+    'target',
+  ]);
+  const targetRecord = pickRecord(record, ['target_item', 'targetItem', 'target_product', 'targetProduct', 'item']) ?? record;
+  const targetItem = normalizeRecommendationItem(targetRecord, 0);
+
+  return {
+    targetItem: targetItem.itemId || targetItem.title || targetItem.thumbnailUrl || targetItem.localImageUrl || targetItem.imageUrl ? targetItem : null,
+    baselineUnmaskedRank: firstNumber(record, ['baseline_unmasked_rank', 'baselineUnmaskedRank', 'baseline_rank', 'baselineRank']),
+    attackUnmaskedRank: firstNumber(record, ['attack_unmasked_rank', 'attackUnmaskedRank', 'attack_rank', 'attackRank']),
+    rankGain: firstNumber(record, ['rank_gain', 'rankGain']),
+    normalizedRankGain: firstNumber(record, ['normalized_rank_gain', 'normalizedRankGain']),
+    reciprocalRankGain: firstNumber(record, ['reciprocal_rank_gain', 'reciprocalRankGain']),
+    attackTopkHit: firstBoolean(record, ['attack_topk_hit', 'attackTopkHit', 'top50_hit', 'top50Hit', 'target_hit']),
+    targetManipulationIndex: firstNumber(record, ['target_manipulation_index', 'targetManipulationIndex', 'manipulation_index', 'manipulationIndex']),
+    recommendationJaccard: firstNumber(record, ['recommendation_jaccard', 'recommendationJaccard', 'jaccard']),
+    changedUserCount: firstNumber(record, ['changed_user_count', 'changedUserCount']),
+    changedItemCount: firstNumber(record, ['changed_item_count', 'changedItemCount']),
+    raw: record,
+  };
+};
+
+const normalizeV3MembershipPanel = (payload: unknown): ShowcaseV3MembershipPanel => {
+  const record = panelRecord(payload, ['membership_inference_panel', 'membershipInferencePanel', 'membership', 'mia']);
+  const examples = readField(record, ['anonymized_examples', 'anonymizedExamples', 'examples']);
+
+  return {
+    auc: firstNumber(record, ['auc', 'mia_auc', 'miaAuc']),
+    accuracy: firstNumber(record, ['accuracy', 'acc']),
+    precision: firstNumber(record, ['precision']),
+    recall: firstNumber(record, ['recall']),
+    f1: firstNumber(record, ['f1', 'f1_score', 'f1Score']),
+    scoreGap: firstNumber(record, ['score_gap', 'scoreGap']),
+    memberCount: firstNumber(record, ['member_count', 'memberCount', 'members']),
+    nonMemberCount: firstNumber(record, ['non_member_count', 'nonMemberCount', 'non_members', 'nonMembers']),
+    evidenceType: firstString(record, ['evidence_type', 'evidenceType', 'score_source', 'scoreSource', 'source']),
+    anonymizedExamples: Array.isArray(examples) ? examples : [],
+    raw: record,
+  };
+};
+
+const normalizeV3UpdateLeakagePanel = (payload: unknown): ShowcaseV3UpdateLeakagePanel => {
+  const record = panelRecord(payload, ['update_leakage_panel', 'updateLeakagePanel', 'update_leakage', 'updateLeakage', 'interaction_reconstruction']);
+
+  return {
+    hit10: firstNumber(record, ['hit@10', 'hit_at_10', 'hitAt10', 'hit10']),
+    hit20: firstNumber(record, ['hit@20', 'hit_at_20', 'hitAt20', 'hit20']),
+    hit50: firstNumber(record, ['hit@50', 'hit_at_50', 'hitAt50', 'hit50']),
+    highestRiskModality: firstString(record, ['highest_risk_modality', 'highestRiskModality', 'risk_modality', 'riskModality', 'modality']),
+    candidateItems: normalizeRecommendationList(readField(record, ['candidate_items', 'candidateItems', 'candidates', 'items'])),
+    modalityRiskBreakdown: pickRecord(record, ['modality_risk_breakdown', 'modalityRiskBreakdown', 'risk_breakdown', 'riskBreakdown']),
+    updateNormSummary: pickRecord(record, ['update_norm_summary', 'updateNormSummary', 'norm_summary', 'normSummary']),
+    raw: record,
+  };
+};
+
+const normalizeV3AggregationDefensePanel = (payload: unknown): ShowcaseV3AggregationDefensePanel => {
+  const record = panelRecord(payload, [
+    'aggregation_defense_panel',
+    'aggregationDefensePanel',
+    'aggregation_defense',
+    'aggregationDefense',
+    'defense',
+  ]);
+
+  return {
+    defenseAlgorithm: firstString(record, ['defense_algorithm', 'defenseAlgorithm', 'algorithm']),
+    aggregationVisibility: firstString(record, ['aggregation_visibility', 'aggregationVisibility', 'visibility']),
+    selectedClients: toIdList(readField(record, ['selected_clients', 'selectedClients', 'krum_selected', 'krumSelected'])),
+    rejectedClients: toIdList(readField(record, ['rejected_clients', 'rejectedClients', 'krum_rejected', 'krumRejected'])),
+    outlierScoreSummary: pickRecord(record, ['outlier_score_summary', 'outlierScoreSummary', 'outlier_scores', 'outlierScores']),
+    recallBefore: firstNumber(record, ['recall_before', 'recallBefore']),
+    recallAfter: firstNumber(record, ['recall_after', 'recallAfter']),
+    ndcgBefore: firstNumber(record, ['ndcg_before', 'ndcgBefore']),
+    ndcgAfter: firstNumber(record, ['ndcg_after', 'ndcgAfter']),
+    recoveryRate: firstNumber(record, ['recovery_rate', 'recoveryRate']),
+    status: firstString(record, ['status', 'state']),
+    raw: record,
+  };
+};
+
+const normalizeV3PrivacyDefensePanel = (payload: unknown): ShowcaseV3PrivacyDefensePanel => {
+  const record = panelRecord(payload, ['privacy_defense_panel', 'privacyDefensePanel', 'privacy_defense', 'privacyDefense']);
+
+  return {
+    formalDpAvailable: firstBoolean(record, ['formal_dp_available', 'formalDpAvailable']),
+    dpNoise: readField(record, ['dp_noise', 'dpNoise']),
+    secureAggregation: readField(record, ['secure_aggregation', 'secureAggregation', 'secure_aggregation_sim', 'secureAggregationSim']),
+    status: firstString(record, ['status', 'state']),
+    raw: record,
+  };
+};
+
+const normalizeShowcaseV3Panel = (panelName: ShowcaseV3PanelName, payload: unknown) => {
+  if (panelName === 'profile') return normalizeDatasetProfile(payload);
+  if (panelName === 'runtime') return normalizeV3RuntimePanel(payload);
+  if (panelName === 'curves') return normalizeV3CurvesPanel(payload);
+  if (panelName === 'target-manipulation') return normalizeV3TargetManipulationPanel(payload);
+  if (panelName === 'membership') return normalizeV3MembershipPanel(payload);
+  if (panelName === 'update-leakage') return normalizeV3UpdateLeakagePanel(payload);
+  if (panelName === 'aggregation-defense') return normalizeV3AggregationDefensePanel(payload);
+  if (panelName === 'privacy-defense') return normalizeV3PrivacyDefensePanel(payload);
+  if (panelName === 'model-support') return normalizeModelCapabilityMatrix(payload);
+  return panelRecord(payload, ['frontend_summary', 'frontendSummary', 'summary']);
+};
+
+const normalizeV3Report = (payload: unknown, scenario?: ShowcaseScenario): ShowcaseV3Report => {
+  const record = panelRecord(payload, ['v3_report', 'v3Report', 'report', 'showcase_v3', 'showcaseV3']);
+  const targetPayload =
+    readField(record, ['target_manipulation_metrics', 'targetManipulationMetrics', 'target_manipulation', 'targetManipulation']) ?? record;
+  const membershipPayload = readField(record, ['membership_inference_panel', 'membershipInferencePanel', 'membership']);
+  const leakagePayload = readField(record, ['update_leakage_panel', 'updateLeakagePanel', 'update_leakage', 'updateLeakage']);
+  const defensePayload = readField(record, ['aggregation_defense_panel', 'aggregationDefensePanel', 'aggregation_defense', 'aggregationDefense']);
+  const privacyDefensePayload = readField(record, ['privacy_defense_panel', 'privacyDefensePanel', 'privacy_defense', 'privacyDefense']);
+  const modelSupportPayload = readField(record, ['model_support_panel', 'modelSupportPanel', 'model_support', 'modelSupport']);
+
+  return {
+    scenarioId: firstString(record, ['scenario_id', 'scenarioId', 'id']) ?? scenario?.scenarioId,
+    profile: normalizeDatasetProfile(readField(record, ['dataset_profile', 'datasetProfile', 'profile']) ?? record),
+    runtime: normalizeV3RuntimePanel(readField(record, ['runtime_timeline', 'runtimeTimeline', 'runtime']) ?? record),
+    curves: normalizeV3CurvesPanel(readField(record, ['training_curves', 'trainingCurves', 'curves']) ?? record),
+    targetManipulation: normalizeV3TargetManipulationPanel(targetPayload),
+    membership: membershipPayload ? normalizeV3MembershipPanel(membershipPayload) : null,
+    updateLeakage: leakagePayload ? normalizeV3UpdateLeakagePanel(leakagePayload) : null,
+    aggregationDefense: defensePayload ? normalizeV3AggregationDefensePanel(defensePayload) : null,
+    privacyDefense: privacyDefensePayload ? normalizeV3PrivacyDefensePanel(privacyDefensePayload) : null,
+    modelSupport: modelSupportPayload ? normalizeModelCapabilityMatrix(modelSupportPayload) : null,
+    frontendSummary: pickRecord(record, ['frontend_summary', 'frontendSummary', 'summary']),
+    availablePanels: firstStringList(record, ['available_panels', 'availablePanels']),
+    raw: record,
+  };
+};
+
+const buildTargetRankSummaryFromV3 = (panel?: ShowcaseV3TargetManipulationPanel | null): ShowcaseTargetRankSummary | null => {
+  if (!panel) return null;
+  const hasRank = panel.baselineUnmaskedRank !== null || panel.attackUnmaskedRank !== null || panel.targetItem;
+  if (!hasRank) return null;
+
+  return {
+    entries: [
+      {
+        itemId: panel.targetItem?.itemId,
+        title: panel.targetItem?.title,
+        category: panel.targetItem?.category,
+        thumbnailUrl: panel.targetItem?.thumbnailUrl,
+        localImageUrl: panel.targetItem?.localImageUrl,
+        imageUrl: panel.targetItem?.imageUrl,
+        baselineRank: panel.baselineUnmaskedRank,
+        attackRank: panel.attackUnmaskedRank,
+        rankGain: panel.rankGain,
+        inTop50: panel.attackTopkHit,
+        raw: panel.raw,
+      },
+    ],
+    targetHitRate: panel.attackTopkHit === null || panel.attackTopkHit === undefined ? undefined : panel.attackTopkHit ? 1 : 0,
+    raw: panel.raw,
+  };
+};
+
+const mergeV3WithReport = (report: ShowcaseReport, v3?: ShowcaseV3Report | null): ShowcaseReport => {
+  if (!v3) return report;
+  const targetRankSummary = buildTargetRankSummaryFromV3(v3.targetManipulation) ?? report.targetRankSummary;
+  const aggregation = v3.aggregationDefense;
+  const metricsSummary: ShowcaseMetricsSummary | null = {
+    ...(report.metricsSummary ?? {}),
+    baseline: {
+      ...(report.metricsSummary?.baseline ?? {}),
+      recall50: aggregation?.recallBefore ?? report.metricsSummary?.baseline?.recall50,
+      ndcg50: aggregation?.ndcgBefore ?? report.metricsSummary?.baseline?.ndcg50,
+    },
+    defense: {
+      ...(report.metricsSummary?.defense ?? {}),
+      recall50: aggregation?.recallAfter ?? report.metricsSummary?.defense?.recall50,
+      ndcg50: aggregation?.ndcgAfter ?? report.metricsSummary?.defense?.ndcg50,
+    },
+    recoveryRate: aggregation?.recoveryRate ?? report.metricsSummary?.recoveryRate,
+  };
+  const defenseTrace: ShowcaseDefenseTrace | null = aggregation
+    ? {
+        ...(report.defenseTrace ?? {}),
+        aggregationRule: aggregation.defenseAlgorithm ?? report.defenseTrace?.aggregationRule,
+        filteredClients: aggregation.rejectedClients?.length ?? report.defenseTrace?.filteredClients,
+        krumSelected: aggregation.selectedClients,
+        krumRejected: aggregation.rejectedClients,
+        unavailable: aggregation.status === 'configured_only',
+        raw: aggregation.raw,
+      }
+    : report.defenseTrace ?? null;
+  const v25Summary: ShowcaseV25Summary | null = {
+    ...(report.v25Summary ?? {}),
+    targetRankBefore: v3.targetManipulation?.baselineUnmaskedRank ?? report.v25Summary?.targetRankBefore,
+    targetRankAfter: v3.targetManipulation?.attackUnmaskedRank ?? report.v25Summary?.targetRankAfter,
+    rankMove: v3.targetManipulation?.rankGain ?? report.v25Summary?.rankMove,
+    maskedTopkHitRate:
+      v3.targetManipulation?.attackTopkHit === null || v3.targetManipulation?.attackTopkHit === undefined
+        ? report.v25Summary?.maskedTopkHitRate
+        : v3.targetManipulation.attackTopkHit
+          ? 1
+          : 0,
+    interactionReconstructionHit10: v3.updateLeakage?.hit10 ?? report.v25Summary?.interactionReconstructionHit10,
+    interactionReconstructionHit20: v3.updateLeakage?.hit20 ?? report.v25Summary?.interactionReconstructionHit20,
+    interactionReconstructionHit50: v3.updateLeakage?.hit50 ?? report.v25Summary?.interactionReconstructionHit50,
+    miaAuc: v3.membership?.auc ?? report.v25Summary?.miaAuc,
+    raw: {
+      ...(report.v25Summary?.raw ?? {}),
+      v3,
+    },
+  };
+
+  return {
+    ...report,
+    datasetProfile: v3.profile ?? report.datasetProfile,
+    metricsSummary,
+    targetRankSummary,
+    defenseTrace,
+    modelCapabilityMatrix: v3.modelSupport ?? report.modelCapabilityMatrix,
+    v25Summary,
+    v3,
+  };
+};
+
 const uniqueStrings = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
 
 const normalizeReport = (payload: unknown, scenario?: ShowcaseScenario): ShowcaseReport => {
@@ -853,7 +1171,48 @@ export const fetchShowcaseScenarios = async (): Promise<ShowcaseFetchResult<Show
   }
 };
 
+export const fetchShowcaseV3Report = async (scenarioId: string): Promise<ShowcaseFetchResult<ShowcaseReport>> => {
+  try {
+    const payload = await apiGet<unknown>(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/report`);
+    const legacyShell = normalizeReport(payload);
+    return {
+      source: 'api',
+      data: mergeV3WithReport(legacyShell, normalizeV3Report(payload)),
+    };
+  } catch (error) {
+    return {
+      source: 'api',
+      data: buildApiReportShell(buildApiScenarioShell(scenarioId), '当前场景 V3 report 暂未返回，页面会尝试读取旧版结果。'),
+      error: toErrorMessage(error),
+    };
+  }
+};
+
+export const fetchShowcaseV3Panel = async (
+  scenarioId: string,
+  panelName: ShowcaseV3PanelName,
+): Promise<ShowcaseFetchResult<ReturnType<typeof normalizeShowcaseV3Panel>>> => {
+  try {
+    const payload = await apiGet<unknown>(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/${panelName}`);
+    return {
+      source: 'api',
+      data: normalizeShowcaseV3Panel(panelName, payload),
+    };
+  } catch (error) {
+    return {
+      source: 'api',
+      data: normalizeShowcaseV3Panel(panelName, {}),
+      error: toErrorMessage(error),
+    };
+  }
+};
+
 export const fetchShowcaseReport = async (scenarioId: string): Promise<ShowcaseFetchResult<ShowcaseReport>> => {
+  const v3Result = await fetchShowcaseV3Report(scenarioId);
+  if (!v3Result.error) {
+    return v3Result;
+  }
+
   try {
     const payload = await apiGet<unknown>(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/report`);
     return {
@@ -861,7 +1220,7 @@ export const fetchShowcaseReport = async (scenarioId: string): Promise<ShowcaseF
       data: normalizeReport(payload),
     };
   } catch (error) {
-    const fallback = fallbackToMockShowcase(scenarioId, toErrorMessage(error));
+    const fallback = fallbackToMockShowcase(scenarioId, `${v3Result.error}; ${toErrorMessage(error)}`);
     return {
       source: 'mock',
       data: fallback.report,
@@ -1009,7 +1368,7 @@ const emptyRecommendationComparison = (): ShowcaseRecommendationComparison => ({
   defense: [],
 });
 
-const buildApiScenarioShell = (scenarioId = DEFAULT_SHOWCASE_SCENARIO_PREFERENCE[0]): ShowcaseScenario => ({
+const buildApiScenarioShell = (scenarioId: string = DEFAULT_SHOWCASE_SCENARIO_PREFERENCE[0]): ShowcaseScenario => ({
   id: scenarioId,
   scenarioId,
   name: '正在连接真实 artifact',
@@ -1088,7 +1447,7 @@ const mergeMetricsSummary = (
   };
 };
 
-const optionalWarning = (label: string, error?: string) => (error ? `${label} 暂未返回，页面保留已有 artifact 内容并对缺失指标显示暂无。` : null);
+const optionalWarning = (label: string, error?: string) => (error ? `${label} 暂未返回，缺失指标显示为未导出。` : null);
 
 export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<ShowcaseBundle> => {
   const scenariosResult = await fetchShowcaseScenarios();
@@ -1099,8 +1458,36 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
   }
 
   const scenarioId = selectedScenario.scenarioId;
-  const [reportOnlyResult, datasetOnlyResult, metricsOnlyResult, securityOnlyResult, privacyOnlyResult] = await Promise.all([
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/report`, (payload) => normalizeReport(payload, selectedScenario)),
+  const v3ReportOnlyResult = await fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/report`, (payload) => normalizeV3Report(payload, selectedScenario));
+  const legacyReportOnlyResult = v3ReportOnlyResult.data
+    ? {data: null, error: undefined}
+    : await fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/report`, (payload) => normalizeReport(payload, selectedScenario));
+  const [
+    v3ProfileOnlyResult,
+    v3RuntimeOnlyResult,
+    v3CurvesOnlyResult,
+    v3TargetOnlyResult,
+    v3MembershipOnlyResult,
+    v3LeakageOnlyResult,
+    v3AggregationOnlyResult,
+    v3PrivacyDefenseOnlyResult,
+    v3ModelSupportOnlyResult,
+    v3FrontendSummaryOnlyResult,
+    datasetOnlyResult,
+    metricsOnlyResult,
+    securityOnlyResult,
+    privacyOnlyResult,
+  ] = await Promise.all([
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/profile`, normalizeDatasetProfile),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/runtime`, normalizeV3RuntimePanel),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/curves`, normalizeV3CurvesPanel),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/target-manipulation`, normalizeV3TargetManipulationPanel),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/membership`, normalizeV3MembershipPanel),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/update-leakage`, normalizeV3UpdateLeakagePanel),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/aggregation-defense`, normalizeV3AggregationDefensePanel),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/privacy-defense`, normalizeV3PrivacyDefensePanel),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/model-support`, normalizeModelCapabilityMatrix),
+    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/frontend-summary`, (payload) => panelRecord(payload, ['frontend_summary', 'frontendSummary', 'summary'])),
     fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/dataset`, normalizeDatasetProfile),
     fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/metrics`, normalizeMetricsSummary),
     fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/security`, (payload) => ({
@@ -1115,47 +1502,84 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
       };
     }),
   ]);
-  const reportResult = reportOnlyResult.data ?? buildApiReportShell(selectedScenario, '当前场景 report 暂未返回，页面只展示已可读取的场景信息。');
+  const reportResult = legacyReportOnlyResult.data ?? buildApiReportShell(selectedScenario, '当前场景 report 暂未返回，页面只展示已可读取的场景信息。');
+  const hasAnyV3Panel = Boolean(
+    v3ProfileOnlyResult.data ||
+      v3RuntimeOnlyResult.data ||
+      v3CurvesOnlyResult.data ||
+      v3TargetOnlyResult.data ||
+      v3MembershipOnlyResult.data ||
+      v3LeakageOnlyResult.data ||
+      v3AggregationOnlyResult.data ||
+      v3PrivacyDefenseOnlyResult.data ||
+      v3ModelSupportOnlyResult.data ||
+      v3FrontendSummaryOnlyResult.data,
+  );
+  const v3Report = v3ReportOnlyResult.data || hasAnyV3Panel
+    ? {
+        ...(v3ReportOnlyResult.data ?? {}),
+        scenarioId,
+        profile: v3ProfileOnlyResult.data ?? v3ReportOnlyResult.data?.profile,
+        runtime: v3RuntimeOnlyResult.data ?? v3ReportOnlyResult.data?.runtime,
+        curves: v3CurvesOnlyResult.data ?? v3ReportOnlyResult.data?.curves,
+        targetManipulation: v3TargetOnlyResult.data ?? v3ReportOnlyResult.data?.targetManipulation,
+        membership: v3MembershipOnlyResult.data ?? v3ReportOnlyResult.data?.membership,
+        updateLeakage: v3LeakageOnlyResult.data ?? v3ReportOnlyResult.data?.updateLeakage,
+        aggregationDefense: v3AggregationOnlyResult.data ?? v3ReportOnlyResult.data?.aggregationDefense,
+        privacyDefense: v3PrivacyDefenseOnlyResult.data ?? v3ReportOnlyResult.data?.privacyDefense,
+        modelSupport: v3ModelSupportOnlyResult.data ?? v3ReportOnlyResult.data?.modelSupport,
+        frontendSummary: v3FrontendSummaryOnlyResult.data ?? v3ReportOnlyResult.data?.frontendSummary,
+      }
+    : null;
+  const reportWithV3 = mergeV3WithReport(reportResult, v3Report);
   const recommendationsOnlyResult = await fetchApiOnly(
     `${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/recommendations?limit=5&column=all`,
     normalizeRecommendationComparison,
   );
-  const metricsSummary = mergeMetricsSummary(reportResult.metricsSummary, metricsOnlyResult.data);
-  const attackDefenseSummary = reportResult.attackDefenseSummary;
+  const metricsSummary = mergeMetricsSummary(reportWithV3.metricsSummary, metricsOnlyResult.data);
+  const attackDefenseSummary = reportWithV3.attackDefenseSummary;
   const privacyRiskSummary =
-    privacyOnlyResult.data?.privacyRiskSummary ?? reportResult.privacyRiskSummary;
-  const securityRaw = securityOnlyResult.data?.security ?? reportResult.security;
-  const defenseTrace = securityOnlyResult.data?.defenseTrace ?? reportResult.defenseTrace;
+    privacyOnlyResult.data?.privacyRiskSummary ?? reportWithV3.privacyRiskSummary;
+  const securityRaw = securityOnlyResult.data?.security ?? reportWithV3.security;
+  const defenseTrace = reportWithV3.v3?.aggregationDefense ? reportWithV3.defenseTrace : securityOnlyResult.data?.defenseTrace ?? reportWithV3.defenseTrace;
   const v25Summary =
-    reportResult.v25Summary ??
+    reportWithV3.v25Summary ??
     normalizeV25Summary(scenarioId, attackDefenseSummary, privacyRiskSummary, securityRaw ?? defenseTrace);
   const warnings = uniqueStrings([
     ...(selectedScenario.warnings ?? []),
-    ...(reportResult.warnings ?? []),
-    optionalWarning('数据画像 artifact', datasetOnlyResult.error),
-    optionalWarning('指标 artifact', metricsOnlyResult.error),
-    optionalWarning('安全 artifact', securityOnlyResult.error),
-    optionalWarning('隐私 artifact', privacyOnlyResult.error),
-    optionalWarning('推荐列表 artifact', recommendationsOnlyResult?.error),
+    ...(reportWithV3.warnings ?? []),
+    optionalWarning('V3 汇总', v3ReportOnlyResult.error),
+    optionalWarning('V3 运行时间线', v3RuntimeOnlyResult.error),
+    optionalWarning('V3 曲线', v3CurvesOnlyResult.error),
+    optionalWarning('V3 推荐操纵证据', v3TargetOnlyResult.error),
+    optionalWarning('V3 成员推断证据', v3MembershipOnlyResult.error),
+    optionalWarning('V3 更新泄露证据', v3LeakageOnlyResult.error),
+    optionalWarning('V3 聚合防御证据', v3AggregationOnlyResult.error),
+    optionalWarning('数据画像', datasetOnlyResult.error),
+    optionalWarning('指标', metricsOnlyResult.error),
+    optionalWarning('安全结果', securityOnlyResult.error),
+    optionalWarning('隐私结果', privacyOnlyResult.error),
+    optionalWarning('推荐列表', recommendationsOnlyResult?.error),
   ].filter((item): item is string => Boolean(item)));
 
   const report: ShowcaseReport = {
-    ...reportResult,
+    ...reportWithV3,
     scenarioId,
-    title: reportResult.title ?? selectedScenario.name,
-    dataset: reportResult.dataset ?? selectedScenario.dataset,
-    model: reportResult.model ?? selectedScenario.model,
-    datasetProfile: datasetOnlyResult.data ?? reportResult.datasetProfile,
+    title: reportWithV3.title ?? selectedScenario.name,
+    dataset: reportWithV3.dataset ?? selectedScenario.dataset,
+    model: reportWithV3.model ?? selectedScenario.model,
+    datasetProfile: v3ProfileOnlyResult.data ?? datasetOnlyResult.data ?? reportWithV3.datasetProfile,
     metricsSummary,
     recommendationComparison:
       hasRecommendationRows(recommendationsOnlyResult.data)
         ? recommendationsOnlyResult.data
-        : reportResult.recommendationComparison ?? emptyRecommendationComparison(),
+        : reportWithV3.recommendationComparison ?? emptyRecommendationComparison(),
     defenseTrace,
     security: securityRaw,
     privacyRiskSummary,
-    privacy: privacyOnlyResult.data?.privacy ?? reportResult.privacy,
+    privacy: privacyOnlyResult.data?.privacy ?? reportWithV3.privacy,
     v25Summary,
+    v3: reportWithV3.v3,
     warnings,
   };
 

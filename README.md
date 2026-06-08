@@ -41,8 +41,8 @@
 - `src/components/sandbox/RecommendationComparisonBoard.tsx`：三列推荐对照，默认 5 条，支持按需请求 15 / 50 条；展示 rank、变化状态、目标商品标记和图片兜底。
 - `src/lib/securityTaxonomy.ts`：前端攻防语义模型，把模块统一分为攻击、防御、观测、证据。
 - `src/lib/experimentPlaybooks.ts`：实验剧本数据模型，统一驱动实验编排三栏、攻防路径图、当前参数、推荐场景和执行区文案。
-- `src/lib/scenarioNarratives.ts`：场景叙事工具，用真实场景和 report 推断中文场景名、攻防类型、用途、证据标签和 target rank 口径。
-- `src/services/showcase.ts`：showcase API 读取、真实场景优先选择、artifact 正规化、recommendations limit 查询和 API 失败兜底。
+- `src/lib/scenarioNarratives.ts`：场景叙事工具，用真实场景、V3 panels 和 report 推断中文场景名、攻防类型、用途、证据标签和 target rank 口径。
+- `src/services/showcase.ts`：showcase API 读取、V3 report/panel 接入、真实场景优先选择、结果正规化、recommendations limit 查询和 API 失败兜底。
 
 ## 攻防语义模型
 
@@ -111,6 +111,10 @@
 - 隐私风险对比
 - 模型/数据集能力对比
 
+运行监控优先读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
+
+单次分析优先读取 V3 推荐操纵、成员推断、更新泄露和聚合防御 panel；缺失 panel 显示“未导出”，不使用本地演示数据补齐。
+
 横向对比只展示指标矩阵和摘要条形图，不展示推荐商品列表。
 
 历史实验是实验档案库，展示实验名称、数据集/模型、攻击类型、防御类型、证据、用途，并支持主展示、Amazon、KU、投毒、隐私攻击、鲁棒防御、有图片、有推荐列表筛选。
@@ -129,13 +133,26 @@
 - `/showcase/scenarios/{scenario_id}/security`
 - `/showcase/scenarios/{scenario_id}/privacy`
 - `/showcase/images/{dataset}/{item_id}?size=thumb|full`
+- `/showcase/scenarios/{scenario_id}/v3/report`
+- `/showcase/scenarios/{scenario_id}/v3/profile`
+- `/showcase/scenarios/{scenario_id}/v3/runtime`
+- `/showcase/scenarios/{scenario_id}/v3/curves`
+- `/showcase/scenarios/{scenario_id}/v3/target-manipulation`
+- `/showcase/scenarios/{scenario_id}/v3/membership`
+- `/showcase/scenarios/{scenario_id}/v3/update-leakage`
+- `/showcase/scenarios/{scenario_id}/v3/aggregation-defense`
+- `/showcase/scenarios/{scenario_id}/v3/privacy-defense`
+- `/showcase/scenarios/{scenario_id}/v3/model-support`
+- `/showcase/scenarios/{scenario_id}/v3/frontend-summary`
 
 默认真实场景优先级：
 
-1. `amazon_beauty_poc_v25_backend_smoke`
-2. `mmfedrap_ku_attack_defense_demo`
-3. `model_security_capability_matrix`
+1. `amazon_beauty_poc_security_v3`
+2. `amazon_beauty_poc_v25_backend_smoke`
+3. `mmfedrap_ku_attack_defense_demo`
 4. `security_matrix_krum_demo`
+
+`/v3/report` 优先于旧版 `/report`。单个 V3 panel 缺失时只显示“未导出 / 暂无证据”，不要回退到 mock 补造该 panel。`/showcase/scenarios` 返回 `has_v3` 或相关 panel flags 时，历史实验和当前场景摘要用中文标签显示“V3 证据”等状态。
 
 推荐图片优先使用 `thumbnail_url`，其次 `local_image_url`，再使用 `image_url`，失败显示占位图。不要渲染 D 盘路径、UNC 路径或其他本地绝对路径。
 

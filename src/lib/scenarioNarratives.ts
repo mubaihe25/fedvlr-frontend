@@ -71,6 +71,7 @@ export const scenarioText = (scenario: ShowcaseScenario, report?: ShowcaseReport
 
 export const getScenarioTitle = (scenario: ShowcaseScenario, report?: ShowcaseReport) => {
   const text = scenarioText(scenario, report);
+  if (scenario.hasV3 || text.includes('security_v3')) return 'Amazon V3 安全证据链路';
   if (text.includes('v25')) return 'Amazon V2.5 定向投毒链路';
   if (text.includes('target rank comparison')) return 'Amazon 目标排序对照';
   if (text.includes('target injection')) return 'Amazon 目标交互注入';
@@ -87,13 +88,13 @@ export const getScenarioTitle = (scenario: ShowcaseScenario, report?: ShowcaseRe
 
 export const inferAttackType = (scenario: ShowcaseScenario, report?: ShowcaseReport) => {
   const text = scenarioText(scenario, report);
-  if (text.includes('target') || text.includes('poison') || text.includes('rank') || report?.v25Summary?.targetRankAfter) {
+  if (report?.v3?.targetManipulation || text.includes('target') || text.includes('poison') || text.includes('rank') || report?.v25Summary?.targetRankAfter) {
     return '目标商品投毒';
   }
-  if (text.includes('membership') || text.includes('mia') || report?.v25Summary?.miaAuc) {
+  if (report?.v3?.membership || text.includes('membership') || text.includes('mia') || report?.v25Summary?.miaAuc) {
     return '成员推断攻击';
   }
-  if (text.includes('interaction') || text.includes('reconstruction') || report?.v25Summary?.interactionReconstructionHit50) {
+  if (report?.v3?.updateLeakage || text.includes('interaction') || text.includes('reconstruction') || report?.v25Summary?.interactionReconstructionHit50) {
     return '客户端更新泄露';
   }
   if (text.includes('security') || text.includes('smoke')) return '安全链路验证';
@@ -102,6 +103,8 @@ export const inferAttackType = (scenario: ShowcaseScenario, report?: ShowcaseRep
 
 export const inferDefenseType = (scenario: ShowcaseScenario, report?: ShowcaseReport) => {
   const text = scenarioText(scenario, report);
+  if (report?.v3?.aggregationDefense?.status === 'configured_only') return '已配置，未形成完整 benchmark';
+  if (report?.v3?.aggregationDefense?.defenseAlgorithm) return `${report.v3.aggregationDefense.defenseAlgorithm} 鲁棒防御`;
   if (text.includes('krum') || text.includes('robust') || report?.defenseTrace?.aggregationRule) return '鲁棒聚合防御';
   if (text.includes('secure') || text.includes('secagg') || report?.v25Summary?.secAggResidual !== undefined) return '安全聚合模拟';
   if (text.includes('dp') || text.includes('noise') || report?.defenseTrace?.dpNoise) return '差分隐私风格加噪';
@@ -110,6 +113,7 @@ export const inferDefenseType = (scenario: ShowcaseScenario, report?: ShowcaseRe
 
 export const inferScenarioUsage = (scenario: ShowcaseScenario, report?: ShowcaseReport) => {
   const text = scenarioText(scenario, report);
+  if (scenario.hasV3 || report?.v3) return '主展示';
   if (text.includes('v25') || text.includes('mmfedrap_ku')) return '主展示';
   if (text.includes('krum') || text.includes('security') || text.includes('privacy')) return '链路验证';
   if (text.includes('matrix') || text.includes('capability')) return '配置验证';
@@ -118,6 +122,13 @@ export const inferScenarioUsage = (scenario: ShowcaseScenario, report?: Showcase
 
 export const inferEvidenceLabels = (scenario: ShowcaseScenario, report?: ShowcaseReport) => {
   const labels: string[] = [];
+  if (scenario.hasV3 || report?.v3) labels.push('V3 证据');
+  if (scenario.hasRuntime || report?.v3?.runtime?.events.length) labels.push('运行时间线');
+  if (scenario.hasCurves || report?.v3?.curves) labels.push('曲线');
+  if (scenario.hasTargetManipulation || report?.v3?.targetManipulation) labels.push('推荐操纵');
+  if (scenario.hasMembership || report?.v3?.membership) labels.push('成员推断');
+  if (scenario.hasUpdateLeakage || report?.v3?.updateLeakage) labels.push('更新泄露');
+  if (scenario.hasAggregationDefense || report?.v3?.aggregationDefense) labels.push('聚合防御');
   if (scenario.hasRecommendations || report?.recommendationComparison) labels.push('推荐列表');
   if (scenario.hasPrivacy || report?.privacyRiskSummary || report?.v25Summary?.miaAuc) labels.push('隐私审计');
   if (scenario.hasImages || report?.recommendationComparison?.baseline.some((item) => item.thumbnailUrl || item.localImageUrl || item.imageUrl)) {
@@ -145,6 +156,7 @@ export const getMatchedModules = (scenario: ShowcaseScenario, report?: ShowcaseR
 export const normalizeEvidenceType = (value?: string | null) => {
   if (!value) return '混合证据';
   const normalized = value.toLowerCase();
+  if (normalized.includes('mixed_proxy') || normalized.includes('rank_proxy')) return '排名/混合证据';
   if (normalized.includes('checkpoint')) return 'checkpoint score';
   if (normalized.includes('rank')) return '排名证据';
   if (normalized.includes('mixed') || normalized.includes('hybrid')) return '混合证据';
@@ -152,6 +164,17 @@ export const normalizeEvidenceType = (value?: string | null) => {
 };
 
 export const getTargetProduct = (report: ShowcaseReport) => {
+  if (report.v3?.targetManipulation?.targetItem) {
+    const item = report.v3.targetManipulation.targetItem;
+    return {
+      itemId: item.itemId ?? null,
+      title: item.title ?? null,
+      category: item.category ?? null,
+      thumbnailUrl: item.thumbnailUrl ?? null,
+      localImageUrl: item.localImageUrl ?? null,
+      imageUrl: item.imageUrl ?? null,
+    };
+  }
   const entry = report.targetRankSummary?.entries?.[0];
   if (!entry) return null;
   const id = entry.itemId;
@@ -179,22 +202,27 @@ export const getPublicImage = (item?: Pick<ShowcaseRecommendationItem, 'thumbnai
 
 export const getTargetRanks = (report: ShowcaseReport) => {
   const entry = report.targetRankSummary?.entries?.[0];
-  const before = report.v25Summary?.targetRankBefore ?? entry?.baselineRank ?? null;
-  const after = report.v25Summary?.targetRankAfter ?? entry?.attackRank ?? null;
-  const rankLift = typeof before === 'number' && typeof after === 'number' ? before - after : null;
-  const normalizedLift = rankLift !== null && typeof before === 'number' && before > 1 ? rankLift / (before - 1) : null;
-  const reciprocalGain = typeof before === 'number' && typeof after === 'number' && before > 0 && after > 0 ? 1 / after - 1 / before : null;
-  const manipulationRisk = normalizedLift !== null ? Math.max(0, Math.min(100, normalizedLift * 100)) : null;
+  const v3Target = report.v3?.targetManipulation;
+  const before = v3Target?.baselineUnmaskedRank ?? report.v25Summary?.targetRankBefore ?? entry?.baselineRank ?? null;
+  const after = v3Target?.attackUnmaskedRank ?? report.v25Summary?.targetRankAfter ?? entry?.attackRank ?? null;
+  const rankLift = v3Target?.rankGain ?? (typeof before === 'number' && typeof after === 'number' ? before - after : null);
+  const normalizedLift = v3Target?.normalizedRankGain ?? (rankLift !== null && typeof before === 'number' && before > 1 ? rankLift / (before - 1) : null);
+  const reciprocalGain = v3Target?.reciprocalRankGain ?? (typeof before === 'number' && typeof after === 'number' && before > 0 && after > 0 ? 1 / after - 1 / before : null);
+  const manipulationRisk = v3Target?.targetManipulationIndex ?? (normalizedLift !== null ? Math.max(0, Math.min(100, normalizedLift * 100)) : null);
 
   return {before, after, entry, rankLift, normalizedLift, reciprocalGain, manipulationRisk};
 };
 
 export const getFinalExposureText = (report: ShowcaseReport) => {
+  if (report.v3?.targetManipulation?.attackTopkHit === false) return '最终曝光未命中';
+  if (report.v3?.targetManipulation?.attackTopkHit === true) return '以结果文件记录为准';
   const hitRate = report.v25Summary?.maskedTopkHitRate ?? report.targetRankSummary?.targetHitRate ?? report.metricsSummary?.targetHitRate ?? 0;
   return hitRate === 0 ? '最终曝光未命中' : '以结果文件记录为准';
 };
 
 export const getPrivacyMetrics = (report: ShowcaseReport) => {
+  const v3Membership = report.v3?.membership;
+  const v3Leakage = report.v3?.updateLeakage;
   const rawPrivacy = report.v25Summary?.raw && isRecord(report.v25Summary.raw) ? report.v25Summary.raw.privacyRiskSummary : report.privacyRiskSummary;
   const miaRecord = pickRecord(rawPrivacy, ['membership_inference', 'membershipInference', 'mia']) ?? pickRecord(report.privacy, ['membership_inference', 'membershipInference', 'mia']);
   const interactionRecord =
@@ -202,12 +230,19 @@ export const getPrivacyMetrics = (report: ShowcaseReport) => {
     pickRecord(report.privacy, ['interaction_reconstruction', 'interactionReconstruction']);
 
   return {
-    miaAuc: report.v25Summary?.miaAuc ?? readNumber(miaRecord, ['auc', 'attack_auc', 'attackAuc', 'mia_auc', 'miaAuc']),
-    miaAccuracy: readNumber(miaRecord, ['accuracy', 'attack_accuracy', 'attackAccuracy', 'acc']),
-    miaEvidence: normalizeEvidenceType(readString(miaRecord, ['score_source', 'scoreSource', 'evidence_type', 'evidenceType', 'source'])),
-    hit10: report.v25Summary?.interactionReconstructionHit10 ?? readNumber(interactionRecord, ['hit@10', 'hit_at_10', 'hitAt10', 'hit10']),
-    hit20: report.v25Summary?.interactionReconstructionHit20 ?? readNumber(interactionRecord, ['hit@20', 'hit_at_20', 'hitAt20', 'hit20']),
-    hit50: report.v25Summary?.interactionReconstructionHit50 ?? readNumber(interactionRecord, ['hit@50', 'hit_at_50', 'hitAt50', 'hit50']),
-    riskyModality: translateSecurityKey(readString(interactionRecord, ['highest_risk_modality', 'highestRiskModality', 'risk_modality', 'modality']) ?? 'item_embedding'),
+    miaAuc: v3Membership?.auc ?? report.v25Summary?.miaAuc ?? readNumber(miaRecord, ['auc', 'attack_auc', 'attackAuc', 'mia_auc', 'miaAuc']),
+    miaAccuracy: v3Membership?.accuracy ?? readNumber(miaRecord, ['accuracy', 'attack_accuracy', 'attackAccuracy', 'acc']),
+    miaPrecision: v3Membership?.precision ?? null,
+    miaRecall: v3Membership?.recall ?? null,
+    miaF1: v3Membership?.f1 ?? null,
+    miaScoreGap: v3Membership?.scoreGap ?? null,
+    miaEvidence: normalizeEvidenceType(v3Membership?.evidenceType ?? readString(miaRecord, ['score_source', 'scoreSource', 'evidence_type', 'evidenceType', 'source'])),
+    memberCount: v3Membership?.memberCount ?? null,
+    nonMemberCount: v3Membership?.nonMemberCount ?? null,
+    anonymizedExamples: v3Membership?.anonymizedExamples ?? [],
+    hit10: v3Leakage?.hit10 ?? report.v25Summary?.interactionReconstructionHit10 ?? readNumber(interactionRecord, ['hit@10', 'hit_at_10', 'hitAt10', 'hit10']),
+    hit20: v3Leakage?.hit20 ?? report.v25Summary?.interactionReconstructionHit20 ?? readNumber(interactionRecord, ['hit@20', 'hit_at_20', 'hitAt20', 'hit20']),
+    hit50: v3Leakage?.hit50 ?? report.v25Summary?.interactionReconstructionHit50 ?? readNumber(interactionRecord, ['hit@50', 'hit_at_50', 'hitAt50', 'hit50']),
+    riskyModality: translateSecurityKey(v3Leakage?.highestRiskModality ?? readString(interactionRecord, ['highest_risk_modality', 'highestRiskModality', 'risk_modality', 'modality']) ?? 'item_embedding'),
   };
 };

@@ -47,6 +47,17 @@ export const showcaseLabelMap: Record<string, string> = {
   recall_drop: '召回下降',
   recovery_rate: '恢复率',
   model_security_capability_matrix: '模型安全能力矩阵',
+  target_manipulation_metrics: '推荐操纵证据',
+  membership_inference_panel: '成员推断证据',
+  update_leakage_panel: '更新泄露证据',
+  aggregation_defense_panel: '聚合防御证据',
+  mixed_proxy: '排名/混合证据',
+  rank_proxy: '排名/混合证据',
+  configured_only: '已配置，未形成完整 benchmark',
+  formal_dp_available: '正式差分隐私不可用',
+  has_v3: 'V3 证据',
+  runtime_timeline: '运行时间线',
+  training_curves: '训练曲线',
 };
 
 export const toChineseLabel = (value?: string | number | null) => {

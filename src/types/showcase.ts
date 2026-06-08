@@ -17,6 +17,17 @@ export interface ShowcaseScenario {
   hasPrivacy?: boolean | null;
   hasMetrics?: boolean | null;
   hasImages?: boolean | null;
+  hasV3?: boolean | null;
+  availablePanels?: string[];
+  supportedDirections?: string[];
+  hasRuntime?: boolean | null;
+  hasCurves?: boolean | null;
+  hasTargetManipulation?: boolean | null;
+  hasMembership?: boolean | null;
+  hasUpdateLeakage?: boolean | null;
+  hasAggregationDefense?: boolean | null;
+  hasPrivacyDefense?: boolean | null;
+  hasModelSupport?: boolean | null;
   unavailable?: boolean | null;
   notAvailable?: boolean | null;
   smoke?: boolean | null;
@@ -176,6 +187,127 @@ export interface ShowcaseV25Summary {
   raw?: ShowcaseJsonRecord;
 }
 
+export type ShowcaseV3PanelName =
+  | 'profile'
+  | 'runtime'
+  | 'curves'
+  | 'target-manipulation'
+  | 'membership'
+  | 'update-leakage'
+  | 'aggregation-defense'
+  | 'privacy-defense'
+  | 'model-support'
+  | 'frontend-summary';
+
+export interface ShowcaseV3RuntimeEvent {
+  round?: string | number | null;
+  step?: string | number | null;
+  time?: string | null;
+  type?: string | null;
+  message: string;
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV3RuntimePanel {
+  events: ShowcaseV3RuntimeEvent[];
+  currentRound?: number | null;
+  totalRounds?: number | null;
+  clientCount?: number | null;
+  maliciousClientRatio?: number | null;
+  defenseStrategy?: string | null;
+  status?: string | null;
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV3CurvesPanel {
+  curveSource?: 'summary_curve' | 'real_points' | string | null;
+  loss?: number[];
+  recallAt50?: number[];
+  ndcgAt50?: number[];
+  attackRisk?: number[];
+  defenseRecovery?: number[];
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV3TargetManipulationPanel {
+  targetItem?: ShowcaseRecommendationItem | null;
+  baselineUnmaskedRank?: number | null;
+  attackUnmaskedRank?: number | null;
+  rankGain?: number | null;
+  normalizedRankGain?: number | null;
+  reciprocalRankGain?: number | null;
+  attackTopkHit?: boolean | null;
+  targetManipulationIndex?: number | null;
+  recommendationJaccard?: number | null;
+  changedUserCount?: number | null;
+  changedItemCount?: number | null;
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV3MembershipPanel {
+  auc?: number | null;
+  accuracy?: number | null;
+  precision?: number | null;
+  recall?: number | null;
+  f1?: number | null;
+  scoreGap?: number | null;
+  memberCount?: number | null;
+  nonMemberCount?: number | null;
+  evidenceType?: string | null;
+  anonymizedExamples?: unknown[];
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV3UpdateLeakagePanel {
+  hit10?: number | null;
+  hit20?: number | null;
+  hit50?: number | null;
+  highestRiskModality?: string | null;
+  candidateItems?: ShowcaseRecommendationItem[];
+  modalityRiskBreakdown?: ShowcaseJsonRecord | null;
+  updateNormSummary?: ShowcaseJsonRecord | null;
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV3AggregationDefensePanel {
+  defenseAlgorithm?: string | null;
+  aggregationVisibility?: string | null;
+  selectedClients?: Array<string | number>;
+  rejectedClients?: Array<string | number>;
+  outlierScoreSummary?: ShowcaseJsonRecord | null;
+  recallBefore?: number | null;
+  recallAfter?: number | null;
+  ndcgBefore?: number | null;
+  ndcgAfter?: number | null;
+  recoveryRate?: number | null;
+  status?: string | null;
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV3PrivacyDefensePanel {
+  formalDpAvailable?: boolean | null;
+  dpNoise?: unknown;
+  secureAggregation?: unknown;
+  status?: string | null;
+  raw?: ShowcaseJsonRecord;
+}
+
+export interface ShowcaseV3Report {
+  scenarioId?: string | null;
+  profile?: ShowcaseDatasetProfile | null;
+  runtime?: ShowcaseV3RuntimePanel | null;
+  curves?: ShowcaseV3CurvesPanel | null;
+  targetManipulation?: ShowcaseV3TargetManipulationPanel | null;
+  membership?: ShowcaseV3MembershipPanel | null;
+  updateLeakage?: ShowcaseV3UpdateLeakagePanel | null;
+  aggregationDefense?: ShowcaseV3AggregationDefensePanel | null;
+  privacyDefense?: ShowcaseV3PrivacyDefensePanel | null;
+  modelSupport?: ShowcaseModelCapabilityMatrix | null;
+  frontendSummary?: ShowcaseJsonRecord | null;
+  availablePanels?: string[];
+  raw?: ShowcaseJsonRecord;
+}
+
 export interface ShowcaseReport {
   scenarioId: string;
   title?: string | null;
@@ -190,6 +322,7 @@ export interface ShowcaseReport {
   defenseTrace?: ShowcaseDefenseTrace | null;
   modelCapabilityMatrix?: ShowcaseModelCapabilityMatrix | null;
   v25Summary?: ShowcaseV25Summary | null;
+  v3?: ShowcaseV3Report | null;
   security?: unknown;
   privacy?: unknown;
   delivery?: unknown;
