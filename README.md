@@ -115,7 +115,7 @@
 
 单次分析优先读取 V3 推荐操纵、成员推断、更新泄露和聚合防御 panel；缺失 panel 显示“未导出”，不使用本地演示数据补齐。
 
-横向对比只展示指标矩阵和摘要条形图，不展示推荐商品列表。
+横向对比只展示指标矩阵和摘要条形图，不展示推荐商品列表。模型/数据集能力模式优先读取 V3 `model_support_panel`，并按“攻防强验证底座”“多模态主展示模型”“已通过 smoke 验证”“部分支持”“仅配置校验”“待适配”分组展示模型扩充成果。该区域只显示模型名、数据集、中文状态、TopK / metrics 是否验证和结果是否已导出，不展示本地结果路径。
 
 历史实验是实验档案库，展示实验名称、数据集/模型、攻击类型、防御类型、证据、用途，并支持主展示、Amazon、KU、投毒、隐私攻击、鲁棒防御、有图片、有推荐列表筛选。
 
@@ -165,6 +165,7 @@
 - 差分隐私风格加噪不是 formal DP；没有正式 privacy accountant 时不要写成 formal DP。
 - `unsupported` / `future_adapter` 是模型适配边界，不是失败结论。
 - FedAvg + Amazon 是攻防强验证底座；MMFedRAP + KU 是多模态主展示模型；FedAvg Amazon 的 target rank `170 -> 3` 不能泛化到所有模型。
+- `smoke_verified_models` 只能写成“已通过小规模链路验证”；`partial_smoke_verified_models` 写成“部分支持，已通过基础 smoke”；`validate_only_models` 写成“仅完成配置校验”；`adapter_required_models` 写成“需要适配器”。1 epoch smoke 只验证链路和导出，不代表最终性能。
 - 页面展示优先使用 `Recall@50` 和 `NDCG@50`。
 - 如果用 artifact 摘要生成轻量 sparkline，必须标注“实验摘要曲线”，不要伪造完整训练过程。
 

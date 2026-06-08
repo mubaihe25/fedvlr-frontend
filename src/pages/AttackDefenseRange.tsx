@@ -63,7 +63,7 @@ import type {ExperimentConfigurationSource} from '../services/experiment';
 import type {StartTrainResponse} from '../services/train';
 import type {ConsoleSessionState} from '../types/common';
 import type {DefenseType, LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../types/train';
-import type {ShowcaseBundle, ShowcaseRecommendationItem, ShowcaseReport, ShowcaseScenario} from '../types/showcase';
+import type {ShowcaseBundle, ShowcaseModelCapabilityMatrix, ShowcaseModelSmokeEvidence, ShowcaseRecommendationItem, ShowcaseReport, ShowcaseScenario} from '../types/showcase';
 
 export type WorkbenchTabId = 'orchestration' | 'monitoring' | 'analysis' | 'comparison' | 'history';
 
@@ -145,6 +145,59 @@ const getV3EvidenceBadges = (scenario: ShowcaseScenario, report?: ShowcaseReport
   if (scenario.hasImages || report?.recommendationComparison?.baseline.some((item) => item.thumbnailUrl || item.localImageUrl || item.imageUrl)) badges.push('有图片');
   return Array.from(new Set(badges));
 };
+
+const splitModelDataset = (key: string) => {
+  const [model, dataset] = key.split('::');
+  return {
+    model: model || EMPTY_VALUE,
+    dataset: dataset || EMPTY_VALUE,
+  };
+};
+
+const modelSmokeStatusLabel = (status?: string | null) => {
+  if (status === 'smoke_verified') return '已通过小规模链路验证';
+  if (status === 'partial_smoke_verified') return '部分支持，已通过基础 smoke';
+  if (status === 'validate_only') return '仅完成配置校验';
+  if (status === 'adapter_required') return '需要适配器';
+  if (status === 'failed_smoke') return 'smoke 未通过';
+  return status ? toChineseLabel(status) : '未导出';
+};
+
+const modelSmokeToneClass = (status?: string | null) => {
+  if (status === 'adapter_required' || status === 'failed_smoke') return 'border-amber-200/25 bg-amber-300/10 text-amber-100';
+  if (status === 'partial_smoke_verified') return 'border-violet-200/25 bg-violet-300/10 text-violet-100';
+  if (status === 'validate_only') return 'border-slate-200/20 bg-white/[0.05] text-slate-200';
+  return 'border-emerald-200/25 bg-emerald-300/10 text-emerald-100';
+};
+
+const verifiedLabel = (value?: boolean | null) => {
+  if (value === true) return '已验证';
+  if (value === false) return '未验证';
+  return '未导出';
+};
+
+const getSmokeResultLabel = (evidence?: ShowcaseModelSmokeEvidence) => {
+  if (!evidence) return '未导出';
+  return evidence.smokeResultDir || evidence.securityArtifactReady ? '已导出' : '未导出';
+};
+
+const getModelSmokeEvidence = (matrix: ShowcaseModelCapabilityMatrix | null | undefined, key: string) => matrix?.modelSmokeEvidence?.[key];
+
+const buildModelSmokeCards = (matrix: ShowcaseModelCapabilityMatrix | null | undefined, keys: string[] | undefined, status: string) =>
+  (keys ?? []).map((key) => {
+    const fallback = splitModelDataset(key);
+    const evidence = getModelSmokeEvidence(matrix, key);
+    return {
+      key,
+      model: evidence?.model ?? fallback.model,
+      dataset: evidence?.dataset ?? fallback.dataset,
+      status,
+      topk: verifiedLabel(evidence?.topkExportVerified),
+      metrics: verifiedLabel(evidence?.metricsExportVerified),
+      result: getSmokeResultLabel(evidence),
+      note: evidence?.failureReason ?? evidence?.reason ?? '链路验证结果已纳入 V3 模型支持面板。',
+    };
+  });
 
 const interpolate = (start: number, end: number, steps = 18) =>
   Array.from({length: steps}, (_, index) => {
@@ -2171,6 +2224,147 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
 
     const columns = columnsByMode[comparisonMode];
+    const modelSupport =
+      report.v3?.modelSupport ??
+      report.modelCapabilityMatrix ??
+      comparisonBundles.map((item) => item.report.v3?.modelSupport ?? item.report.modelCapabilityMatrix).find(Boolean) ??
+      null;
+    const smokeCards = buildModelSmokeCards(modelSupport, modelSupport?.smokeVerifiedModels, 'smoke_verified');
+    const partialCards = buildModelSmokeCards(modelSupport, modelSupport?.partialSmokeVerifiedModels, 'partial_smoke_verified');
+    const validateCards = buildModelSmokeCards(modelSupport, modelSupport?.validateOnlyModels, 'validate_only');
+    const adapterCards = buildModelSmokeCards(modelSupport, modelSupport?.adapterRequiredModels, 'adapter_required');
+    const failedCards = buildModelSmokeCards(modelSupport, modelSupport?.failedSmokeModels, 'failed_smoke');
+    const fedAvgAmazonEvidence = getModelSmokeEvidence(modelSupport, 'FedAvg::AMAZON_BEAUTY_POC');
+    const mmfedrapKuEvidence = getModelSmokeEvidence(modelSupport, 'MMFedRAP::KU');
+    const renderModelSmokeGroup = (title: string, description: string, cards: ReturnType<typeof buildModelSmokeCards>, emptyText = '未导出') => (
+      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+        <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+          <div>
+            <h3 className="text-lg font-bold text-white">{title}</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-400">{description}</p>
+          </div>
+          <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-bold text-slate-300">{cards.length || emptyText}</span>
+        </div>
+        {cards.length ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {cards.map((card) => (
+              <div key={`${title}-${card.key}`} className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-base font-bold text-white">{card.model}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-400">{card.dataset}</p>
+                  </div>
+                  <span className={cn('rounded-full border px-2.5 py-1 text-[11px] font-bold', modelSmokeToneClass(card.status))}>{modelSmokeStatusLabel(card.status)}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {[
+                    {label: 'TopK', value: card.topk},
+                    {label: 'metrics', value: card.metrics},
+                    {label: '结果', value: card.result},
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2">
+                      <p className="text-slate-500">{item.label}</p>
+                      <p className="mt-1 font-bold text-slate-200">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500">{card.note}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.025] p-4 text-sm text-slate-500">{emptyText}</div>
+        )}
+      </section>
+    );
+    const renderCapabilityComparison = () => (
+      <div className="space-y-5">
+        <section className="grid gap-3 md:grid-cols-4">
+          {[
+            {label: '已验证', value: smokeCards.length, status: 'smoke_verified'},
+            {label: '部分支持', value: partialCards.length, status: 'partial_smoke_verified'},
+            {label: '配置校验', value: validateCards.length, status: 'validate_only'},
+            {label: '待适配', value: adapterCards.length, status: 'adapter_required'},
+          ].map((item) => (
+            <div key={item.label} className="rounded-3xl border border-white/10 bg-white/[0.045] p-5">
+              <p className="text-xs font-bold text-slate-500">{item.label}</p>
+              <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-400">{modelSmokeStatusLabel(item.status)}</p>
+            </div>
+          ))}
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className="space-y-4">
+            {renderModelSmokeGroup(
+              '攻防强验证底座',
+              'Amazon 定向投毒、MIA、更新泄露和 V3 主链路集中在 FedAvg + Amazon Beauty。',
+              [
+                {
+                  key: 'FedAvg::AMAZON_BEAUTY_POC',
+                  model: fedAvgAmazonEvidence?.model ?? 'FedAvg',
+                  dataset: fedAvgAmazonEvidence?.dataset ?? 'AMAZON_BEAUTY_POC',
+                  status: fedAvgAmazonEvidence?.verificationLevel ?? 'validate_only',
+                  topk: verifiedLabel(fedAvgAmazonEvidence?.topkExportVerified),
+                  metrics: verifiedLabel(fedAvgAmazonEvidence?.metricsExportVerified),
+                  result: getSmokeResultLabel(fedAvgAmazonEvidence),
+                  note: '170 -> 3 只说明 FedAvg Amazon 这条链路的未屏蔽排序被推动，不代表其他模型同样成立。',
+                },
+              ],
+            )}
+            {renderModelSmokeGroup(
+              '多模态主展示模型',
+              'MMFedRAP + KU 是多模态 FedVLR 主展示模型，适合讲清图像、文本与协同信号融合。',
+              [
+                {
+                  key: 'MMFedRAP::KU',
+                  model: mmfedrapKuEvidence?.model ?? 'MMFedRAP',
+                  dataset: mmfedrapKuEvidence?.dataset ?? 'KU',
+                  status: mmfedrapKuEvidence?.verificationLevel ?? 'smoke_verified',
+                  topk: verifiedLabel(mmfedrapKuEvidence?.topkExportVerified),
+                  metrics: verifiedLabel(mmfedrapKuEvidence?.metricsExportVerified),
+                  result: getSmokeResultLabel(mmfedrapKuEvidence),
+                  note: 'KU smoke 验证说明链路可跑通；安全效果仍按具体 artifact 解释。',
+                },
+              ],
+            )}
+          </div>
+          <aside className="rounded-3xl border border-cyan-200/20 bg-cyan-300/10 p-5">
+            <p className="text-xs font-bold tracking-[0.18em] text-cyan-100/75">模型扩充口径</p>
+            <h3 className="mt-3 text-xl font-bold text-white">目标是证明平台具备多模型接入能力，不是证明所有模型效果最好。</h3>
+            <div className="mt-5 space-y-3 text-sm leading-6 text-slate-300">
+              <p>{'FedAvg + Amazon 的 target rank 170 -> 3 不能泛化到其他模型。'}</p>
+              <p>FCF / MMFCF 属于部分支持：基础链路已通过 smoke，但安全效果尚未形成完整验证。</p>
+              <p>MGCN / MMGCN 相关模型需要适配器，不写成已支持。</p>
+              <p>1 epoch smoke 只验证链路和导出，不代表最终性能。</p>
+            </div>
+          </aside>
+        </section>
+
+        {renderModelSmokeGroup(
+          '已通过 smoke 验证',
+          '这些模型完成小规模链路验证，包含 TopK 或 metrics 导出检查。',
+          smokeCards,
+        )}
+        {renderModelSmokeGroup(
+          '部分支持',
+          '基础链路已通过 smoke，但安全效果尚未形成完整验证。',
+          partialCards,
+        )}
+        {renderModelSmokeGroup(
+          '仅配置校验',
+          '当前只完成配置校验或可读配置检查，不能写成真实 smoke 结果。',
+          validateCards,
+        )}
+        {renderModelSmokeGroup(
+          '待适配',
+          '模型、依赖或 Trainer 需要后续适配后才能进入完整安全验证链路。',
+          adapterCards,
+        )}
+        {failedCards.length ? renderModelSmokeGroup('smoke 未通过', '这些模型已有失败记录，需要单独排查。', failedCards) : null}
+      </div>
+    );
+
     return (
       <div className="space-y-5">
         <section className="sandbox-panel rounded-[28px] p-5">
@@ -2205,61 +2399,67 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           </div>
         </section>
 
-        <section className="sandbox-panel overflow-hidden rounded-[28px] p-0">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-white/10">
-              <thead className="bg-white/[0.045]">
-                <tr>
-                  {columns.map((column) => (
-                    <th key={column.key} className="px-4 py-3 text-left text-xs font-bold text-slate-400">
-                      {column.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10">
-                {comparisonRows.map((row) => (
-                  <tr key={row.id} className="hover:bg-white/[0.035]">
-                    {columns.map((column) => {
-                      const rendered = column.render(row);
-                      return (
-                        <td key={column.key} className={cn('max-w-[280px] px-4 py-4 text-sm', rendered === '未导出' ? 'text-slate-500' : 'text-slate-200')}>
-                          {rendered}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="border-t border-white/10 px-4 py-3 text-xs text-slate-500">
-            缺失指标统一显示为“未导出”，表示当前结果文件没有该字段，不使用演示数据补齐。
-          </div>
-        </section>
+        {comparisonMode === 'capability' ? (
+          renderCapabilityComparison()
+        ) : (
+          <>
+            <section className="sandbox-panel overflow-hidden rounded-[28px] p-0">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-white/10">
+                  <thead className="bg-white/[0.045]">
+                    <tr>
+                      {columns.map((column) => (
+                        <th key={column.key} className="px-4 py-3 text-left text-xs font-bold text-slate-400">
+                          {column.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {comparisonRows.map((row) => (
+                      <tr key={row.id} className="hover:bg-white/[0.035]">
+                        {columns.map((column) => {
+                          const rendered = column.render(row);
+                          return (
+                            <td key={column.key} className={cn('max-w-[280px] px-4 py-4 text-sm', rendered === '未导出' ? 'text-slate-500' : 'text-slate-200')}>
+                              {rendered}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t border-white/10 px-4 py-3 text-xs text-slate-500">
+                缺失指标统一显示为“未导出”，表示当前结果文件没有该字段，不使用演示数据补齐。
+              </div>
+            </section>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          {comparisonRows.slice(0, 3).map((row) => (
-            <div key={`${row.id}-bar`} className="rounded-3xl border border-white/10 bg-white/[0.045] p-5">
-              <p className="text-sm font-bold text-white">{row.scenario}</p>
-              {[
-                {label: '目标排序提升', value: row.rankGain ? Math.min(1, row.rankGain / 169) : 0, text: formatSigned(row.rankGain, 0), tone: 'bg-rose-300'},
-                {label: 'MIA AUC', value: row.miaAuc ?? 0, text: formatCellValue(formatMetricValue(row.miaAuc)), tone: 'bg-violet-300'},
-                {label: '防御恢复率', value: row.recovery ?? 0, text: formatCellValue(formatPercentValue(row.recovery)), tone: 'bg-emerald-300'},
-              ].map((item) => (
-                <div key={item.label} className="mt-4">
-                  <div className="mb-1 flex justify-between text-xs text-slate-400">
-                    <span>{item.label}</span>
-                    <span>{item.text}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-800">
-                    <div className={cn('h-2 rounded-full', item.tone)} style={{width: `${Math.max(0.04, Math.min(1, item.value)) * 100}%`}} />
-                  </div>
+            <section className="grid gap-4 md:grid-cols-3">
+              {comparisonRows.slice(0, 3).map((row) => (
+                <div key={`${row.id}-bar`} className="rounded-3xl border border-white/10 bg-white/[0.045] p-5">
+                  <p className="text-sm font-bold text-white">{row.scenario}</p>
+                  {[
+                    {label: '目标排序提升', value: row.rankGain ? Math.min(1, row.rankGain / 169) : 0, text: formatSigned(row.rankGain, 0), tone: 'bg-rose-300'},
+                    {label: 'MIA AUC', value: row.miaAuc ?? 0, text: formatCellValue(formatMetricValue(row.miaAuc)), tone: 'bg-violet-300'},
+                    {label: '防御恢复率', value: row.recovery ?? 0, text: formatCellValue(formatPercentValue(row.recovery)), tone: 'bg-emerald-300'},
+                  ].map((item) => (
+                    <div key={item.label} className="mt-4">
+                      <div className="mb-1 flex justify-between text-xs text-slate-400">
+                        <span>{item.label}</span>
+                        <span>{item.text}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-800">
+                        <div className={cn('h-2 rounded-full', item.tone)} style={{width: `${Math.max(0.04, Math.min(1, item.value)) * 100}%`}} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
-            </div>
-          ))}
-        </section>
+            </section>
+          </>
+        )}
       </div>
     );
   };

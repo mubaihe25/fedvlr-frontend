@@ -114,7 +114,7 @@
 
 推荐三列默认请求 5 条，支持展开 15 条、展开 50 条和收起；展开动作应按需请求 recommendations endpoint，不要一次渲染全量推荐。推荐项应显示图片、标题、类目、rank、变化状态和是否目标商品。目标商品不在 Top50 时不要插入列表，只在目标轨迹中说明。
 
-横向对比只展示指标矩阵和摘要图，不展示推荐商品列表。当前模式包括攻击效果、防御效果、隐私风险、模型/数据集能力。
+横向对比只展示指标矩阵和摘要图，不展示推荐商品列表。当前模式包括攻击效果、防御效果、隐私风险、模型/数据集能力。模型/数据集能力模式优先读取 V3 `model_support_panel` 的 `smoke_verified_models`、`partial_smoke_verified_models`、`validate_only_models`、`adapter_required_models`、`failed_smoke_models` 和 `model_smoke_evidence`，展示成中文分组和状态统计，不直接显示后端字段名或本地结果路径。
 
 历史实验展示 `/showcase/scenarios` 实验档案库，展示实验名称、模型、数据集、攻击/防御类型、证据和用途；支持筛选并点击场景切换当前工作台场景。
 
@@ -165,6 +165,7 @@
 - 不要把 homomorphic encryption、secure aggregation、differential privacy 写成当前训练链路已正式实现。
 - `unsupported` / `future_adapter` 是模型适配边界，不是失败结论。
 - FedAvg + Amazon 是攻防强验证底座；MMFedRAP + KU 是多模态主展示模型；FedAvg Amazon 的 target rank `170 -> 3` 不能泛化到所有模型。
+- `smoke_verified_models` 只能写成“已通过小规模链路验证”；`partial_smoke_verified_models` 写成“部分支持，已通过基础 smoke”；`validate_only_models` 写成“仅完成配置校验”；`adapter_required_models` 写成“需要适配器”。1 epoch smoke 只验证链路和导出，不代表最终性能；FCF / MMFCF 是 partial，MGCN / MMGCN 相关模型是 adapter-required，不要写成已支持。
 
 ## 指标口径
 

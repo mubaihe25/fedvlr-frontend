@@ -584,6 +584,46 @@ const normalizeCapabilityRows = (payload: unknown): ShowcaseModelCapabilityRow[]
   return rows?.map(normalizeCapabilityRow) ?? [];
 };
 
+const splitModelDatasetKey = (key: string) => {
+  const [model, dataset] = key.split('::');
+  return {
+    model: model || null,
+    dataset: dataset || null,
+  };
+};
+
+const normalizeModelSmokeEvidence = (key: string, value: unknown) => {
+  const record = isRecord(value) ? value : {};
+  const fromKey = splitModelDatasetKey(key);
+  return {
+    key,
+    model: firstString(record, ['model', 'model_name', 'modelName']) ?? fromKey.model,
+    dataset: firstString(record, ['dataset', 'dataset_name', 'datasetName']) ?? fromKey.dataset,
+    canonicalModel: firstString(record, ['canonical_model', 'canonicalModel']),
+    status: firstString(record, ['status', 'state']),
+    verificationLevel: firstString(record, ['verification_level', 'verificationLevel']),
+    smokeStatus: firstString(record, ['smoke_status', 'smokeStatus']),
+    topkExportVerified: firstBoolean(record, ['topk_export_verified', 'topkExportVerified']),
+    metricsExportVerified: firstBoolean(record, ['metrics_export_verified', 'metricsExportVerified']),
+    securityArtifactReady: firstBoolean(record, ['security_artifact_ready', 'securityArtifactReady']),
+    reason: firstString(record, ['reason', 'note', 'description']),
+    failureReason: firstString(record, ['failure_reason', 'failureReason']),
+    smokeResultDir: firstString(record, ['smoke_result_dir', 'smokeResultDir']),
+    raw: isRecord(value) ? value : undefined,
+  };
+};
+
+const normalizeModelSmokeEvidenceMap = (value: unknown) => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const entries = Object.entries(value).reduce<Record<string, ReturnType<typeof normalizeModelSmokeEvidence>>>((accumulator, [key, item]) => {
+    accumulator[key] = normalizeModelSmokeEvidence(key, item);
+    return accumulator;
+  }, {});
+  return Object.keys(entries).length ? entries : undefined;
+};
+
 const normalizeStatusCounts = (value: unknown): Record<string, number> | undefined => {
   if (!isRecord(value)) {
     return undefined;
@@ -601,7 +641,8 @@ const normalizeStatusCounts = (value: unknown): Record<string, number> | undefin
 };
 
 const normalizeModelCapabilityMatrix = (payload: unknown): ShowcaseModelCapabilityMatrix | null => {
-  const payloadRecord = isRecord(payload) ? payload : {};
+  const unwrappedPayload = unwrapPayload(payload);
+  const payloadRecord = isRecord(unwrappedPayload) ? unwrappedPayload : isRecord(payload) ? payload : {};
   const record = pickRecord(payloadRecord, ['model_security_capability_matrix', 'modelSecurityCapabilityMatrix', 'matrix']) ?? {};
   const supportedRecord = pickRecord(readField(payloadRecord, ['supported_demos', 'supportedDemos']), [
     'supported_demos',
@@ -618,8 +659,25 @@ const normalizeModelCapabilityMatrix = (payload: unknown): ShowcaseModelCapabili
   const entries = normalizeCapabilityRows(record);
   const supportedDemos = normalizeCapabilityRows(supportedRecord);
   const unsupportedReasons = normalizeCapabilityRows(unsupportedRecord);
+  const smokeVerifiedModels = firstStringList(payloadRecord, ['smoke_verified_models', 'smokeVerifiedModels']);
+  const partialSmokeVerifiedModels = firstStringList(payloadRecord, ['partial_smoke_verified_models', 'partialSmokeVerifiedModels']);
+  const validateOnlyModels = firstStringList(payloadRecord, ['validate_only_models', 'validateOnlyModels']);
+  const adapterRequiredModels = firstStringList(payloadRecord, ['adapter_required_models', 'adapterRequiredModels']);
+  const failedSmokeModels = firstStringList(payloadRecord, ['failed_smoke_models', 'failedSmokeModels']);
+  const modelSmokeEvidence = normalizeModelSmokeEvidenceMap(readField(payloadRecord, ['model_smoke_evidence', 'modelSmokeEvidence']));
+  const recommendedShowcaseModels = pickRecord(payloadRecord, ['recommended_showcase_models', 'recommendedShowcaseModels']);
 
-  if (!entries.length && !supportedDemos.length && !unsupportedReasons.length) {
+  if (
+    !entries.length &&
+    !supportedDemos.length &&
+    !unsupportedReasons.length &&
+    !smokeVerifiedModels.length &&
+    !partialSmokeVerifiedModels.length &&
+    !validateOnlyModels.length &&
+    !adapterRequiredModels.length &&
+    !failedSmokeModels.length &&
+    !modelSmokeEvidence
+  ) {
     return null;
   }
 
@@ -629,11 +687,19 @@ const normalizeModelCapabilityMatrix = (payload: unknown): ShowcaseModelCapabili
     unsupportedReasons,
     statusCounts: normalizeStatusCounts(readField(record, ['status_counts', 'statusCounts'])),
     recommendedFrontendLabels: labelsRecord,
+    smokeVerifiedModels,
+    partialSmokeVerifiedModels,
+    validateOnlyModels,
+    adapterRequiredModels,
+    failedSmokeModels,
+    modelSmokeEvidence,
+    recommendedShowcaseModels,
     warnings: uniqueStrings([
       ...firstStringList(record, ['warnings', 'warning']),
+      ...firstStringList(payloadRecord, ['warnings', 'warning']),
       ...firstStringList(labelsRecord, ['warnings', 'warning']),
     ]),
-    raw: isRecord(payload) ? payload : undefined,
+    raw: payloadRecord,
   };
 };
 

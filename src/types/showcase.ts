@@ -159,12 +159,36 @@ export interface ShowcaseModelCapabilityRow {
   raw?: ShowcaseJsonRecord;
 }
 
+export interface ShowcaseModelSmokeEvidence {
+  key: string;
+  model?: string | null;
+  dataset?: string | null;
+  canonicalModel?: string | null;
+  status?: string | null;
+  verificationLevel?: string | null;
+  smokeStatus?: string | null;
+  topkExportVerified?: boolean | null;
+  metricsExportVerified?: boolean | null;
+  securityArtifactReady?: boolean | null;
+  reason?: string | null;
+  failureReason?: string | null;
+  smokeResultDir?: string | null;
+  raw?: ShowcaseJsonRecord;
+}
+
 export interface ShowcaseModelCapabilityMatrix {
   entries: ShowcaseModelCapabilityRow[];
   supportedDemos: ShowcaseModelCapabilityRow[];
   unsupportedReasons: ShowcaseModelCapabilityRow[];
   statusCounts?: Record<string, number>;
   recommendedFrontendLabels?: Record<string, unknown>;
+  smokeVerifiedModels?: string[];
+  partialSmokeVerifiedModels?: string[];
+  validateOnlyModels?: string[];
+  adapterRequiredModels?: string[];
+  failedSmokeModels?: string[];
+  modelSmokeEvidence?: Record<string, ShowcaseModelSmokeEvidence>;
+  recommendedShowcaseModels?: ShowcaseJsonRecord;
   warnings?: string[];
   raw?: ShowcaseJsonRecord;
 }
