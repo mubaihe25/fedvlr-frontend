@@ -88,6 +88,8 @@
 
 方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。底部执行区只保留“校验配置”和“开始实验”两个主按钮。“开始实验”调用受限 smoke job 接口并切换到运行监控；如果后端返回 `source=existing_artifact`，必须写成复用已导出证据，不要写成刚训练完成。
 
+高级参数抽屉使用 `/workbench/options` 的 canonical 数据：数据集只显示 Amazon Beauty 和 KU，模型只显示 8 个可启动模型，并按 `compatibility_matrix` 禁用当前数据集不兼容的模型。推荐操纵的目标商品使用暗色可搜索 combobox，优先展示 `short_name_zh`，英文 `raw_title` 作为小字，不显示本地路径。
+
 聚合可见性有互斥逻辑：
 
 - 明文更新聚合：服务端可观察单客户端更新，可使用 Krum / Median / TrimmedMean / Bulyan。
@@ -196,6 +198,8 @@ npm run preview
 - `src/services/workbench.ts` 负责调用 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、`/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=200` 和 `/workbench/jobs/{job_id}/result`。
 - 攻防工作台的“校验配置”调用 `/workbench/validate`；“开始实验”调用 `/workbench/jobs` 并切换到运行监控。
 - 当前 API 会创建并启动受限 smoke job，状态可能为 `queued`、`running`、`completed`、`partial` 或 `failed`。前端在有 `job_id` 时优先轮询 job 状态、日志和 result；没有 job 时继续读取已完成 showcase/V3 证据。
+- `/workbench/validate` 和 invalid `/workbench/jobs` 的 `field_errors` 会展示为中文字段错误；网络不可达时显示“后端服务未连接”，不要直接暴露 `Failed to fetch`。
 - `metrics_summary.source=existing_artifact` 表示复用已导出的安全证据，不要展示为本次刚训练出的完整 benchmark。`metrics_summary.source=real_smoke` 表示后端完成了真实轻量 smoke，只能写成 1 epoch 小规模链路验证。`partial` 表示只有部分或 config-only evidence，不要补写成功效果。
 - 工作台模型选择只展示可进入 smoke 配置的 8 个模型；MGCN 系列继续作为需要适配器的边界说明，不放进启动 select。
 - 运行监控如果有 `job_id`，优先轮询 workbench job 日志；没有 job 时继续使用 V3 运行时间线或摘要曲线。
+- showcase 加载只在场景声明 V3 或 `available_panels` 时探测 V3 panel，旧版 metrics/privacy/recommendations 等端点也按 scenarios 摘要字段按需读取；缺失证据显示未导出，不用演示数据补齐。

@@ -209,7 +209,8 @@ export const FederatedTopology: React.FC<FederatedTopologyProps> = ({mode = 'exe
               stroke="#7dd3fc"
               strokeWidth="2"
               filter="url(#fedvlrSoftGlow)"
-              animate={{r: [54, 60, 54], opacity: [0.82, 1, 0.82]}}
+              style={{transformOrigin: `${server.x}px ${server.y}px`}}
+              animate={{scale: [0.94, 1.04, 0.94], opacity: [0.82, 1, 0.82]}}
               transition={{duration: 4.2, repeat: Infinity, ease: 'easeInOut'}}
             />
             <motion.circle
@@ -220,7 +221,8 @@ export const FederatedTopology: React.FC<FederatedTopologyProps> = ({mode = 'exe
               stroke="#38bdf8"
               strokeOpacity="0.18"
               strokeWidth="1"
-              animate={{r: [74, 92, 74], opacity: [0.1, 0.28, 0.1]}}
+              style={{transformOrigin: `${server.x}px ${server.y}px`}}
+              animate={{scale: [0.92, 1.15, 0.92], opacity: [0.1, 0.28, 0.1]}}
               transition={{duration: 4.8, repeat: Infinity, ease: 'easeInOut'}}
             />
           </svg>

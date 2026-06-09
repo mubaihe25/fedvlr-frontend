@@ -36,32 +36,61 @@ export const buildApiUrl = (path: string) => {
   return `${getApiBaseUrl()}${normalizedPath}`;
 };
 
+const readErrorMessage = async (response: Response) => {
+  try {
+    const payload = (await response.json()) as {detail?: unknown; error_message?: unknown; message?: unknown};
+    const detail = payload.error_message ?? payload.detail ?? payload.message;
+    if (Array.isArray(detail)) return detail.map((item) => String(item?.msg ?? item)).join('；');
+    if (detail) return String(detail);
+  } catch {
+    // Fall through to the HTTP status text below.
+  }
+  return `API request failed: ${response.status} ${response.statusText}`;
+};
+
+const requestFailedMessage = (error: unknown) => {
+  if (error instanceof TypeError) {
+    return '后端服务未连接，请确认 FedVLR-API 已启动并且前端代理指向 /api。';
+  }
+  return error instanceof Error ? error.message : String(error);
+};
+
 export const apiGet = async <T>(path: string): Promise<T> => {
-  const response = await fetch(buildApiUrl(path), {
-    headers: {
-      Accept: 'application/json',
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(buildApiUrl(path), {
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (error) {
+    throw new Error(requestFailedMessage(error));
+  }
 
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    throw new Error(await readErrorMessage(response));
   }
 
   return response.json() as Promise<T>;
 };
 
 export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
-  const response = await fetch(buildApiUrl(path), {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(buildApiUrl(path), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new Error(requestFailedMessage(error));
+  }
 
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    throw new Error(await readErrorMessage(response));
   }
 
   return response.json() as Promise<T>;

@@ -23,10 +23,15 @@ export interface WorkbenchModelOption {
 export interface WorkbenchTargetItemOption {
   item_id: string;
   raw_item_id?: string | null;
+  raw_title?: string | null;
   title: string;
   short_title?: string;
+  display_name_zh?: string | null;
+  short_name_zh?: string | null;
   category?: string | null;
+  category_zh?: string | null;
   image_url?: string | null;
+  thumbnail_url?: string | null;
   is_target_sidecar?: boolean;
 }
 
@@ -39,6 +44,9 @@ export interface WorkbenchOptionsResponse {
   adapter_required_models?: WorkbenchModelOption[];
   aggregation_visibility_modes?: Array<Record<string, unknown>>;
   robust_aggregators: string[];
+  direction_parameters?: Record<string, string[]>;
+  defense_parameters?: Record<string, string[]>;
+  compatibility_matrix?: Record<string, string[]>;
   bounds?: Record<string, number | number[] | string>;
   defaults?: Record<string, number | boolean | string>;
   target_items: WorkbenchTargetItemOption[];
@@ -61,9 +69,15 @@ export interface WorkbenchPayload {
   robust_aggregators: string[];
   dp_noise_enabled: boolean;
   dp_noise_std: number;
+  batch_size?: number;
+  base_attack?: string;
+  gradient_clip_norm?: number;
   trim_ratio?: number;
   krum_f?: number;
+  median_clip_norm?: number;
+  distance_metric?: string;
   bulyan_f?: number;
+  bulyan_selection_ratio?: number;
   target_item_id?: string;
   target_item_title?: string;
   attack_strength?: string;
@@ -71,8 +85,14 @@ export interface WorkbenchPayload {
   max_injections_per_client?: number;
   candidate_k?: number;
   risk_modality?: string;
+  hit_k?: number;
+  client_count?: number;
   mia_evidence_source?: string;
+  label_source?: string;
+  threshold_strategy?: string;
   membership_sample_count?: number;
+  export_pair_scores?: boolean;
+  export_reconstruction?: boolean;
   save_topk: boolean;
   export_artifact: boolean;
 }
@@ -83,9 +103,11 @@ export interface WorkbenchValidationResponse {
   status: string;
   warnings: string[];
   errors: string[];
+  field_errors?: Record<string, string[]>;
   normalized_config?: Record<string, unknown>;
   expected_outputs?: string[];
   disabled_reason?: string;
+  error_message?: string;
 }
 
 export interface WorkbenchJobResponse extends WorkbenchValidationResponse {

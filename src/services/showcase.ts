@@ -1524,7 +1524,11 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
   }
 
   const scenarioId = selectedScenario.scenarioId;
-  const v3ReportOnlyResult = await fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/report`, (payload) => normalizeV3Report(payload, selectedScenario));
+  const shouldProbeV3 = Boolean(selectedScenario.hasV3 || selectedScenario.availablePanels.length);
+  const emptyApiResult = <T>(): ApiOnlyResult<T> => ({data: null, error: undefined});
+  const v3ReportOnlyResult = shouldProbeV3
+    ? await fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/report`, (payload) => normalizeV3Report(payload, selectedScenario))
+    : emptyApiResult<ShowcaseV3Report>();
   const legacyReportOnlyResult = v3ReportOnlyResult.data
     ? {data: null, error: undefined}
     : await fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/report`, (payload) => normalizeReport(payload, selectedScenario));
@@ -1544,29 +1548,29 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
     securityOnlyResult,
     privacyOnlyResult,
   ] = await Promise.all([
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/profile`, normalizeDatasetProfile),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/runtime`, normalizeV3RuntimePanel),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/curves`, normalizeV3CurvesPanel),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/target-manipulation`, normalizeV3TargetManipulationPanel),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/membership`, normalizeV3MembershipPanel),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/update-leakage`, normalizeV3UpdateLeakagePanel),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/aggregation-defense`, normalizeV3AggregationDefensePanel),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/privacy-defense`, normalizeV3PrivacyDefensePanel),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/model-support`, normalizeModelCapabilityMatrix),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/frontend-summary`, (payload) => panelRecord(payload, ['frontend_summary', 'frontendSummary', 'summary'])),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/dataset`, normalizeDatasetProfile),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/metrics`, normalizeMetricsSummary),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/security`, (payload) => ({
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/profile`, normalizeDatasetProfile) : Promise.resolve(emptyApiResult<ShowcaseDatasetProfile>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/runtime`, normalizeV3RuntimePanel) : Promise.resolve(emptyApiResult<ShowcaseV3RuntimePanel>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/curves`, normalizeV3CurvesPanel) : Promise.resolve(emptyApiResult<ShowcaseV3CurvesPanel>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/target-manipulation`, normalizeV3TargetManipulationPanel) : Promise.resolve(emptyApiResult<ShowcaseV3TargetManipulationPanel>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/membership`, normalizeV3MembershipPanel) : Promise.resolve(emptyApiResult<ShowcaseV3MembershipPanel>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/update-leakage`, normalizeV3UpdateLeakagePanel) : Promise.resolve(emptyApiResult<ShowcaseV3UpdateLeakagePanel>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/aggregation-defense`, normalizeV3AggregationDefensePanel) : Promise.resolve(emptyApiResult<ShowcaseV3AggregationDefensePanel>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/privacy-defense`, normalizeV3PrivacyDefensePanel) : Promise.resolve(emptyApiResult<ShowcaseV3PrivacyDefensePanel>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/model-support`, normalizeModelCapabilityMatrix) : Promise.resolve(emptyApiResult<ShowcaseModelCapabilityMatrix | null>()),
+    shouldProbeV3 ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/v3/frontend-summary`, (payload) => panelRecord(payload, ['frontend_summary', 'frontendSummary', 'summary'])) : Promise.resolve(emptyApiResult<ShowcaseJsonRecord | undefined>()),
+    shouldProbeV3 ? Promise.resolve(emptyApiResult<ShowcaseDatasetProfile>()) : fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/dataset`, normalizeDatasetProfile),
+    selectedScenario.hasMetrics ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/metrics`, normalizeMetricsSummary) : Promise.resolve(emptyApiResult<ShowcaseMetricsSummary>()),
+    selectedScenario.hasAggregationDefense ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/security`, (payload) => ({
       defenseTrace: normalizeDefenseTrace(payload),
       security: unwrapPayload(payload),
-    })),
-    fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/privacy`, (payload) => {
+    })) : Promise.resolve(emptyApiResult<{defenseTrace: ShowcaseDefenseTrace | null; security: unknown}>()),
+    selectedScenario.hasPrivacy ? fetchApiOnly(`${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/privacy`, (payload) => {
       const record = pickRecord(payload, ['privacy', 'privacy_risk_summary', 'privacyRiskSummary']) ?? {};
       return {
         privacyRiskSummary: record,
         privacy: unwrapPayload(payload),
       };
-    }),
+    }) : Promise.resolve(emptyApiResult<{privacyRiskSummary: ShowcaseJsonRecord; privacy: unknown}>()),
   ]);
   const reportResult = legacyReportOnlyResult.data ?? buildApiReportShell(selectedScenario, '当前场景 report 暂未返回，页面只展示已可读取的场景信息。');
   const hasAnyV3Panel = Boolean(
@@ -1598,10 +1602,12 @@ export const loadShowcaseBundle = async (requestedScenarioId?: string): Promise<
       }
     : null;
   const reportWithV3 = mergeV3WithReport(reportResult, v3Report);
-  const recommendationsOnlyResult = await fetchApiOnly(
-    `${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/recommendations?limit=5&column=all`,
-    normalizeRecommendationComparison,
-  );
+  const recommendationsOnlyResult = selectedScenario.hasRecommendations
+    ? await fetchApiOnly(
+        `${SHOWCASE_BASE_PATH}/${encodeURIComponent(scenarioId)}/recommendations?limit=5&column=all`,
+        normalizeRecommendationComparison,
+      )
+    : emptyApiResult<ShowcaseRecommendationComparison>();
   const metricsSummary = mergeMetricsSummary(reportWithV3.metricsSummary, metricsOnlyResult.data);
   const attackDefenseSummary = reportWithV3.attackDefenseSummary;
   const privacyRiskSummary =
