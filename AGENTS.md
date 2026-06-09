@@ -209,5 +209,6 @@ npm run build
 - “校验配置”必须调用 `/workbench/validate`；“开始实验”必须调用 `/workbench/jobs`，并显示 `queued` / `running` / `completed` / `partial` / `failed` 等真实 job 状态。
 - 运行监控有 `job_id` 时优先轮询 `/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs` 和 `/workbench/jobs/{job_id}/result`；没有 `job_id` 时继续使用 V3 runtime/curves 或摘要曲线。
 - 单次分析如有 job `metrics_summary`，可优先显示结果回填；`source=existing_artifact` 必须标注为复用已导出证据，`partial` 必须保留部分完成或 config-only 边界。
+- `source=real_smoke` 必须显示为真实轻量 smoke 或 1 epoch 小规模链路验证，不要写成完整训练或完整 defense benchmark。
 - 高级参数提交给 workbench 时要保持受限 smoke 边界；前端可以提交普通范围参数，但后端 runner 会进一步限制实际执行轮数、本地轮数和采样比例。
 - 鲁棒聚合算法在前端是多选；没有选中算法表示不启用鲁棒聚合，不要恢复“无防御”按钮。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。

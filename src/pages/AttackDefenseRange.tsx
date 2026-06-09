@@ -109,7 +109,50 @@ const WORKBENCH_STATUS_LABELS: Record<string, string> = {
 
 const workbenchStatusLabel = (value?: string | null) => WORKBENCH_STATUS_LABELS[value ?? ''] ?? '读取中';
 const shortWorkbenchJobId = (value?: string | null) => (value ? value.replace(/^workbench_/, '').slice(-8) : EMPTY_VALUE);
-const workbenchSourceLabel = (value?: string | null) => (value === 'existing_artifact' ? '复用已导出证据' : value ? toChineseLabel(value) : EMPTY_VALUE);
+const workbenchSourceLabel = (value?: string | null) => {
+  if (value === 'existing_artifact') return '复用已导出证据';
+  if (value === 'real_smoke') return '真实轻量 smoke';
+  return value ? toChineseLabel(value) : EMPTY_VALUE;
+};
+const workbenchMetricLabel = (value: string) => {
+  const labels: Record<string, string> = {
+    baseline_unmasked_rank: '原始未屏蔽排序',
+    attack_unmasked_rank: '攻击后未屏蔽排序',
+    rank_gain: '排名提升',
+    normalized_rank_gain: '归一化提升',
+    reciprocal_rank_gain: '倒数排名增益',
+    attack_topk_hit: '最终 TopK 命中',
+    recall_at_50: 'Recall@50',
+    ndcg_at_50: 'NDCG@50',
+    direction: '实验方向',
+    model: '模型',
+    dataset: '数据集',
+    source: '结果来源',
+    active_attacks: '攻击模块',
+    active_defenses: '防御模块',
+    loss: 'Loss',
+    epochs: '训练轮数',
+    local_epochs: '本地轮数',
+    client_sampling_ratio: '客户端采样比例',
+  };
+  return labels[value] ?? toChineseLabel(value);
+};
+const workbenchMetricValue = (key: string, value: string | number | boolean | null) => {
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (value === null) return EMPTY_VALUE;
+  if (key === 'source') return workbenchSourceLabel(String(value));
+  if (key === 'direction') {
+    const labels: Record<string, string> = {
+      recommendation_manipulation: '推荐操纵',
+      membership_inference: '成员推断',
+      update_leakage: '更新泄露',
+      aggregation_defense: '聚合防御',
+    };
+    return labels[String(value)] ?? toChineseLabel(String(value));
+  }
+  if (key === 'client_sampling_ratio' && typeof value === 'number') return formatRatio(value);
+  return formatPlainValue(value);
+};
 
 const tabs: Array<{id: WorkbenchTabId; label: string; icon: React.ComponentType<{className?: string}>}> = [
   {id: 'orchestration', label: '实验编排', icon: ListChecks},
@@ -170,6 +213,28 @@ const splitModelDataset = (key: string) => {
     model: model || EMPTY_VALUE,
     dataset: dataset || EMPTY_VALUE,
   };
+};
+
+const dedupeByVisibleLabel = (values: string[], labeler: (value: string) => string = (value) => value) => {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = labeler(value).trim().toLowerCase();
+    if (!value || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const isSingleWorkbenchModel = (value: string) => Boolean(value && !value.includes('/') && !value.includes(','));
+
+const getPlayRuntimeDefaults = (playId: ExperimentPlayId) => {
+  if (playId === 'target_poisoning_play') {
+    return {totalRounds: 10, localEpochs: 5, clientSamplingRate: 0.25, learningRate: 0.001, weightDecay: 0, gradientClip: 5};
+  }
+  if (playId === 'robust_defense_play') {
+    return {totalRounds: 1, localEpochs: 1, clientSamplingRate: 0.05, learningRate: 0.001, weightDecay: 0, gradientClip: 5};
+  }
+  return {totalRounds: 1, localEpochs: 1, clientSamplingRate: 0.05, learningRate: 0.001, weightDecay: 0, gradientClip: 5};
 };
 
 const modelSmokeStatusLabel = (status?: string | null) => {
@@ -362,6 +427,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [workbenchJobId, setWorkbenchJobId] = useState('');
   const [logPollingPaused, setLogPollingPaused] = useState(false);
   const autoSelectedRef = useRef(false);
+  const initializedPlaybookConfigRef = useRef(false);
+  const workbenchPollTokenRef = useRef(0);
   const robustAlgorithm = robustAlgorithms[0] ?? 'none';
 
   const {report, selectedScenario} = bundle;
@@ -497,26 +564,31 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   useEffect(() => {
     if (!workbenchJobId || logPollingPaused) return;
     let active = true;
+    const pollToken = workbenchPollTokenRef.current;
     const refresh = () => {
       Promise.all([fetchWorkbenchJob(workbenchJobId), fetchWorkbenchLogs(workbenchJobId, 200)])
         .then(([job, logs]: [WorkbenchJobStatusResponse, WorkbenchLogsResponse]) => {
-          if (!active) return;
+          if (!active || pollToken !== workbenchPollTokenRef.current) return;
           setWorkbenchJob(job);
           setWorkbenchLogs(logs.lines ?? []);
           if (job.status && WORKBENCH_TERMINAL_STATUSES.has(job.status)) {
             fetchWorkbenchResult(workbenchJobId)
               .then((result) => {
-                if (active) setWorkbenchResult(result);
+                if (active && pollToken === workbenchPollTokenRef.current) {
+                  setWorkbenchResult(result);
+                  setLogPollingPaused(true);
+                }
               })
               .catch(() => {
-                if (active) {
+                if (active && pollToken === workbenchPollTokenRef.current) {
                   setWorkbenchResult((current) => current);
+                  setLogPollingPaused(true);
                 }
               });
           }
         })
         .catch(() => {
-          if (!active) return;
+          if (!active || pollToken !== workbenchPollTokenRef.current) return;
           setWorkbenchLogs((lines) => (lines.length ? lines : ['[Workbench] 暂时无法读取任务日志。']));
         });
     };
@@ -531,13 +603,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const datasetOptions = useMemo(() => {
     const optionValues = workbenchOptions?.datasets?.map((item) => item.id) ?? [];
     const values = [config.dataset, ...optionValues, ...bundle.scenarios.map((scenario) => scenario.dataset).filter((value): value is string => Boolean(value))];
-    return Array.from(new Set(values));
+    return dedupeByVisibleLabel(values, datasetLabel);
   }, [bundle.scenarios, config.dataset, workbenchOptions?.datasets]);
 
   const modelOptions = useMemo(() => {
     const optionValues = workbenchOptions?.models?.map((item) => item.id) ?? [];
-    const values = [config.model, ...optionValues, ...bundle.scenarios.map((scenario) => scenario.model).filter((value): value is string => Boolean(value))];
-    return Array.from(new Set(values));
+    const fallbackValues = bundle.scenarios.map((scenario) => scenario.model).filter((value): value is string => Boolean(value));
+    const values = optionValues.length ? [config.model, ...optionValues] : [config.model, ...fallbackValues];
+    return dedupeByVisibleLabel(values).filter(isSingleWorkbenchModel);
   }, [bundle.scenarios, config.model, workbenchOptions?.models]);
 
   const targetOptions = useMemo(() => {
@@ -609,9 +682,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       ...(playbook.aggregationMode === 'secure_aggregation' ? ['secure_aggregation_sim'] : []),
       ...(playbook.robustAlgorithm !== 'none' ? ['robust_aggregation'] : []),
     ];
+    const runtimeDefaults = getPlayRuntimeDefaults(playbook.id);
     updateConfig({
-      dataset: matchedScenario?.dataset ?? playbook.dataset,
-      model: matchedScenario?.model ?? playbook.model,
+      dataset: playbook.dataset,
+      model: playbook.model,
+      totalRounds: runtimeDefaults.totalRounds,
+      clientSamplingRate: runtimeDefaults.clientSamplingRate,
+      learningRate: runtimeDefaults.learningRate,
       attackEnabled: attacks.length > 0,
       attackType: attacks.length > 0 ? 'poisoning_attack' : 'none',
       enabledAttacks: attacks,
@@ -633,7 +710,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         mode: 'ratio',
         ratio: playbook.maliciousRatio,
       },
-      advanced: {...config.advanced, secureAggregation: playbook.aggregationMode === 'secure_aggregation'},
+      advanced: {
+        ...config.advanced,
+        localEpochs: runtimeDefaults.localEpochs,
+        weightDecay: runtimeDefaults.weightDecay,
+        gradientClip: runtimeDefaults.gradientClip,
+        secureAggregation: playbook.aggregationMode === 'secure_aggregation',
+      },
       attackParams: {
         ...(config.attackParams ?? {}),
         poisoning_attack: {
@@ -647,6 +730,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       mode: attacks.length > 0 ? 'comparison' : enabledDefenses.length ? 'defense' : 'baseline',
     });
   };
+
+  useEffect(() => {
+    if (initializedPlaybookConfigRef.current || !bundle.scenarios.length) return;
+    initializedPlaybookConfigRef.current = true;
+    applyPlaybookToConfig(getExperimentPlaybook(selectedPlayId));
+    // The initial sync should run once after scenario discovery; later direction clicks
+    // call applyPlaybookToConfig directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundle.scenarios.length]);
 
   const setAggregationVisibility = (mode: AggregationMode) => {
     setAggregationMode(mode);
@@ -723,7 +815,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       model: config.model || selectedPlayDefaults.model,
       total_rounds: config.totalRounds || 10,
       local_epochs: config.advanced.localEpochs || 5,
-      client_sampling_ratio: config.clientSamplingRate || 0.2,
+      client_sampling_ratio: config.clientSamplingRate ?? 0.2,
       malicious_client_ratio: config.poisoningRatio ?? config.maliciousClientConfig?.ratio ?? selectedPlayDefaults.maliciousRatio,
       learning_rate: config.learningRate || 0.001,
       weight_decay: config.advanced.weightDecay ?? 0,
@@ -772,7 +864,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const handleStartExperiment = async () => {
     setActionState('starting');
     setSubmitMessage('');
+    workbenchPollTokenRef.current += 1;
+    setWorkbenchJob(null);
     setWorkbenchResult(null);
+    setWorkbenchLogs([]);
     setLogPollingPaused(false);
     try {
       await new Promise((resolve) => window.setTimeout(resolve, 800));
@@ -1193,8 +1288,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             {fieldShell(
               '恶意客户端比例',
               <div className="flex items-center gap-3">
-                <input className="w-full accent-rose-300" type="range" min={0} max={0.6} step={0.05} value={config.poisoningRatio || 0.2} onChange={(event) => updatePoisoningRatio(Number(event.target.value))} />
-                <span className="w-12 text-right font-mono text-sm font-bold text-rose-100">{formatRatio(config.poisoningRatio || 0.2)}</span>
+                <input className="w-full accent-rose-300" type="range" min={0} max={0.6} step={0.05} value={config.poisoningRatio ?? 0.2} onChange={(event) => updatePoisoningRatio(Number(event.target.value))} />
+                <span className="w-12 text-right font-mono text-sm font-bold text-rose-100">{formatRatio(config.poisoningRatio ?? 0.2)}</span>
               </div>,
             )}
             {fieldShell(
@@ -1735,7 +1830,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               </button>
               <span className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-bold text-slate-500">
                 <Play className="h-4 w-4" />
-                新训练任务待接入
+                受限 smoke / 证据复用
               </span>
             </div>
           </div>
@@ -2329,7 +2424,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             {jobMetricEntries.length ? (
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 {jobMetricEntries.map(([key, value]) => (
-                  <MetricTile key={key} label={toChineseLabel(key)} value={typeof value === 'boolean' ? (value ? '是' : '否') : formatPlainValue(value as string | number | null)} />
+                  <MetricTile key={key} label={workbenchMetricLabel(key)} value={workbenchMetricValue(key, value as string | number | boolean | null)} />
                 ))}
               </div>
             ) : (
