@@ -180,6 +180,28 @@ export const FederatedTopology: React.FC<FederatedTopologyProps> = ({mode = 'exe
                     transition={{duration: 1.7, repeat: Infinity, delay: item * 0.28, ease: 'easeOut'}}
                   />
                 ))}
+                {[0, 1, 2, 3, 4, 5].map((item) => {
+                  const angle = -42 + item * 8;
+                  const rad = (angle * Math.PI) / 180;
+                  return (
+                    <motion.circle
+                      key={`dissolve-${item}`}
+                      cx={server.x + Math.cos(rad) * 78}
+                      cy={server.y + Math.sin(rad) * 78}
+                      r="2.4"
+                      fill={item % 2 ? '#fecdd3' : '#fb7185'}
+                      filter="url(#fedvlrSoftGlow)"
+                      initial={{opacity: 0, scale: 0.4}}
+                      animate={{
+                        opacity: [0, 0.95, 0],
+                        scale: [0.4, 1.2, 0.1],
+                        x: [0, Math.cos(rad) * 18, Math.cos(rad) * 32],
+                        y: [0, Math.sin(rad) * 18, Math.sin(rad) * 32],
+                      }}
+                      transition={{duration: 1.55, repeat: Infinity, delay: 0.18 + item * 0.12, ease: 'easeOut'}}
+                    />
+                  );
+                })}
                 {[0, 1, 2].map((item) => (
                   <motion.path
                     key={item}

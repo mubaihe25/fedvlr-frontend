@@ -1,4 +1,3 @@
-const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000';
 const DEV_PROXY_BASE_URL = '/api';
 const LOCAL_API_HOSTS = new Set(['127.0.0.1', 'localhost']);
 
@@ -28,7 +27,7 @@ export const getApiBaseUrl = () => {
     return DEV_PROXY_BASE_URL;
   }
 
-  return trimTrailingSlash(configuredBaseUrl || DEFAULT_API_BASE_URL);
+  return trimTrailingSlash(configuredBaseUrl || DEV_PROXY_BASE_URL);
 };
 
 export const buildApiUrl = (path: string) => {

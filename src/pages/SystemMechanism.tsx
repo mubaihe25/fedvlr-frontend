@@ -1,6 +1,6 @@
 import React from 'react';
 import {motion} from 'motion/react';
-import {ArrowDown, ArrowRight, Database, FileText, GitMerge, Image, Layers3, MonitorUp, Route, Server, ShieldCheck, Smartphone} from 'lucide-react';
+import {ArrowRight, Database, FileText, GitMerge, Image, Layers3, MonitorUp, Route, Server, ShieldCheck, Smartphone} from 'lucide-react';
 import {FederatedTopology} from '../components/sandbox/FederatedTopology';
 import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
 import {formatPlainValue, getDatasetLabel, hasAmazonUrlHashPlaceholder} from '../lib/showcaseFormat';
@@ -145,12 +145,6 @@ export const SystemMechanism: React.FC = () => {
                     </span>
                   ))}
                 </div>
-                {index < architectureLayers.length - 1 ? (
-                  <ArrowRight className="absolute -right-5 top-1/2 hidden h-6 w-6 -translate-y-1/2 text-cyan-100/45 xl:block" />
-                ) : null}
-                {index < architectureLayers.length - 1 ? (
-                  <ArrowDown className="absolute -bottom-5 left-1/2 h-6 w-6 -translate-x-1/2 text-cyan-100/45 xl:hidden" />
-                ) : null}
               </motion.div>
             ))}
           </div>

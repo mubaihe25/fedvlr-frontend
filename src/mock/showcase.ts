@@ -127,7 +127,7 @@ export const showcaseSampleNotice =
   '当前为展示样本结构，后续可替换为 FedVLR 导出的真实 artifacts 或更完整多模态数据集。';
 
 export const datasetProfile: ShowcaseDatasetProfile = {
-  name: 'KU / Showcase',
+  name: 'KU 多模态数据集',
   source: 'NineRec-style short-video multimodal recommendation sample',
   users: '12.8K showcase users',
   items: '46.2K multimodal items',
@@ -410,7 +410,7 @@ export const deliverySummary: DeliverySummary = {
   modelSummary:
     '展示主线围绕服务端 G1-G4 多视图融合与客户端 router 个性化权重展开，强调不同客户端对多模态信号的差异化使用。',
   dataSummary:
-    '展示数据采用 KU / Showcase 样本结构，包含图像、文本和协同 ID 三类模态占位，可替换为更完整的多模态数据集 artifacts。',
+    '展示数据采用 KU 多模态样本结构，包含图像、文本和协同 ID 三类模态占位，可替换为更完整的多模态数据集 artifacts。',
   securitySummary:
     '攻防展示聚焦投毒攻击、鲁棒防御和风险观测，说明异常更新如何影响推荐列表，以及鲁棒处理如何帮助恢复正常推荐。',
   metricsSummary:

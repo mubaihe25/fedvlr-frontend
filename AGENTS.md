@@ -97,11 +97,11 @@
 - 更新泄露
 - 聚合防御
 
-左侧是真按钮式实验方向选择；中间用短关键词、图标和发光连线展示攻防流程；右侧是基础参数 / 高级参数分段抽屉。基础参数用于快速确认当前配置摘要，高级参数是可编辑表单控件，修改后必须同步基础摘要、流程图关键词和下一步建议。剧本字段必须统一来自 `src/lib/experimentPlaybooks.ts`，不要在页面里再维护第二套普通/专家参数。
+左侧是真按钮式实验方向选择；中间用短关键词、图标和发光连线展示攻防流程；右侧是基础参数 / 高级参数分段抽屉。桌面三栏保持左侧约 260-300px、中间自适应、右侧约 360-420px，右侧高级参数内部滚动，不要撑宽页面。基础参数用于快速确认当前配置摘要，高级参数是可编辑表单控件，修改后必须同步基础摘要、流程图关键词和底部配置摘要。剧本字段必须统一来自 `src/lib/experimentPlaybooks.ts`，不要在页面里再维护第二套普通/专家参数。
 
-方向选择必须驱动完整工作流：自动更新当前参数和推荐场景，运行监控日志随方向变化，单次分析优先展示当前方向证据，横向对比说明当前在比什么，历史实验点击后切换场景并进入单次分析。底部执行区只允许“校验配置”和“开始实验”两个主按钮。“开始实验”调用 `/workbench/jobs` 创建受限 smoke job 并切换到运行监控；如果 job 返回 `source=existing_artifact`，只能写成复用已导出证据，不要写成刚训练完成。invalid job 不能切换到运行监控，应展示 `/workbench/jobs` 返回的 `error_message` 和 `field_errors`。
+方向选择必须驱动完整工作流：自动更新当前参数和推荐场景，运行监控日志随方向变化，单次分析优先展示当前方向证据，横向对比说明当前在比什么，历史实验点击后切换场景并进入单次分析。高级参数包含执行模式：`existing_artifact` 默认复用已导出证据，`real_smoke` 请求真实轻量 smoke，`probe_smoke` 只允许轻量探测或结果回填，不能写成完整训练；前端可显式提交三种模式。底部执行区只允许“校验配置”和“开始实验”两个主按钮。“开始实验”调用 `/workbench/jobs` 创建受限 smoke job 并切换到运行监控；如果 job 返回 `source=existing_artifact`，只能写成复用已导出证据，不要写成刚训练完成；如果返回 `source=probe_smoke`，只能写成轻量探测 / 结果回填。invalid job 不能切换到运行监控，应展示 `/workbench/jobs` 返回的 `error_message` 和 `field_errors`。
 
-高级参数必须由 `/workbench/options` 的 canonical options 驱动：数据集只显示 Amazon Beauty 和 KU；模型只显示 8 个可启动模型，并按 `compatibility_matrix` 禁用不兼容项。目标商品选择器应使用 `short_name_zh` / `display_name_zh` 做主显示，英文 `raw_title` 作为辅助文本，支持中文、英文和 item id 搜索，不显示 D 盘路径。
+高级参数必须由 `/workbench/options` 的 canonical options 驱动：数据集只显示 Amazon Beauty 和 KU；模型只显示 8 个可启动模型。8 个模型都可进入配置，不再因当前数据集在下拉中硬禁用；真实 smoke、复用证据、probe 或配置校验边界由 `model_dataset_execution` 和 `/workbench/validate` 返回。目标商品选择器应使用 `short_name_zh` / `display_name_zh` 做主显示，英文 `raw_title` 作为辅助文本，支持中文、英文和 item id 搜索，不显示 D 盘路径。
 
 聚合可见性必须体现互斥：
 
@@ -118,7 +118,7 @@
 
 横向对比只展示指标矩阵和摘要图，不展示推荐商品列表。当前模式包括攻击效果、防御效果、隐私风险、模型/数据集能力。模型/数据集能力模式优先读取 V3 `model_support_panel` 的 `smoke_verified_models`、`partial_smoke_verified_models`、`validate_only_models`、`adapter_required_models`、`failed_smoke_models` 和 `model_smoke_evidence`，展示成中文分组和状态统计，不直接显示后端字段名或本地结果路径。
 
-历史实验展示 `/showcase/scenarios` 实验档案库，展示实验名称、模型、数据集、攻击/防御类型、证据和用途；支持筛选并点击场景切换当前工作台场景。
+历史实验展示 `/showcase/scenarios` 实验档案库，一行一个实验，约 12 条/页，展示实验名称、方向、数据集/模型、攻击/防御、日期、source、关键指标预览和证据标签；支持快捷标签、实验方向、数据集、模型、日期、V3 证据、图片、推荐列表、真实 smoke、probe smoke、复用证据筛选，支持分页并点击场景切换当前工作台场景。
 
 ## Showcase API 协议
 
@@ -207,12 +207,14 @@ npm run build
 
 ## Workbench API 联动补充
 
-- `src/services/workbench.ts` 是攻防工作台的 API service，负责 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、job 状态、job 日志和 job result。
+- `src/services/workbench.ts` 是攻防工作台的 API service，经统一 API helper 走 `/api/workbench/...`，负责 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、job 状态、job 日志和 job result。
 - “校验配置”必须调用 `/workbench/validate`；“开始实验”必须调用 `/workbench/jobs`，并显示 `queued` / `running` / `completed` / `partial` / `failed` 等真实 job 状态。
 - 运行监控有 `job_id` 时优先轮询 `/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs` 和 `/workbench/jobs/{job_id}/result`；没有 `job_id` 时继续使用 V3 runtime/curves 或摘要曲线。
 - 失败文案应优先使用 `field_errors` 和 `error_message`，网络不可达时显示“后端服务未连接”，不要直接显示 `Failed to fetch`。
 - 单次分析如有 job `metrics_summary`，可优先显示结果回填；`source=existing_artifact` 必须标注为复用已导出证据，`partial` 必须保留部分完成或 config-only 边界。
 - `source=real_smoke` 必须显示为真实轻量 smoke 或 1 epoch 小规模链路验证，不要写成完整训练或完整 defense benchmark。
+- `source=probe_smoke` 必须显示为轻量 probe 或结果回填，不要写成完整训练；`requested_execution_mode` 与实际 `execution_mode` 不一致时，要保留降级边界。
+- `/workbench/options` 的 `execution_modes`、`model_dataset_execution` 和 `parameter_descriptors` 是高级参数、模型提示和执行边界说明的来源；不要在页面里维护第二套执行能力矩阵。
 - 高级参数提交给 workbench 时要保持受限 smoke 边界；前端可以提交普通范围参数，但后端 runner 会进一步限制实际执行轮数、本地轮数和采样比例。
 - 鲁棒聚合算法在前端是多选；没有选中算法表示不启用鲁棒聚合，不要恢复“无防御”按钮。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。
 - Showcase 加载应按 scenarios 摘要字段请求 V3 panels 和旧版 endpoints；场景未声明 V3/旧证据时不要主动探测一堆 404。缺失证据显示“未导出 / 暂无证据”，不要用 mock 补单个缺口。

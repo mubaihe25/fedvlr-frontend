@@ -20,6 +20,34 @@ export interface WorkbenchModelOption {
   datasets?: string[];
 }
 
+export interface WorkbenchExecutionModeOption {
+  id: 'existing_artifact' | 'real_smoke' | 'probe_smoke' | string;
+  label: string;
+  description?: string;
+  source?: string;
+}
+
+export interface WorkbenchParameterDescriptor {
+  type: string;
+  label: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  default?: number | string | boolean | Array<string | number>;
+  unit?: string;
+  options?: Array<string | number>;
+  depends_on?: string[];
+  visible_when?: Record<string, unknown>;
+  disabled_when?: Record<string, unknown>;
+  help_text?: string;
+}
+
+export interface WorkbenchExecutionCapability {
+  status?: string;
+  allowed_execution_modes?: string[];
+  message?: string;
+}
+
 export interface WorkbenchTargetItemOption {
   item_id: string;
   raw_item_id?: string | null;
@@ -39,6 +67,7 @@ export interface WorkbenchOptionsResponse {
   source?: string;
   schema_version?: string;
   directions: WorkbenchDirectionOption[];
+  execution_modes?: WorkbenchExecutionModeOption[];
   datasets: WorkbenchDatasetOption[];
   models: WorkbenchModelOption[];
   adapter_required_models?: WorkbenchModelOption[];
@@ -47,6 +76,8 @@ export interface WorkbenchOptionsResponse {
   direction_parameters?: Record<string, string[]>;
   defense_parameters?: Record<string, string[]>;
   compatibility_matrix?: Record<string, string[]>;
+  model_dataset_execution?: Record<string, Record<string, WorkbenchExecutionCapability>>;
+  parameter_descriptors?: Record<string, WorkbenchParameterDescriptor>;
   bounds?: Record<string, number | number[] | string>;
   defaults?: Record<string, number | boolean | string>;
   target_items: WorkbenchTargetItemOption[];
@@ -55,6 +86,7 @@ export interface WorkbenchOptionsResponse {
 
 export interface WorkbenchPayload {
   direction: string;
+  execution_mode: 'existing_artifact' | 'real_smoke' | 'probe_smoke';
   scenario_id?: string;
   dataset: string;
   model: string;
@@ -65,16 +97,29 @@ export interface WorkbenchPayload {
   learning_rate: number;
   weight_decay: number;
   gradient_clip: number;
+  seed?: number;
+  top_k?: number;
   aggregation_mode: 'plain_updates' | 'secure_aggregation';
   robust_aggregators: string[];
   dp_noise_enabled: boolean;
   dp_noise_std: number;
+  noise_multiplier?: number;
+  max_grad_norm?: number;
+  target_delta?: number;
+  dp_seed?: number;
   batch_size?: number;
   base_attack?: string;
+  anomaly_client_ratio?: number;
+  perturbation_type?: string;
+  perturbation_strength?: number;
   gradient_clip_norm?: number;
   trim_ratio?: number;
+  trim_min_keep?: number;
   krum_f?: number;
+  multi_krum_enabled?: boolean;
   median_clip_norm?: number;
+  coordinate_median?: boolean;
+  outlier_strategy?: string;
   distance_metric?: string;
   bulyan_f?: number;
   bulyan_selection_ratio?: number;
@@ -83,14 +128,23 @@ export interface WorkbenchPayload {
   attack_strength?: string;
   injection_ratio?: number;
   max_injections_per_client?: number;
+  target_loss_weight?: number;
+  target_rank_selector?: string;
+  preserve_topk?: boolean;
   candidate_k?: number;
+  candidate_pool_size?: number;
   risk_modality?: string;
+  update_input_source?: string;
+  similarity_method?: string;
+  show_candidate_images?: boolean;
   hit_k?: number;
   client_count?: number;
   mia_evidence_source?: string;
+  mia_model?: string;
   label_source?: string;
   threshold_strategy?: string;
   membership_sample_count?: number;
+  member_nonmember_ratio?: number;
   export_pair_scores?: boolean;
   export_reconstruction?: boolean;
   save_topk: boolean;
@@ -133,6 +187,8 @@ export interface WorkbenchJobStatusResponse {
   started_at?: string | null;
   finished_at?: string | null;
   direction?: string | null;
+  execution_mode?: string | null;
+  requested_execution_mode?: string | null;
   scenario_id?: string | null;
   message?: string | null;
   disabled_reason?: string | null;
