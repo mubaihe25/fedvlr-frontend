@@ -59,13 +59,13 @@ import type {ExperimentPlaybook, PlaybookRouteTone} from '../lib/experimentPlayb
 import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPlainValue, getRecommendationCounts, toChineseLabel} from '../lib/showcaseFormat';
 import {cn} from '../lib/utils';
 import {loadShowcaseBundle} from '../services/showcase';
-import {createWorkbenchJob, fetchWorkbenchJob, fetchWorkbenchLogs, fetchWorkbenchOptions, fetchWorkbenchResult, validateWorkbenchConfig} from '../services/workbench';
+import {createWorkbenchJob, fetchWorkbenchJob, fetchWorkbenchJobs, fetchWorkbenchLogs, fetchWorkbenchOptions, fetchWorkbenchResult, validateWorkbenchConfig} from '../services/workbench';
 import type {ExperimentConfigurationSource} from '../services/experiment';
 import type {StartTrainResponse} from '../services/train';
 import type {ConsoleSessionState} from '../types/common';
 import type {DefenseType, LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../types/train';
 import type {ShowcaseBundle, ShowcaseModelCapabilityMatrix, ShowcaseModelSmokeEvidence, ShowcaseRecommendationItem, ShowcaseReport, ShowcaseScenario} from '../types/showcase';
-import type {WorkbenchJobStatusResponse, WorkbenchLogsResponse, WorkbenchOptionsResponse, WorkbenchPayload, WorkbenchResultResponse, WorkbenchValidationResponse} from '../types/workbench';
+import type {WorkbenchJobListItem, WorkbenchJobListResponse, WorkbenchJobStatusResponse, WorkbenchLogsResponse, WorkbenchOptionsResponse, WorkbenchPayload, WorkbenchResultResponse, WorkbenchValidationResponse} from '../types/workbench';
 
 export type WorkbenchTabId = 'orchestration' | 'monitoring' | 'analysis' | 'comparison' | 'history';
 
@@ -168,6 +168,15 @@ const workbenchMetricValue = (key: string, value: string | number | boolean | nu
   if (key === 'client_sampling_ratio' && typeof value === 'number') return formatRatio(value);
   return formatPlainValue(value);
 };
+const WORKBENCH_DIRECTION_LABELS: Record<string, string> = {
+  recommendation_manipulation: '推荐操纵',
+  membership_inference: '成员推断',
+  update_leakage: '更新泄露',
+  aggregation_defense: '聚合防御',
+};
+const workbenchDirectionLabel = (value?: string | null) => (value ? WORKBENCH_DIRECTION_LABELS[value] ?? toChineseLabel(value) : EMPTY_VALUE);
+const workbenchDirectionFromFilter = (value: string) =>
+  Object.entries(WORKBENCH_DIRECTION_LABELS).find(([, label]) => label === value)?.[0] ?? '';
 
 const tabs: Array<{id: WorkbenchTabId; label: string; icon: React.ComponentType<{className?: string}>}> = [
   {id: 'orchestration', label: '实验编排', icon: ListChecks},
@@ -537,6 +546,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [workbenchLogs, setWorkbenchLogs] = useState<string[]>([]);
   const [workbenchJobId, setWorkbenchJobId] = useState('');
   const [logPollingPaused, setLogPollingPaused] = useState(false);
+  const [workbenchJobs, setWorkbenchJobs] = useState<WorkbenchJobListResponse | null>(null);
+  const [workbenchJobsError, setWorkbenchJobsError] = useState('');
+  const [jobDirectionFilter, setJobDirectionFilter] = useState('');
+  const [jobDatasetFilter, setJobDatasetFilter] = useState('');
+  const [jobModelFilter, setJobModelFilter] = useState('');
+  const [jobSourceFilter, setJobSourceFilter] = useState('');
+  const [jobStatusFilter, setJobStatusFilter] = useState('');
+  const [jobDateFromFilter, setJobDateFromFilter] = useState('');
+  const [jobDateToFilter, setJobDateToFilter] = useState('');
   const autoSelectedRef = useRef(false);
   const initializedPlaybookConfigRef = useRef(false);
   const workbenchPollTokenRef = useRef(0);
@@ -660,7 +678,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         const defaultTarget = options.target_items?.[0];
         if (defaultTarget?.item_id) {
           setTargetItemId(String(defaultTarget.item_id));
-          setTargetItemTitle(defaultTarget.short_name_zh ?? defaultTarget.display_name_zh ?? defaultTarget.short_title ?? defaultTarget.title);
+          setTargetItemTitle(`${defaultTarget.short_name_zh ?? defaultTarget.display_name_zh ?? defaultTarget.short_title ?? defaultTarget.title} · ${defaultTarget.item_id}`);
         }
       })
       .catch((error) => {
@@ -677,7 +695,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     let active = true;
     const pollToken = workbenchPollTokenRef.current;
     const refresh = () => {
-      Promise.all([fetchWorkbenchJob(workbenchJobId), fetchWorkbenchLogs(workbenchJobId, 200)])
+      Promise.all([fetchWorkbenchJob(workbenchJobId), fetchWorkbenchLogs(workbenchJobId, 100)])
         .then(([job, logs]: [WorkbenchJobStatusResponse, WorkbenchLogsResponse]) => {
           if (!active || pollToken !== workbenchPollTokenRef.current) return;
           setWorkbenchJob(job);
@@ -704,12 +722,41 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         });
     };
     refresh();
-    const timer = window.setInterval(refresh, 3000);
+    const timer = window.setInterval(refresh, 1500);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
   }, [logPollingPaused, workbenchJobId]);
+
+  useEffect(() => {
+    if (activeTab !== 'history') return;
+    let active = true;
+    fetchWorkbenchJobs({
+      limit: 12,
+      page: archivePage,
+      direction: jobDirectionFilter,
+      dataset: jobDatasetFilter,
+      model: jobModelFilter,
+      source: jobSourceFilter,
+      status: jobStatusFilter,
+      date_from: jobDateFromFilter,
+      date_to: jobDateToFilter,
+    })
+      .then((result) => {
+        if (!active) return;
+        setWorkbenchJobs(result);
+        setWorkbenchJobsError('');
+      })
+      .catch((error) => {
+        if (!active) return;
+        setWorkbenchJobs(null);
+        setWorkbenchJobsError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeTab, archivePage, jobDateFromFilter, jobDateToFilter, jobDatasetFilter, jobDirectionFilter, jobModelFilter, jobSourceFilter, jobStatusFilter]);
 
   const datasetOptions = useMemo(() => {
     const optionValues = workbenchOptions?.datasets?.map((item) => item.id).filter((item) => item === 'AMAZON_BEAUTY_POC' || item === 'KU') ?? [];
@@ -739,7 +786,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     if (workbenchOptions?.target_items?.length) {
       return workbenchOptions.target_items.map((item) => ({
         id: item.item_id,
-        title: item.short_name_zh ?? item.display_name_zh ?? item.short_title ?? item.title,
+        title: `${item.short_name_zh ?? item.display_name_zh ?? item.short_title ?? item.title} · ${item.item_id}`,
         rawTitle: item.raw_title ?? item.title,
         category: item.category_zh ?? item.category ?? '',
         thumbnailUrl: item.thumbnail_url ?? null,
@@ -1140,6 +1187,52 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     }
   };
 
+  const openWorkbenchJob = async (job: WorkbenchJobListItem) => {
+    workbenchPollTokenRef.current += 1;
+    setWorkbenchJobId(job.job_id);
+    setWorkbenchJob(null);
+    setWorkbenchResult(null);
+    setWorkbenchLogs([]);
+    setLogPollingPaused(false);
+    setSubmitMessage(`已选择 workbench job ${shortWorkbenchJobId(job.job_id)}，单次分析将优先读取该 job result。`);
+    try {
+      const [statusPayload, logsPayload, resultPayload] = await Promise.all([
+        fetchWorkbenchJob(job.job_id),
+        fetchWorkbenchLogs(job.job_id, 100),
+        fetchWorkbenchResult(job.job_id).catch(() => null),
+      ]);
+      setWorkbenchJob(statusPayload);
+      setWorkbenchLogs(logsPayload.lines ?? []);
+      if (resultPayload) setWorkbenchResult(resultPayload);
+      if (statusPayload.status && WORKBENCH_TERMINAL_STATUSES.has(statusPayload.status)) {
+        setLogPollingPaused(true);
+      }
+    } catch (error) {
+      setWorkbenchJob({
+        job_id: job.job_id,
+        status: job.status,
+        stage: job.status,
+        progress: null,
+        direction: job.direction,
+        dataset: job.dataset,
+        model: job.model,
+        execution_mode: job.execution_mode,
+        requested_execution_mode: job.requested_execution_mode,
+        source: job.source,
+        result_dir: job.result_dir,
+        artifact_dir: job.artifact_dir,
+        created_at: job.created_at,
+        started_at: job.started_at,
+        finished_at: job.finished_at,
+        warnings: [],
+        errors: [],
+        error_message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setActiveTab('analysis');
+    }
+  };
+
   const renderModulePills = (ids: string[]) => (
     <div className="flex flex-wrap gap-2">
       {ids.map((id) => {
@@ -1374,9 +1467,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       );
     };
     const inputClass =
-      'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-200/45';
+      'w-full min-w-0 max-w-full rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-100 outline-none transition focus:border-cyan-200/45';
     const fieldShell = (label: string, control: React.ReactNode, note?: string) => (
-      <div className="block rounded-2xl border border-white/10 bg-slate-950/25 p-3">
+      <div className="block min-w-0 rounded-2xl border border-white/10 bg-slate-950/25 p-3">
         <span className="mb-2 block text-xs font-bold text-slate-500">{label}</span>
         {control}
         {note ? <span className="mt-2 block text-[11px] leading-4 text-slate-500">{note}</span> : null}
@@ -1596,6 +1689,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           <button
             type="button"
             onClick={() => setTargetComboboxOpen((value) => !value)}
+            title={selectedTargetOption?.rawTitle ?? targetItemTitle}
             className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/70 p-2.5 text-left transition hover:border-cyan-200/30"
           >
             {selectedTargetOption?.thumbnailUrl || selectedTargetOption?.imageUrl ? (
@@ -1628,6 +1722,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                       key={key}
                       type="button"
                       onClick={() => selectTargetOption(key)}
+                      title={item.rawTitle || key}
                       className={cn(
                         'flex w-full items-center gap-3 rounded-2xl px-2.5 py-2 text-left transition',
                         active ? 'bg-cyan-300/12 text-cyan-50' : 'text-slate-300 hover:bg-white/[0.06]',
@@ -2198,7 +2293,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
     return (
       <div className="space-y-4">
-        <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(260px,300px)_minmax(520px,1fr)_minmax(360px,420px)]">
+        <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)_400px]">
           <div className="sandbox-panel min-w-0 rounded-[28px] p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
@@ -2385,7 +2480,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             </div>
           </div>
 
-          <div className="sandbox-panel min-w-0 rounded-[28px] p-5 xl:max-w-[420px]">
+          <div className="sandbox-panel min-w-0 rounded-[28px] p-5 xl:w-[400px] xl:max-w-[400px]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-bold tracking-[0.18em] text-cyan-100/70">参数抽屉</p>
@@ -2408,7 +2503,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               </div>
             </div>
 
-            <div key={paramPanel} className="max-h-[74vh] overflow-y-auto overflow-x-hidden rounded-[26px] border border-white/10 bg-white/[0.04] p-3 pr-2 transition-all duration-200 ease-out 2xl:max-h-[760px]">
+            <div key={paramPanel} className="max-h-[74vh] overflow-y-auto overflow-x-hidden rounded-[26px] border border-white/10 bg-white/[0.04] p-3 pr-5 transition-all duration-200 ease-out [scrollbar-gutter:stable] 2xl:max-h-[760px]">
               {paramPanel === 'basic' ? (
                 <div className="grid gap-2">
                   {basicParamsByPlay[selectedPlay.id].map((param) => (
@@ -2784,6 +2879,22 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       return `${prefix} ${event.message}`;
     }) ?? [];
     const logLines = workbenchJobId && workbenchLogs.length ? workbenchLogs : v3LogLines.length ? v3LogLines : logLinesByPlay[selectedPlay.id];
+    const jobMetricsSummary = workbenchResult?.metrics_summary;
+    const jobMetricsSource = typeof jobMetricsSummary?.source === 'string' ? jobMetricsSummary.source : workbenchResult?.source;
+    const jobMetrics = jobMetricsSummary?.metrics && typeof jobMetricsSummary.metrics === 'object' && !Array.isArray(jobMetricsSummary.metrics)
+      ? (jobMetricsSummary.metrics as Record<string, unknown>)
+      : null;
+    const jobMetric = (key: string, fallback: string = EMPTY_VALUE) => {
+      const value = jobMetrics?.[key];
+      if (['string', 'number', 'boolean'].includes(typeof value) || value === null) {
+        return workbenchMetricValue(key, value as string | number | boolean | null);
+      }
+      return fallback;
+    };
+    const hasJobMetric = (key: string) => (jobMetrics ? Object.prototype.hasOwnProperty.call(jobMetrics, key) : false);
+    const jobMetricEntries = Object.entries(jobMetrics ?? {})
+      .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) || value === null)
+      .slice(0, 6);
     const monitoringFocusByPlay: Record<ExperimentPlayId, Array<{label: string; value: string; tone?: string}>> = {
       target_poisoning_play: [
         {label: '目标排序', value: `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`, tone: 'text-rose-100'},
@@ -2802,15 +2913,39 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '过滤算法', value: robustAlgorithm !== 'none' ? robustAlgorithm : 'Krum', tone: 'text-emerald-100'},
       ],
     };
-    const jobMetricsSummary = workbenchResult?.metrics_summary;
-    const jobMetricsSource = typeof jobMetricsSummary?.source === 'string' ? jobMetricsSummary.source : workbenchResult?.source;
-    const jobMetrics = jobMetricsSummary?.metrics && typeof jobMetricsSummary.metrics === 'object' && !Array.isArray(jobMetricsSummary.metrics)
-      ? (jobMetricsSummary.metrics as Record<string, unknown>)
-      : null;
-    const jobMetricEntries = Object.entries(jobMetrics ?? {})
-      .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) || value === null)
-      .slice(0, 6);
-
+    const monitoringFocusCards: Record<ExperimentPlayId, Array<{label: string; value: string; tone?: string}>> = {
+      target_poisoning_play: [
+        {
+          label: '目标排序',
+          value: hasJobMetric('baseline_unmasked_rank') || hasJobMetric('attack_unmasked_rank')
+            ? `${jobMetric('baseline_unmasked_rank')} -> ${jobMetric('attack_unmasked_rank')}`
+            : `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`,
+          tone: 'text-rose-100',
+        },
+        {label: 'Top50 命中', value: jobMetric('attack_topk_hit', getFinalExposureText(report)), tone: 'text-emerald-100'},
+        {label: '目标操纵指数', value: jobMetric('target_manipulation_index', formatMetricValue(v3TargetPanel?.targetManipulationIndex ?? null)), tone: 'text-rose-100'},
+        {label: 'Jaccard', value: jobMetric('recommendation_jaccard', formatMetricValue(v3TargetPanel?.recommendationJaccard ?? null)), tone: 'text-cyan-100'},
+      ],
+      membership_privacy_play: [
+        {label: 'AUC', value: jobMetric('auc', formatMetricValue(privacyMetrics.miaAuc)), tone: 'text-violet-100'},
+        {label: 'Accuracy', value: jobMetric('accuracy', formatMetricValue(privacyMetrics.miaAccuracy)), tone: 'text-violet-100'},
+        {label: 'score gap', value: jobMetric('score_gap', formatMetricValue(v3MembershipPanel?.scoreGap ?? null)), tone: 'text-violet-100'},
+        {label: '证据类型', value: jobMetric('evidence_type', privacyMetrics.miaEvidence), tone: 'text-slate-100'},
+      ],
+      update_leakage_play: [
+        {label: 'hit@10', value: jobMetric('hit_at_10', formatMetricValue(privacyMetrics.hit10)), tone: 'text-cyan-100'},
+        {label: 'hit@20', value: jobMetric('hit_at_20', formatMetricValue(privacyMetrics.hit20)), tone: 'text-cyan-100'},
+        {label: 'hit@50', value: jobMetric('hit_at_50', formatMetricValue(privacyMetrics.hit50)), tone: 'text-cyan-100'},
+        {label: '风险模态', value: jobMetric('highest_risk_modality', privacyMetrics.riskyModality), tone: 'text-cyan-100'},
+      ],
+      robust_defense_play: [
+        {label: 'Recall@50', value: jobMetric('recall_at_50', formatMetricValue(v3AggregationPanel?.recallAfter ?? metrics?.defense?.recall50 ?? null)), tone: 'text-cyan-100'},
+        {label: 'NDCG@50', value: jobMetric('ndcg_at_50', formatMetricValue(v3AggregationPanel?.ndcgAfter ?? metrics?.defense?.ndcg50 ?? null)), tone: 'text-violet-100'},
+        {label: '防御算法', value: jobMetric('defense_algorithm', robustAlgorithm !== 'none' ? robustAlgorithm : 'Krum'), tone: 'text-emerald-100'},
+        {label: '恢复率', value: jobMetric('recovery_rate_recall', formatPercentValue(metrics?.recoveryRate)), tone: 'text-emerald-100'},
+        {label: '异常过滤数量', value: jobMetric('rejected_client_count', formatPlainValue(report.defenseTrace?.filteredClients ?? null)), tone: 'text-emerald-100'},
+      ],
+    };
     return (
       <div className="space-y-5">
         <section className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
@@ -2857,6 +2992,28 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               </div>
             ) : null}
 
+            {workbenchJobId ? (
+              <div className="mb-4 grid gap-3 rounded-2xl border border-white/10 bg-slate-950/35 p-3 text-xs sm:grid-cols-2">
+                {[
+                  {label: 'job_id', value: workbenchJobId},
+                  {label: 'direction', value: workbenchDirectionLabel(workbenchJob?.direction)},
+                  {label: 'dataset', value: datasetLabel(String(workbenchJob?.dataset ?? workbenchJob?.config_summary?.dataset ?? config.dataset ?? selectedPlayDefaults.dataset))},
+                  {label: 'model', value: String(workbenchJob?.model ?? workbenchJob?.config_summary?.model ?? config.model ?? selectedPlayDefaults.model)},
+                  {label: 'execution_mode', value: executionModeLabel(workbenchJob?.execution_mode ?? executionMode)},
+                  {label: 'source', value: workbenchSourceLabel(workbenchJob?.source ?? jobMetricsSource)},
+                  {label: 'started_at', value: workbenchJob?.started_at ?? EMPTY_VALUE},
+                  {label: 'finished_at', value: workbenchJob?.finished_at ?? EMPTY_VALUE},
+                  {label: 'result_dir', value: workbenchJob?.result_dir ?? EMPTY_VALUE},
+                  {label: 'artifact_dir', value: workbenchJob?.artifact_dir ?? EMPTY_VALUE},
+                ].map((item) => (
+                  <div key={item.label} className="min-w-0">
+                    <p className="font-bold text-slate-500">{item.label}</p>
+                    <p className="mt-1 truncate font-mono font-semibold text-slate-200" title={item.value}>{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <div className="grid gap-3">
               {[
                 {label: '当前轮次', value: `${roundNow} / ${totalRounds}`},
@@ -2872,7 +3029,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              {monitoringFocusByPlay[selectedPlay.id].map((item) => (
+              {monitoringFocusCards[selectedPlay.id].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
                   <p className="text-xs font-bold text-slate-500">{item.label}</p>
                   <p className={cn('mt-1 font-mono text-lg font-black', item.tone ?? 'text-slate-100')}>{item.value}</p>
@@ -2880,12 +3037,23 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               ))}
             </div>
 
+            {workbenchJob?.status === 'completed' ? (
+              <div className="mt-4 rounded-2xl border border-emerald-200/25 bg-emerald-300/10 p-3 text-sm font-bold text-emerald-100">
+                实验完成，可进入单次分析
+              </div>
+            ) : null}
+            {workbenchJob?.status === 'failed' ? (
+              <div className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 p-3 text-sm font-bold text-rose-100">
+                实验失败：{workbenchJob.error_message || '后端未返回 error_message。'}
+              </div>
+            ) : null}
+
             <div className="mt-5 rounded-2xl border border-emerald-200/15 bg-slate-950/70 p-4">
               <div className="mb-3 flex items-center gap-2 text-emerald-100">
                 <SquareTerminal className="h-4 w-4" />
                 <span className="text-xs font-bold tracking-[0.18em]">终端日志</span>
               </div>
-              <div className="space-y-2 font-mono text-xs leading-5 text-slate-300">
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-2 font-mono text-xs leading-5 text-slate-300">
                 {logLines.map((line, index) => (
                   <p key={`${index}-${line}`}>{line}</p>
                 ))}
@@ -3050,6 +3218,41 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const jobMetricEntries = Object.entries(jobMetrics ?? {})
       .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) || value === null)
       .slice(0, 6);
+    const analysisJobMetric = (key: string, fallback: string = EMPTY_VALUE) => {
+      const value = jobMetrics?.[key];
+      if (['string', 'number', 'boolean'].includes(typeof value) || value === null) {
+        return workbenchMetricValue(key, value as string | number | boolean | null);
+      }
+      return fallback;
+    };
+    const analysisFocusCardsFromJob: Record<ExperimentPlayId, Array<{label: string; value: string; note?: string; tone?: string}>> = {
+      target_poisoning_play: [
+        {label: '目标商品', value: targetTitle, tone: 'text-rose-100'},
+        {label: 'rank 变化', value: `${analysisJobMetric('baseline_unmasked_rank')} -> ${analysisJobMetric('attack_unmasked_rank')}`, tone: 'text-rose-100'},
+        {label: 'Top50 是否命中', value: analysisJobMetric('attack_topk_hit'), tone: 'text-emerald-100'},
+        {label: '目标操纵指数', value: analysisJobMetric('target_manipulation_index'), tone: 'text-rose-100'},
+      ],
+      membership_privacy_play: [
+        {label: 'AUC', value: analysisJobMetric('auc'), tone: 'text-violet-100'},
+        {label: 'Accuracy', value: analysisJobMetric('accuracy'), tone: 'text-violet-100'},
+        {label: 'score gap', value: analysisJobMetric('score_gap'), tone: 'text-violet-100'},
+        {label: '证据类型', value: analysisJobMetric('evidence_type'), tone: 'text-slate-100'},
+      ],
+      update_leakage_play: [
+        {label: 'hit@10', value: analysisJobMetric('hit_at_10'), tone: 'text-cyan-100'},
+        {label: 'hit@20', value: analysisJobMetric('hit_at_20'), tone: 'text-cyan-100'},
+        {label: 'hit@50', value: analysisJobMetric('hit_at_50'), tone: 'text-cyan-100'},
+        {label: '风险模态', value: analysisJobMetric('highest_risk_modality'), tone: 'text-cyan-100'},
+      ],
+      robust_defense_play: [
+        {label: '聚合算法', value: analysisJobMetric('defense_algorithm'), tone: 'text-emerald-100'},
+        {label: 'Recall@50', value: analysisJobMetric('recall_at_50'), tone: 'text-cyan-100'},
+        {label: 'NDCG@50', value: analysisJobMetric('ndcg_at_50'), tone: 'text-violet-100'},
+        {label: '过滤结果', value: analysisJobMetric('rejected_client_count'), tone: 'text-emerald-100'},
+      ],
+    };
+    const selectedAnalysisFocusCards = jobMetrics ? analysisFocusCardsFromJob[selectedPlay.id] : analysisFocusCards[selectedPlay.id];
+    const analysisEvidenceSource = jobMetrics ? '当前 workbench job result' : v3EvidenceAvailable ? '当前 showcase V3 artifact' : '未导出';
 
     return (
       <div className="space-y-5">
@@ -3058,12 +3261,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <div>
               <p className="text-xs font-bold tracking-[0.2em] text-rose-100/75">本次实验结论</p>
               <h2 className="mt-2 text-2xl font-black leading-tight text-white">{analysisHeadlineByPlay[selectedPlay.id]}</h2>
+              <p className="mt-2 inline-flex rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">
+                证据来源：{analysisEvidenceSource}
+              </p>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
                 当前单次分析会优先展示所选剧本的关键证据，再给出推荐、隐私和防御的交叉摘要。
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {analysisFocusCards[selectedPlay.id].map((item) => (
+              {selectedAnalysisFocusCards.map((item) => (
                 <MetricTile key={item.label} label={item.label} value={item.value} note={item.note} tone={item.tone} />
               ))}
             </div>
@@ -3661,7 +3867,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   useEffect(() => {
     setArchivePage(1);
-  }, [archiveDateFilter, archiveDatasetFilter, archiveDirectionFilter, archiveEvidenceFilter, archiveFilter, archiveModelFilter]);
+  }, [
+    archiveDateFilter,
+    archiveDatasetFilter,
+    archiveDirectionFilter,
+    archiveEvidenceFilter,
+    archiveFilter,
+    archiveModelFilter,
+    jobDateFromFilter,
+    jobDateToFilter,
+    jobDatasetFilter,
+    jobDirectionFilter,
+    jobModelFilter,
+    jobSourceFilter,
+    jobStatusFilter,
+  ]);
 
   const archivePageSize = 12;
   const archiveTotalPages = Math.max(1, Math.ceil(filteredScenarios.length / archivePageSize));
@@ -3670,6 +3890,133 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   const renderHistory = () => (
     <div className="space-y-5">
+      <section className="sandbox-panel rounded-[28px] p-5">
+        <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+          <div>
+            <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">WORKBENCH JOBS</p>
+            <h2 className="mt-2 text-2xl font-bold text-white">真实运行实验档案</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">来自 /workbench/jobs，一条 job 一个横向块；点击后进入单次分析并优先读取该 job result。</p>
+          </div>
+          <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-bold text-slate-300">
+            共 {workbenchJobs?.total ?? 0} 个 job
+          </span>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-500">方向</span>
+            <select value={jobDirectionFilter} onChange={(event) => setJobDirectionFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45">
+              <option value="">全部方向</option>
+              {Object.entries(WORKBENCH_DIRECTION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-500">数据集</span>
+            <select value={jobDatasetFilter} onChange={(event) => setJobDatasetFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45">
+              <option value="">全部数据集</option>
+              {datasetOptions.map((value) => <option key={value} value={value}>{datasetLabel(value)}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-500">模型</span>
+            <select value={jobModelFilter} onChange={(event) => setJobModelFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45">
+              <option value="">全部模型</option>
+              {modelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-500">source</span>
+            <select value={jobSourceFilter} onChange={(event) => setJobSourceFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45">
+              <option value="">全部 source</option>
+              {['existing_artifact', 'real_smoke', 'probe_smoke'].map((value) => <option key={value} value={value}>{workbenchSourceLabel(value)}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-500">status</span>
+            <select value={jobStatusFilter} onChange={(event) => setJobStatusFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45">
+              <option value="">全部状态</option>
+              {['queued', 'running', 'completed', 'partial', 'failed'].map((value) => <option key={value} value={value}>{workbenchStatusLabel(value)}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-500">开始日期</span>
+            <input type="date" value={jobDateFromFilter} onChange={(event) => setJobDateFromFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45" />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-500">结束日期</span>
+            <input type="date" value={jobDateToFilter} onChange={(event) => setJobDateToFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45" />
+          </label>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        {(workbenchJobs?.items ?? []).map((job) => {
+          const metricsPreview = Object.entries(job.key_metrics ?? {})
+            .slice(0, 4)
+            .map(([key, value]) => `${workbenchMetricLabel(key)} ${workbenchMetricValue(key, value as string | number | boolean | null)}`)
+            .join(' / ');
+          return (
+            <button
+              key={job.job_id}
+              type="button"
+              onClick={() => openWorkbenchJob(job)}
+              className="grid w-full gap-3 rounded-3xl border border-white/10 bg-white/[0.045] p-4 text-left transition hover:-translate-y-0.5 hover:border-cyan-200/30 hover:bg-cyan-300/10 xl:grid-cols-[minmax(260px,1fr)_130px_150px_135px_130px_minmax(220px,1fr)] xl:items-center"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-base font-black text-white">{shortWorkbenchJobId(job.job_id)}</p>
+                <p className="mt-1 truncate text-xs text-slate-500">{job.job_id}</p>
+                <p className="mt-1 truncate text-xs text-slate-500">{job.result_dir ?? job.artifact_dir ?? EMPTY_VALUE}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500">方向</p>
+                <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchDirectionLabel(job.direction)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500">数据集 / 模型</p>
+                <p className="mt-1 text-sm font-semibold text-slate-200">{datasetLabel(job.dataset ?? '')}</p>
+                <p className="text-xs text-slate-500">{job.model ?? EMPTY_VALUE}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500">模式 / source</p>
+                <p className="mt-1 text-sm font-semibold text-slate-200">{executionModeLabel(job.execution_mode)}</p>
+                <p className="text-xs text-slate-500">{workbenchSourceLabel(job.source)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500">状态 / 日期</p>
+                <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchStatusLabel(job.status)}</p>
+                <p className="text-xs text-slate-500">{normalizeArchiveDate(job.created_at) ?? EMPTY_VALUE}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-slate-500">关键指标预览</p>
+                <p className="mt-1 truncate text-sm font-semibold text-slate-200">{metricsPreview || '暂无指标预览'}</p>
+                <p className="mt-1 truncate text-xs text-slate-500">finished_at: {job.finished_at ?? EMPTY_VALUE}</p>
+              </div>
+            </button>
+          );
+        })}
+        {workbenchJobsError ? (
+          <div className="rounded-3xl border border-amber-200/25 bg-amber-300/10 p-4 text-sm font-semibold text-amber-100">{workbenchJobsError}</div>
+        ) : null}
+        {!workbenchJobsError && !(workbenchJobs?.items ?? []).length ? (
+          <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-6 text-sm text-slate-400">当前筛选条件下暂无 workbench job。</div>
+        ) : null}
+      </section>
+
+      {workbenchJobs && workbenchJobs.total_pages > 1 ? (
+        <section className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs font-semibold text-slate-500">
+            Workbench jobs 第 {workbenchJobs.page} / {workbenchJobs.total_pages} 页，每页 12 条
+          </span>
+          <div className="flex gap-2">
+            <button type="button" disabled={workbenchJobs.page <= 1} onClick={() => setArchivePage((page) => Math.max(1, page - 1))} className="rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2 text-xs font-bold text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">
+              上一页
+            </button>
+            <button type="button" disabled={workbenchJobs.page >= workbenchJobs.total_pages} onClick={() => setArchivePage((page) => Math.min(workbenchJobs.total_pages, page + 1))} className="rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2 text-xs font-bold text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">
+              下一页
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <section className="sandbox-panel rounded-[28px] p-5">
         <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>

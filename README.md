@@ -86,7 +86,7 @@
 
 左侧是真按钮式实验方向选择；中间用短关键词、图标和发光连线展示攻防流程；右侧是基础参数 / 高级参数分段抽屉。桌面三栏固定为左侧约 260-300px、中间自适应、右侧约 360-420px，右侧高级参数内部滚动，不撑宽页面。基础参数用于快速确认当前配置摘要，高级参数是可编辑表单控件，修改后要同步基础摘要、流程图关键词和底部配置摘要。剧本字段统一来自 `src/lib/experimentPlaybooks.ts`，不要在页面里再维护第二套普通/专家参数。
 
-方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。高级参数包含执行模式：`复用已导出证据` 默认不训练，`运行轻量训练` 请求受限 smoke，`运行 probe smoke` 只做轻量探测 / 结果回填；后端可能按能力返回 `real_smoke`、`existing_artifact` 或 `probe_smoke`。底部执行区只展示当前配置摘要和“校验配置”“开始实验”两个主按钮。“开始实验”调用受限 smoke job 接口并切换到运行监控；如果后端返回 `source=existing_artifact`，必须写成复用已导出证据，不要写成刚训练完成。
+方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。高级参数包含执行模式：`复用已导出证据` 默认不训练，`运行轻量训练` 请求受限 smoke，`运行 probe smoke` 只做轻量探测 / 结果回填；用户选择 `real_smoke` 时不允许静默降级，不支持的组合必须由 `/workbench/validate` 或 invalid `/workbench/jobs` 返回失败原因。底部执行区只展示当前配置摘要和“校验配置”“开始实验”两个主按钮。“开始实验”调用受限 smoke job 接口，只有拿到真实 `job_id` 才切换到运行监控；如果后端返回 `source=existing_artifact`，必须写成复用已导出证据，不要写成刚训练完成。
 
 高级参数抽屉使用 `/workbench/options` 的 canonical 数据：数据集只显示 Amazon Beauty 和 KU，模型只显示 8 个可启动模型。8 个模型都可进入配置，不再因当前场景被下拉禁用；真实 smoke、仅复用证据、probe 或配置校验边界由 `model_dataset_execution` 和 `/workbench/validate` 返回。推荐操纵的目标商品使用暗色可搜索 combobox，优先展示 `short_name_zh`，英文 `raw_title` 作为小字，不显示本地路径。
 
@@ -113,13 +113,13 @@
 - 隐私风险对比
 - 模型/数据集能力对比
 
-运行监控优先读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
+运行监控有 `job_id` 时每 1-2 秒轮询 job 状态和 `run.log`，展示 job_id、direction、dataset、model、execution_mode、source、status、stage、progress、时间戳、result/artifact 目录和方向专属指标；completed/failed 后停止轮询。没有 job 时才读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
 
-单次分析优先读取 V3 推荐操纵、成员推断、更新泄露和聚合防御 panel；缺失 panel 显示“未导出”，不使用本地演示数据补齐。
+单次分析优先级是当前 workbench job result、当前 showcase V3 artifact、未导出。缺失 job result 或 V3 panel 时显示“未导出”，不使用本地演示数据补齐。
 
 横向对比只展示指标矩阵和摘要条形图，不展示推荐商品列表。模型/数据集能力模式优先读取 V3 `model_support_panel`，并按“攻防强验证底座”“多模态主展示模型”“已通过 smoke 验证”“部分支持”“仅配置校验”“待适配”分组展示模型扩充成果。该区域只显示模型名、数据集、中文状态、TopK / metrics 是否验证和结果是否已导出，不展示本地结果路径。
 
-历史实验是实验档案库，一行一个实验，约 12 条/页，展示实验名称、方向、数据集/模型、攻击/防御、日期、source、关键指标预览和证据标签，并支持快捷标签、实验方向、数据集、模型、日期、V3 证据、图片、推荐列表、真实 smoke、probe smoke 和复用证据筛选。
+历史实验顶部展示 `/workbench/jobs` 真实 job 档案，一行一个 job，12 条/页，支持方向、数据集、模型、日期、source 和 status 筛选；点击 job 后进入单次分析并优先读取该 job result。showcase scenarios 仍保留为下方 artifact 档案参考。
 
 点击历史实验卡片会切换当前场景并进入单次分析，顶部显示当前切换提示。
 
@@ -195,7 +195,7 @@ npm run preview
 
 ## Workbench API 联动
 
-- `src/services/workbench.ts` 通过统一 API helper 走 `/api/workbench/...`，负责调用 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、`/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=200` 和 `/workbench/jobs/{job_id}/result`。
+- `src/services/workbench.ts` 通过统一 API helper 走 `/api/workbench/...`，负责调用 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、`/workbench/jobs?limit=12&page=...`、`/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=100` 和 `/workbench/jobs/{job_id}/result`。
 - 攻防工作台的“校验配置”调用 `/workbench/validate`；“开始实验”调用 `/workbench/jobs` 并切换到运行监控。
 - 当前 API 会创建并启动受限 smoke job，状态可能为 `queued`、`running`、`completed`、`partial` 或 `failed`。前端在有 `job_id` 时优先轮询 job 状态、日志和 result；没有 job 时继续读取已完成 showcase/V3 证据。
 - `/workbench/validate` 和 invalid `/workbench/jobs` 的 `field_errors` 会展示为中文字段错误；网络不可达时显示“后端服务未连接”，不要直接暴露 `Failed to fetch`。

@@ -187,6 +187,8 @@ export interface WorkbenchJobStatusResponse {
   started_at?: string | null;
   finished_at?: string | null;
   direction?: string | null;
+  dataset?: string | null;
+  model?: string | null;
   execution_mode?: string | null;
   requested_execution_mode?: string | null;
   scenario_id?: string | null;
@@ -216,4 +218,29 @@ export interface WorkbenchResultResponse {
   result_pointer?: Record<string, unknown>;
   metrics_summary?: Record<string, unknown>;
   message?: string | null;
+}
+
+export interface WorkbenchJobListItem {
+  job_id: string;
+  direction?: string | null;
+  dataset?: string | null;
+  model?: string | null;
+  execution_mode?: string | null;
+  requested_execution_mode?: string | null;
+  source?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  key_metrics?: Record<string, unknown>;
+  result_dir?: string | null;
+  artifact_dir?: string | null;
+}
+
+export interface WorkbenchJobListResponse {
+  items: WorkbenchJobListItem[];
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
 }

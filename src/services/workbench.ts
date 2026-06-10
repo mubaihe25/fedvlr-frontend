@@ -1,6 +1,7 @@
 import {apiGet, apiPost} from './api';
 import type {
   WorkbenchJobResponse,
+  WorkbenchJobListResponse,
   WorkbenchJobStatusResponse,
   WorkbenchLogsResponse,
   WorkbenchOptionsResponse,
@@ -24,3 +25,26 @@ export const fetchWorkbenchLogs = (jobId: string, tail = 200) =>
 
 export const fetchWorkbenchResult = (jobId: string) =>
   apiGet<WorkbenchResultResponse>(`/workbench/jobs/${encodeURIComponent(jobId)}/result`);
+
+export interface WorkbenchJobListQuery {
+  limit?: number;
+  page?: number;
+  direction?: string;
+  dataset?: string;
+  model?: string;
+  source?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export const fetchWorkbenchJobs = (query: WorkbenchJobListQuery = {}) => {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      params.set(key, String(value));
+    }
+  });
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiGet<WorkbenchJobListResponse>(`/workbench/jobs${suffix}`);
+};
