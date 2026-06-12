@@ -21,7 +21,7 @@ export interface WorkbenchModelOption {
 }
 
 export interface WorkbenchExecutionModeOption {
-  id: 'existing_artifact' | 'real_smoke' | 'probe_smoke' | string;
+  id: 'full_train' | string;
   label: string;
   description?: string;
   source?: string;
@@ -86,7 +86,7 @@ export interface WorkbenchOptionsResponse {
 
 export interface WorkbenchPayload {
   direction: string;
-  execution_mode: 'existing_artifact' | 'real_smoke' | 'probe_smoke';
+  execution_mode: 'full_train';
   scenario_id?: string;
   dataset: string;
   model: string;

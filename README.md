@@ -86,7 +86,7 @@
 
 左侧是真按钮式实验方向选择；中间用短关键词、图标和发光连线展示攻防流程；右侧是基础参数 / 高级参数分段抽屉。桌面三栏固定为左侧约 260-300px、中间自适应、右侧约 360-420px，右侧高级参数内部滚动，不撑宽页面。基础参数用于快速确认当前配置摘要，高级参数是可编辑表单控件，修改后要同步基础摘要、流程图关键词和底部配置摘要。剧本字段统一来自 `src/lib/experimentPlaybooks.ts`，不要在页面里再维护第二套普通/专家参数。
 
-方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。高级参数包含执行模式：`复用已导出证据` 默认不训练，`运行轻量训练` 请求受限 smoke，`运行 probe smoke` 只做轻量探测 / 结果回填；用户选择 `real_smoke` 时不允许静默降级，不支持的组合必须由 `/workbench/validate` 或 invalid `/workbench/jobs` 返回失败原因。底部执行区只展示当前配置摘要和“校验配置”“开始实验”两个主按钮。“开始实验”调用受限 smoke job 接口，只有拿到真实 `job_id` 才切换到运行监控；如果后端返回 `source=existing_artifact`，必须写成复用已导出证据，不要写成刚训练完成。
+方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。高级参数不再提供执行模式选择；“校验配置”和“开始实验”固定提交 `execution_mode=full_train`。不支持的方向、模型和数据集组合必须由 `/workbench/validate` 或 invalid `/workbench/jobs` 返回失败原因，不允许降级到其他执行路径。只有拿到真实 `job_id` 才切换到运行监控。
 
 高级参数抽屉使用 `/workbench/options` 的 canonical 数据：数据集只显示 Amazon Beauty 和 KU，模型只显示 8 个可启动模型。8 个模型都可进入配置，不再因当前场景被下拉禁用；真实 smoke、仅复用证据、probe 或配置校验边界由 `model_dataset_execution` 和 `/workbench/validate` 返回。推荐操纵的目标商品使用暗色可搜索 combobox，优先展示 `short_name_zh`，英文 `raw_title` 作为小字，不显示本地路径。
 
@@ -113,7 +113,7 @@
 - 隐私风险对比
 - 模型/数据集能力对比
 
-运行监控有 `job_id` 时每 1-2 秒轮询 job 状态和 `run.log`，展示 job_id、direction、dataset、model、execution_mode、source、status、stage、progress、时间戳、result/artifact 目录和方向专属指标；completed/failed 后停止轮询。没有 job 时才读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
+运行监控有 `job_id` 时每 1-2 秒轮询 job 状态和 `run.log`，展示 job_id、direction、dataset、model、source、status、stage、progress、时间戳、result/artifact 目录和方向专属指标；新任务的 `source` 为 `full_train`。completed/failed 后停止轮询。没有 job 时才读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
 
 单次分析优先级是当前 workbench job result、当前 showcase V3 artifact、未导出。缺失 job result 或 V3 panel 时显示“未导出”，不使用本地演示数据补齐。
 
@@ -197,9 +197,9 @@ npm run preview
 
 - `src/services/workbench.ts` 通过统一 API helper 走 `/api/workbench/...`，负责调用 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、`/workbench/jobs?limit=12&page=...`、`/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=100` 和 `/workbench/jobs/{job_id}/result`。
 - 攻防工作台的“校验配置”调用 `/workbench/validate`；“开始实验”调用 `/workbench/jobs` 并切换到运行监控。
-- 当前 API 会创建并启动受限 smoke job，状态可能为 `queued`、`running`、`completed`、`partial` 或 `failed`。前端在有 `job_id` 时优先轮询 job 状态、日志和 result；没有 job 时继续读取已完成 showcase/V3 证据。
+- 当前 API 会创建并启动真实全量训练 job，状态可能为 `queued`、`running`、`completed`、`partial` 或 `failed`。前端在有 `job_id` 时优先轮询 job 状态、日志和 result；没有 job 时继续读取已完成 showcase/V3 证据。
 - `/workbench/validate` 和 invalid `/workbench/jobs` 的 `field_errors` 会展示为中文字段错误；网络不可达时显示“后端服务未连接”，不要直接暴露 `Failed to fetch`。
-- `metrics_summary.source=existing_artifact` 表示复用已导出的安全证据，不要展示为本次刚训练出的完整 benchmark。`metrics_summary.source=real_smoke` 表示后端完成了真实轻量 smoke，只能写成 1 epoch 小规模链路验证。`metrics_summary.source=probe_smoke` 表示轻量 probe/result 回填，不是完整训练。`partial` 表示只有部分或 config-only evidence，不要补写成功效果。
-- 工作台模型选择只展示可进入配置的 8 个模型；MGCN 系列继续作为需要适配器的边界说明，不放进启动 select。8 个模型不在下拉里按数据集硬禁用，必须通过 `/workbench/validate` 展示能否 `real_smoke`、只能复用证据或只能 probe/config。
+- 新建任务固定使用 `metrics_summary.source=full_train`。旧 job 的历史 source 只做兼容读取，不再作为新任务执行选项。`partial` 仍表示训练或结果导出只完成部分，不要补写成功效果。
+- 工作台模型选择只展示可进入配置的 8 个模型；MGCN 系列继续作为需要适配器的边界说明，不放进启动 select。模型不在下拉里按数据集硬禁用，是否支持当前方向的全量训练由 `/workbench/validate` 返回。
 - 运行监控如果有 `job_id`，优先轮询 workbench job 日志；没有 job 时继续使用 V3 运行时间线或摘要曲线。
 - showcase 加载只在场景声明 V3 或 `available_panels` 时探测 V3 panel，旧版 metrics/privacy/recommendations 等端点也按 scenarios 摘要字段按需读取；缺失证据显示未导出，不用演示数据补齐。

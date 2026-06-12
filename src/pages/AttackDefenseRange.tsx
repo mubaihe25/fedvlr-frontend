@@ -88,7 +88,6 @@ interface AttackDefenseRangeProps {
 type AggregationMode = keyof typeof AGGREGATION_VISIBILITY_MODES;
 type ComparisonMode = 'none' | 'attack' | 'defense' | 'privacy' | 'capability';
 type ParamPanelId = 'basic' | 'advanced';
-type ExecutionMode = 'existing_artifact' | 'real_smoke' | 'probe_smoke';
 type AttackStrength = '弱' | '中' | '强';
 type EvidenceSource = 'rank' | 'unmasked rank' | 'checkpoint score' | 'auto';
 type CandidateLimit = 'Top10' | 'Top20' | 'Top50';
@@ -99,7 +98,7 @@ type MiaModel = 'threshold' | 'logistic_probe' | 'rank_proxy';
 type PerturbationType = 'sign_flip' | 'gaussian' | 'random_noise';
 type ActionState = 'idle' | 'validating' | 'starting';
 type ArchiveFilter = '全部' | '主展示' | 'Amazon' | 'KU' | '投毒' | '隐私攻击' | '鲁棒防御' | '有图片' | '有推荐列表';
-type ArchiveEvidenceFilter = '全部证据' | 'V3 证据' | '有图片' | '有推荐列表' | '真实 smoke' | 'probe smoke' | '复用证据';
+type ArchiveEvidenceFilter = '全部证据' | 'V3 证据' | '有图片' | '有推荐列表';
 
 const WORKBENCH_TERMINAL_STATUSES = new Set(['completed', 'partial', 'failed']);
 const WORKBENCH_STATUS_LABELS: Record<string, string> = {
@@ -116,15 +115,9 @@ const WORKBENCH_STATUS_LABELS: Record<string, string> = {
 const workbenchStatusLabel = (value?: string | null) => WORKBENCH_STATUS_LABELS[value ?? ''] ?? '读取中';
 const shortWorkbenchJobId = (value?: string | null) => (value ? value.replace(/^workbench_/, '').slice(-8) : EMPTY_VALUE);
 const workbenchSourceLabel = (value?: string | null) => {
-  if (value === 'existing_artifact') return '复用已导出证据';
-  if (value === 'real_smoke') return '真实轻量 smoke';
-  if (value === 'probe_smoke') return '轻量 probe smoke';
+  if (value === 'full_train') return '真实全量训练';
+  if (value === 'existing_artifact' || value === 'real_smoke' || value === 'probe_smoke') return '历史任务';
   return value ? toChineseLabel(value) : EMPTY_VALUE;
-};
-const executionModeLabel = (value?: string | null) => {
-  if (value === 'real_smoke') return '运行轻量训练';
-  if (value === 'probe_smoke') return '运行 probe smoke';
-  return '复用已导出证据';
 };
 const workbenchMetricLabel = (value: string) => {
   const labels: Record<string, string> = {
@@ -155,7 +148,6 @@ const workbenchMetricValue = (key: string, value: string | number | boolean | nu
   if (typeof value === 'boolean') return value ? '是' : '否';
   if (value === null) return EMPTY_VALUE;
   if (key === 'source') return workbenchSourceLabel(String(value));
-  if (key === 'execution_mode' || key === 'requested_execution_mode') return executionModeLabel(String(value));
   if (key === 'direction') {
     const labels: Record<string, string> = {
       recommendation_manipulation: '推荐操纵',
@@ -187,7 +179,7 @@ const tabs: Array<{id: WorkbenchTabId; label: string; icon: React.ComponentType<
 ];
 
 const archiveFilters: ArchiveFilter[] = ['全部', '主展示', 'Amazon', 'KU', '投毒', '隐私攻击', '鲁棒防御', '有图片', '有推荐列表'];
-const archiveEvidenceFilters: ArchiveEvidenceFilter[] = ['全部证据', 'V3 证据', '有图片', '有推荐列表', '真实 smoke', 'probe smoke', '复用证据'];
+const archiveEvidenceFilters: ArchiveEvidenceFilter[] = ['全部证据', 'V3 证据', '有图片', '有推荐列表'];
 
 const readArchiveRawString = (record: Record<string, unknown> | null | undefined, keys: string[]) => {
   if (!record) return null;
@@ -237,12 +229,11 @@ const getScenarioArchiveSource = (scenario: ShowcaseScenario, report?: ShowcaseR
   const reportSource = readArchiveRawString(report?.metricsSummary?.raw, ['source', 'metrics_source', 'metricsSource']);
   const frontendSource = readArchiveRawString(report?.v3?.frontendSummary, ['source', 'metrics_source', 'metricsSource']);
   const text = [rawSource, reportSource, frontendSource, ...(scenario.tags ?? []), scenarioText(scenario, report)].filter(Boolean).join(' ').toLowerCase();
-  if (text.includes('real_smoke')) return '真实 smoke';
-  if (text.includes('probe_smoke') || text.includes('probe smoke')) return 'probe smoke';
-  if (text.includes('existing_artifact') || text.includes('artifact')) return '复用证据';
-  if (scenario.smoke) return '真实 smoke';
-  if (report?.v3 || scenario.hasV3) return 'V3 artifact';
-  return scenario.dataSource === 'mock' ? '演示兜底' : 'showcase artifact';
+  if (text.includes('full_train')) return '真实全量训练';
+  if (text.includes('real_smoke') || text.includes('probe_smoke') || text.includes('probe smoke') || text.includes('existing_artifact')) return '历史证据';
+  if (scenario.smoke) return '历史验证';
+  if (report?.v3 || scenario.hasV3) return 'V3 证据';
+  return scenario.dataSource === 'mock' ? '演示兜底' : 'showcase 证据';
 };
 
 const comparisonModes: Array<{id: ComparisonMode; title: string; description: string}> = [
@@ -468,7 +459,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [selectedPlayId, setSelectedPlayId] = useState<ExperimentPlayId>('target_poisoning_play');
   const [expertOpen, setExpertOpen] = useState(true);
   const [paramPanel, setParamPanel] = useState<ParamPanelId>('basic');
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>('existing_artifact');
   const [aggregationMode, setAggregationMode] = useState<AggregationMode>('plain_updates');
   const [robustAlgorithms, setRobustAlgorithms] = useState<string[]>(['Krum']);
   const [dpLayerEnabled, setDpLayerEnabled] = useState(false);
@@ -776,10 +766,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const getModelDatasetHint = (model = config.model || selectedPlayDefaults.model, dataset = config.dataset || selectedPlayDefaults.dataset) => {
     const capability = getModelExecutionCapability(model, dataset);
     if (capability?.message) return capability.message;
-    if (capability?.status === 'real_smoke') return '当前组合可启动受限 smoke。';
+    if (capability?.status === 'full_train') return '当前组合可启动真实全量训练。';
     if (capability?.status === 'partial') return '部分支持，真实效果不能写成完整 benchmark。';
-    if (capability?.status === 'existing_artifact_only') return '当前组合只能复用已导出证据，不能 real_smoke。';
-    return '当前组合可进入配置；是否能 real_smoke 由校验接口返回。';
+    if (capability?.status === 'unsupported') return '当前组合不支持工作台全量训练，校验时会返回明确原因。';
+    return '当前组合能否启动真实全量训练由校验接口返回。';
   };
 
   const targetOptions = useMemo(() => {
@@ -1018,7 +1008,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
     return {
       direction: directionByPlay[selectedPlay.id],
-      execution_mode: executionMode,
+      execution_mode: 'full_train',
       scenario_id: selectedScenario.scenarioId,
       dataset: config.dataset || selectedPlayDefaults.dataset,
       model: config.model || selectedPlayDefaults.model,
@@ -1087,7 +1077,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const formatWorkbenchFieldErrors = (result?: Pick<WorkbenchValidationResponse, 'errors' | 'field_errors' | 'error_message'> | null) => {
     if (!result) return '';
     const fieldLabels: Record<string, string> = {
-      execution_mode: '执行模式',
+      execution_mode: '训练支持',
       dataset: '数据集',
       model: '模型',
       robust_aggregators: '鲁棒聚合',
@@ -1102,10 +1092,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       client_sampling_ratio: '客户端采样比例',
       candidate_k: '候选 TopK',
       target_loss_weight: '目标 loss 权重',
+      perturbation_type: '扰动类型',
     };
     const translateError = (message: string) => {
-      if (message.startsWith('real_smoke_not_available')) return '当前模型 / 数据集 / 方向不能 real_smoke，请改为复用证据或选择支持的组合';
-      if (message.startsWith('probe_smoke_not_available')) return '当前方向不支持 probe smoke';
+      if (message.startsWith('full_train_not_available')) return '当前模型 / 数据集 / 方向不支持真实全量训练，请选择支持的组合';
+      if (message.startsWith('full_train_perturbation_not_supported')) return '当前全量训练链路只支持 sign_flip 扰动类型';
       if (message.startsWith('secure_aggregation_conflicts_with_robust_aggregation')) return '安全聚合模拟与鲁棒聚合互斥';
       if (message.startsWith('adapter_required_model')) return '模型需要适配器，不能进入启动配置';
       return toChineseLabel(message);
@@ -1128,7 +1119,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       const validationErrorMessage = formatWorkbenchFieldErrors(result);
       setSubmitMessage(
         result.valid
-          ? '配置已校验：当前为受限 smoke / 已完成证据读取配置。'
+          ? '配置已校验：当前配置可启动真实全量训练。'
           : `配置未通过校验：${validationErrorMessage || '请检查参数'}`,
       );
     } catch (error) {
@@ -1167,18 +1158,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           warnings: result.warnings ?? [],
           errors: result.errors ?? [],
         });
-        const requestedModeLog =
-          executionMode === 'real_smoke'
-            ? '[Smoke] 已请求真实轻量 smoke；runner 会强制受限轮数、采样比例和白名单入口。'
-            : executionMode === 'probe_smoke'
-              ? '[Probe] 已请求 probe smoke；只做轻量探测或结果回填，不展示为完整训练。'
-              : '[Artifact] 已请求复用已导出证据；不会启动训练。';
         setWorkbenchLogs([
           `[Workbench] 任务 ${result.job_id} 已进入队列。`,
-          requestedModeLog,
+          '[Train] 已请求真实全量训练；训练参数按当前表单配置提交。',
         ]);
       }
-      setSubmitMessage(result.message ?? '已提交受限 smoke job，正在进入运行监控。');
+      setSubmitMessage(result.message ?? '已提交真实全量训练任务，正在进入运行监控。');
       setActiveTab('monitoring');
     } catch (error) {
       setSubmitMessage(`启动失败：${error instanceof Error ? error.message : String(error)}`);
@@ -1389,7 +1374,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
     const basicParamsByPlay: Record<ExperimentPlayId, Array<{label: string; value: string}>> = {
       target_poisoning_play: [
-        {label: '执行模式', value: executionModeLabel(executionMode)},
         {label: '数据集', value: datasetLabel(config.dataset || 'AMAZON_BEAUTY_POC')},
         {label: '模型', value: config.model || 'FedAvg'},
         {label: '攻击方向', value: '目标商品投毒'},
@@ -1398,7 +1382,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '输出证据', value: `${saveTopKEnabled ? '排序 / Top50' : '排序'}${exportAuditEnabled ? ' / 推荐列表' : ''}`},
       ],
       membership_privacy_play: [
-        {label: '执行模式', value: executionModeLabel(executionMode)},
         {label: '数据集', value: datasetLabel(config.dataset || selectedPlayDefaults.dataset)},
         {label: '模型', value: config.model || selectedPlayDefaults.model},
         {label: '攻击方向', value: '成员推断'},
@@ -1407,7 +1390,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '输出证据', value: membershipMetrics.join(' / ')},
       ],
       update_leakage_play: [
-        {label: '执行模式', value: executionModeLabel(executionMode)},
         {label: '数据集', value: datasetLabel(config.dataset || selectedPlayDefaults.dataset)},
         {label: '模型', value: config.model || selectedPlayDefaults.model},
         {label: '攻击方向', value: '客户端更新泄露'},
@@ -1416,7 +1398,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '输出证据', value: leakageMetrics.join(' / ')},
       ],
       robust_defense_play: [
-        {label: '执行模式', value: executionModeLabel(executionMode)},
         {label: '数据集', value: datasetLabel(config.dataset || selectedPlayDefaults.dataset)},
         {label: '模型', value: config.model || selectedPlayDefaults.model},
         {label: '攻击方向', value: '异常客户端更新'},
@@ -1519,34 +1500,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label}
       </button>
     );
-    const renderExecutionModeControl = () =>
-      fieldShell(
-        '执行模式',
-        <div className="grid gap-2">
-          {[
-            {id: 'existing_artifact' as ExecutionMode, label: '复用已导出证据', note: '读取 V3 artifact，不训练。'},
-            {id: 'real_smoke' as ExecutionMode, label: '运行轻量训练', note: '请求受限 smoke；后端会继续限制或降级为 probe。'},
-            {id: 'probe_smoke' as ExecutionMode, label: '运行 probe smoke', note: '只做轻量探测 / 结果回填，不写成完整训练。'},
-          ].map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              onClick={() => {
-                markParamChanged('执行模式');
-                setExecutionMode(mode.id);
-              }}
-              className={cn(
-                'rounded-2xl border px-3 py-2 text-left transition',
-                executionMode === mode.id ? 'border-cyan-200/45 bg-cyan-300/12 text-cyan-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-cyan-200/25',
-              )}
-            >
-              <span className="block text-sm font-black">{mode.label}</span>
-              <span className="mt-1 block text-[11px] leading-4 text-slate-500">{mode.note}</span>
-            </button>
-          ))}
-        </div>,
-        getModelDatasetHint(),
-      );
     const tagToggle = (selected: string[], value: string, onChange: (next: string[]) => void) => {
       const checked = selected.includes(value);
       return (
@@ -1623,14 +1576,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       );
     const renderCommonTrainingControls = () => (
       <>
-        {renderExecutionModeControl()}
         <div className="grid gap-3 sm:grid-cols-2">
           {renderDatasetControl()}
           {renderModelControl()}
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          {fieldShell('训练轮数', <input className={inputClass} type="number" min={1} max={5} value={config.totalRounds || 1} onChange={(event) => updateTotalRounds(Number(event.target.value))} />)}
-          {fieldShell('本地轮数', <input className={inputClass} type="number" min={1} max={1} value={config.advanced.localEpochs || 1} onChange={(event) => updateLocalEpochs(Number(event.target.value))} />)}
+          {fieldShell('训练轮数', <input className={inputClass} type="number" min={1} max={10} value={config.totalRounds || 1} onChange={(event) => updateTotalRounds(Number(event.target.value))} />)}
+          {fieldShell('本地轮数', <input className={inputClass} type="number" min={1} max={5} value={config.advanced.localEpochs || 1} onChange={(event) => updateLocalEpochs(Number(event.target.value))} />)}
           {fieldShell('Batch size', <input className={inputClass} type="number" min={16} max={1024} step={16} value={batchSize} onChange={(event) => {
             markParamChanged('Batch size');
             setBatchSize(Number(event.target.value));
@@ -1654,8 +1606,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {fieldShell(
           '客户端采样比例',
           <div className="flex items-center gap-3">
-            <input className="w-full accent-cyan-300" type="range" min={0.01} max={0.25} step={0.01} value={Math.min(config.clientSamplingRate || 0.05, 0.25)} onChange={(event) => updateClientSamplingRate(Number(event.target.value))} />
-            <span className="w-12 text-right font-mono text-sm font-bold text-cyan-100">{Math.min(config.clientSamplingRate || 0.05, 0.25).toFixed(2)}</span>
+            <input className="w-full accent-cyan-300" type="range" min={0.01} max={1} step={0.01} value={config.clientSamplingRate || 0.05} onChange={(event) => updateClientSamplingRate(Number(event.target.value))} />
+            <span className="w-12 text-right font-mono text-sm font-bold text-cyan-100">{(config.clientSamplingRate || 0.05).toFixed(2)}</span>
           </div>,
         )}
         <div className="grid gap-3 sm:grid-cols-3">
@@ -2531,7 +2483,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap gap-2 text-[11px] font-bold">
                 {[
-                  `执行：${executionModeLabel(executionMode)}`,
                   `方向：${selectedPlay.title}`,
                   `${datasetLabel(config.dataset || selectedPlayDefaults.dataset)} / ${config.model || selectedPlayDefaults.model}`,
                   aggregationMode === 'secure_aggregation' ? '安全聚合模拟' : robustAlgorithms.length ? `鲁棒：${robustAlgorithms.join(' / ')}` : '无鲁棒聚合',
@@ -2981,7 +2932,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   {label: '状态', value: workbenchStatusLabel(workbenchJob?.status)},
                   {label: '阶段', value: workbenchStatusLabel(workbenchJob?.stage ?? workbenchJob?.status)},
                   {label: '进度', value: `${Math.round(workbenchJob?.progress ?? 0)}%`},
-                  {label: '执行模式', value: executionModeLabel(workbenchJob?.execution_mode ?? executionMode)},
                   {label: 'source', value: workbenchSourceLabel(workbenchJob?.source ?? jobMetricsSource)},
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl border border-cyan-200/15 bg-cyan-300/[0.06] p-3">
@@ -2999,7 +2949,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   {label: 'direction', value: workbenchDirectionLabel(workbenchJob?.direction)},
                   {label: 'dataset', value: datasetLabel(String(workbenchJob?.dataset ?? workbenchJob?.config_summary?.dataset ?? config.dataset ?? selectedPlayDefaults.dataset))},
                   {label: 'model', value: String(workbenchJob?.model ?? workbenchJob?.config_summary?.model ?? config.model ?? selectedPlayDefaults.model)},
-                  {label: 'execution_mode', value: executionModeLabel(workbenchJob?.execution_mode ?? executionMode)},
                   {label: 'source', value: workbenchSourceLabel(workbenchJob?.source ?? jobMetricsSource)},
                   {label: 'started_at', value: workbenchJob?.started_at ?? EMPTY_VALUE},
                   {label: 'finished_at', value: workbenchJob?.finished_at ?? EMPTY_VALUE},
@@ -3283,7 +3232,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">WORKBENCH 结果回填</p>
                 <h3 className="mt-1 text-xl font-bold text-white">{workbenchStatusLabel(workbenchResult.status)} · {workbenchSourceLabel(jobMetricsSource)}</h3>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                  {typeof jobMetricsSummary.message === 'string' ? jobMetricsSummary.message : '受限 smoke job 已返回结果摘要。'}
+                  {typeof jobMetricsSummary.message === 'string' ? jobMetricsSummary.message : '真实全量训练任务已返回结果摘要。'}
                 </p>
               </div>
               <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">
@@ -3299,14 +3248,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             ) : (
               <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-400">该 job 尚未导出可展示指标。</p>
             )}
-            {jobMetricsSource === 'existing_artifact' ? (
-              <p className="mt-3 text-xs font-semibold text-amber-100">该结果复用已导出的安全证据，不表述为本次刚训练完成。</p>
-            ) : null}
-            {jobMetricsSource === 'real_smoke' ? (
-              <p className="mt-3 text-xs font-semibold text-emerald-100">该结果来自真实轻量 smoke，只代表小规模链路验证，不代表完整 defense benchmark。</p>
-            ) : null}
-            {jobMetricsSource === 'probe_smoke' ? (
-              <p className="mt-3 text-xs font-semibold text-cyan-100">该结果来自轻量 probe smoke，用于风险观测回填，不是完整训练结果。</p>
+            {jobMetricsSource === 'full_train' ? (
+              <p className="mt-3 text-xs font-semibold text-emerald-100">该结果来自本次真实全量训练。</p>
             ) : null}
           </section>
         ) : null}
@@ -3847,9 +3790,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         if (archiveEvidenceFilter === 'V3 证据' && !row.hasV3) return false;
         if (archiveEvidenceFilter === '有图片' && !row.hasImages) return false;
         if (archiveEvidenceFilter === '有推荐列表' && !row.hasRecommendations) return false;
-        if (archiveEvidenceFilter === '真实 smoke' && row.source !== '真实 smoke') return false;
-        if (archiveEvidenceFilter === 'probe smoke' && row.source !== 'probe smoke') return false;
-        if (archiveEvidenceFilter === '复用证据' && !['复用证据', 'V3 artifact', 'showcase artifact'].includes(row.source)) return false;
 
         if (archiveFilter === '全部') return true;
         if (archiveFilter === '主展示') return row.usage === '主展示';
@@ -3927,7 +3867,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <span className="text-[11px] font-bold text-slate-500">source</span>
             <select value={jobSourceFilter} onChange={(event) => setJobSourceFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45">
               <option value="">全部 source</option>
-              {['existing_artifact', 'real_smoke', 'probe_smoke'].map((value) => <option key={value} value={value}>{workbenchSourceLabel(value)}</option>)}
+              <option value="full_train">真实全量训练</option>
             </select>
           </label>
           <label className="space-y-1.5">
@@ -3976,9 +3916,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 <p className="text-xs text-slate-500">{job.model ?? EMPTY_VALUE}</p>
               </div>
               <div>
-                <p className="text-[11px] font-bold text-slate-500">模式 / source</p>
-                <p className="mt-1 text-sm font-semibold text-slate-200">{executionModeLabel(job.execution_mode)}</p>
-                <p className="text-xs text-slate-500">{workbenchSourceLabel(job.source)}</p>
+                <p className="text-[11px] font-bold text-slate-500">任务来源</p>
+                <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchSourceLabel(job.source)}</p>
               </div>
               <div>
                 <p className="text-[11px] font-bold text-slate-500">状态 / 日期</p>
