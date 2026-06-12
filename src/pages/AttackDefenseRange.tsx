@@ -1358,7 +1358,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     > = {
       target_poisoning_play: [
         {label: 'Amazon', note: '商品数据', tone: 'data', Icon: Database},
-        {label: config.model || 'FedAvg', note: '本地训练', tone: 'train', Icon: Layers3},
+        {label: 'FedVLR', note: '本地训练', tone: 'train', Icon: Layers3},
         {label: '目标注入', note: '红色投毒', tone: 'attack', Icon: Target},
         {label: '聚合', note: '服务端', tone: 'aggregation', Icon: GitCompare},
         {label: '排序审计', note: '未屏蔽', tone: 'audit', Icon: BarChart3},
