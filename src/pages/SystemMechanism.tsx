@@ -3,7 +3,7 @@ import {motion} from 'motion/react';
 import {ArrowRight, Database, FileText, GitMerge, Image, Layers3, MonitorUp, Route, Server, ShieldCheck, Smartphone} from 'lucide-react';
 import {FederatedTopology} from '../components/sandbox/FederatedTopology';
 import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
-import {formatPlainValue, getDatasetLabel, hasAmazonUrlHashPlaceholder} from '../lib/showcaseFormat';
+import {hasAmazonUrlHashPlaceholder} from '../lib/showcaseFormat';
 
 const architectureLayers = [
   {
@@ -156,9 +156,6 @@ export const SystemMechanism: React.FC = () => {
           <div>
             <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">推荐训练流程</p>
             <h2 className="mt-2 text-2xl font-bold text-white">一轮联邦推荐的完整路径</h2>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-xs leading-5 text-slate-300">
-            当前数据集：{getDatasetLabel(dataset)} / 模型：{formatPlainValue(bundle.report.model ?? bundle.selectedScenario.model)}
           </div>
         </div>
 
