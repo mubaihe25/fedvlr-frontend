@@ -1581,7 +1581,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           {renderModelControl()}
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          {fieldShell('训练轮数', <input className={inputClass} type="number" min={1} max={10} value={config.totalRounds || 1} onChange={(event) => updateTotalRounds(Number(event.target.value))} />)}
+          {fieldShell('训练轮数', <input className={inputClass} type="number" min={1} max={100} value={config.totalRounds || 1} onChange={(event) => updateTotalRounds(Number(event.target.value))} />)}
           {fieldShell('本地轮数', <input className={inputClass} type="number" min={1} max={5} value={config.advanced.localEpochs || 1} onChange={(event) => updateLocalEpochs(Number(event.target.value))} />)}
           {fieldShell('Batch size', <input className={inputClass} type="number" min={16} max={1024} step={16} value={batchSize} onChange={(event) => {
             markParamChanged('Batch size');
