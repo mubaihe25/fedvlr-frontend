@@ -4154,12 +4154,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       <section className="mx-auto max-w-[1520px] space-y-5">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">攻防工作台</span>
-              <span className={cn('rounded-full border px-3 py-1 text-xs font-bold', getScenarioSourceTone(bundle))}>{getScenarioSourceLabel(bundle)}</span>
-              {v3EvidenceAvailable ? <span className="rounded-full border border-violet-200/25 bg-violet-300/10 px-3 py-1 text-xs font-bold text-violet-100">V3 证据</span> : null}
-              {isLoading ? <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-bold text-slate-300">正在读取数据</span> : null}
-            </div>
+            {isLoading ? (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-bold text-slate-300">正在读取数据</span>
+              </div>
+            ) : null}
             <h1 className="text-3xl font-black tracking-tight text-white md:text-4xl">联邦推荐攻防工作台</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
               用中文攻防语义串联实验剧本、运行监控、单次分析、横向对比和历史档案，让真实结果按演示故事线进入页面。
