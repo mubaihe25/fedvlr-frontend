@@ -52,7 +52,7 @@ export const EXPERIMENT_PLAYBOOKS: ExperimentPlaybook[] = [
     model: 'FedAvg',
     attackType: '目标交互注入',
     defenseType: '无防御 / 可选鲁棒聚合',
-    optionalDefenseText: '可选 Krum / Median / TrimmedMean / Bulyan；当前 V2.5 重点读取已完成结果。',
+    optionalDefenseText: '可选 Krum 异常更新筛选、坐标中位数聚合、截尾均值聚合或 Bulyan 组合鲁棒聚合；单次实验最多选择一个。',
     auditMetrics: ['目标排序', 'Top50 曝光', '推荐列表变化', 'MIA', '交互还原'],
     evidence: ['V2.5 结果', '170 -> 3', 'Top50 未命中', '三列推荐对比'],
     params: [
@@ -177,17 +177,17 @@ export const EXPERIMENT_PLAYBOOKS: ExperimentPlaybook[] = [
   {
     id: 'robust_defense_play',
     title: '鲁棒聚合防御',
-    purpose: '在明文更新可见条件下，用 Krum / Median / TrimmedMean / Bulyan 削弱异常客户端更新。',
+    purpose: '在明文更新可见条件下，选择无攻击或恶意模型更新，观察一种鲁棒聚合算法的处理效果。',
     dataset: 'KU',
     model: 'MMFedRAP',
-    attackType: '异常客户端更新',
-    defenseType: 'Krum / Median / TrimmedMean / Bulyan',
-    optionalDefenseText: '鲁棒聚合要求服务端观察单客户端更新，不与安全聚合模拟同时启用。',
+    attackType: '无攻击 / 恶意模型更新',
+    defenseType: '单选鲁棒聚合算法',
+    optionalDefenseText: '单次实验最多选择一种鲁棒聚合算法；空选表示普通 FedAvg 聚合，不与安全聚合模拟同时启用。',
     auditMetrics: ['Recall@50', 'NDCG@50', '防御恢复率', '异常更新过滤'],
     evidence: ['security matrix', 'Krum 链路', '防御恢复摘要'],
     params: [
       {label: '聚合方式', value: '明文更新聚合'},
-      {label: '防御算法', value: 'Krum / Median / TrimmedMean / Bulyan'},
+      {label: '防御算法', value: 'Krum / Median / TrimmedMean / Bulyan 四选一'},
       {label: '观测指标', value: 'Recall@50、NDCG@50'},
       {label: '恢复指标', value: '防御恢复率'},
       {label: '过滤摘要', value: '异常更新过滤'},
@@ -195,9 +195,9 @@ export const EXPERIMENT_PLAYBOOKS: ExperimentPlaybook[] = [
     ],
     routeNodes: [
       {stage: '数据集', title: 'KU / Amazon Beauty', description: '读取鲁棒防御场景', tone: 'data'},
-      {stage: '客户端训练', title: '恶意更新', description: '异常客户端上传偏移更新', tone: 'attack'},
+      {stage: '客户端训练', title: '基础攻击可选', description: '无攻击或恶意模型更新', tone: 'attack'},
       {stage: '攻击注入', title: '明文更新聚合', description: '服务端能观察单客户端更新', tone: 'aggregation'},
-      {stage: '聚合方式', title: '鲁棒聚合', description: 'Krum / Median / TrimmedMean / Bulyan', tone: 'defense'},
+      {stage: '聚合方式', title: '鲁棒聚合', description: '四种算法单选执行', tone: 'defense'},
       {stage: '防御处理', title: '过滤异常更新', description: '削弱异常客户端影响', tone: 'defense'},
       {stage: '观测指标', title: 'Recall / NDCG / 恢复率', description: '观察性能恢复与过滤效果', tone: 'audit'},
       {stage: '输出证据', title: '防御摘要', description: '展示鲁棒防御链路边界', tone: 'evidence'},
@@ -220,4 +220,3 @@ export const EXPERIMENT_PLAYBOOKS: ExperimentPlaybook[] = [
 
 export const getExperimentPlaybook = (id: ExperimentPlayId) =>
   EXPERIMENT_PLAYBOOKS.find((playbook) => playbook.id === id) ?? EXPERIMENT_PLAYBOOKS[0];
-

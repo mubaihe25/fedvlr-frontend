@@ -71,7 +71,7 @@
 
 - 差分隐私风格加噪：给更新加入噪声，降低泄露风险；不能写成 formal DP。
 - 安全聚合模拟：隐藏单个客户端更新，只暴露聚合结果；不能写成生产级协议。
-- 鲁棒聚合防御：Krum / Median / TrimmedMean / Bulyan，削弱异常客户端更新。
+- 鲁棒聚合防御：单次实验从 Krum / Median / TrimmedMean / Bulyan 中最多选择一种，削弱恶意模型更新；空选表示普通 FedAvg 聚合。
 
 观测模块：
 
@@ -105,10 +105,10 @@
 
 聚合可见性必须体现互斥：
 
-- 明文更新聚合：服务端可观察单客户端更新，可使用 Krum / Median / TrimmedMean / Bulyan。
+- 明文更新聚合：服务端可观察单客户端更新，单次实验可从 Krum / Median / TrimmedMean / Bulyan 中选择一种。
 - 安全聚合模拟：服务端只看到聚合结果，不适合同时做逐客户端鲁棒筛选。
 
-选择安全聚合模拟时，Krum / Median / TrimmedMean / Bulyan 置灰并显示原因。选择鲁棒聚合算法时，安全聚合模拟置灰并显示原因。差分隐私风格加噪作为更新扰动层单独展示。
+选择安全聚合模拟时，Krum / Median / TrimmedMean / Bulyan 置灰并显示原因。选择鲁棒聚合算法时，安全聚合模拟置灰并显示原因。聚合防御方向的基础攻击只允许 `none` 或 `malicious_update`，默认 `none`；界面分别显示“无攻击”和“恶意模型更新”，无攻击时不显示攻击参数且不注入恶意客户端更新。差分隐私风格加噪作为更新扰动层单独展示。
 
 运行监控要表达本地训练、更新/梯度上传、服务端聚合、恶意更新、防御过滤、终端日志、状态摘要和曲线来源。有 `job_id` 时每 1-2 秒轮询 `/workbench/jobs/{job_id}` 和 `/workbench/jobs/{job_id}/logs?tail=100`，展示 job_id、direction、dataset、model、source、status、stage、progress、started_at、finished_at、result_dir、artifact_dir 和真实 `run.log` 内容；新任务的 source 为 `full_train`。completed/failed 后停止轮询。没有 `job_id` 时继续读取 V3 运行时间线和训练曲线；`summary_curve` 显示“摘要曲线”，`real_points` 显示“真实记录点”。若没有真实曲线，必须标注“实验摘要曲线”，不要伪造完整训练全过程。
 
@@ -214,5 +214,5 @@ npm run build
 - 单次分析如有 job `metrics_summary`，可优先显示结果回填；新任务 `source=full_train`，`partial` 必须保留部分完成边界。
 - `/workbench/options` 的 `model_dataset_execution` 和 `parameter_descriptors` 是高级参数、模型提示和执行边界说明的来源；不要在页面里维护第二套执行能力矩阵。
 - 高级参数提交给 workbench 时必须保留用户填写的训练轮数、本地轮数、采样比例、学习率和防御参数；前端固定提交 `execution_mode=full_train`。
-- 鲁棒聚合算法在前端是多选；没有选中算法表示不启用鲁棒聚合，不要恢复“无防御”按钮。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。
+- 鲁棒聚合算法在前端是可空单选；单次实验最多选择一个，没有选中算法表示普通 FedAvg 聚合，不要恢复“无防御”按钮。聚合防御方向提交用户选择的 `base_attack=none|malicious_update`，默认 `none`。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。
 - Showcase 加载应按 scenarios 摘要字段请求 V3 panels 和旧版 endpoints；场景未声明 V3/旧证据时不要主动探测一堆 404。缺失证据显示“未导出 / 暂无证据”，不要用 mock 补单个缺口。

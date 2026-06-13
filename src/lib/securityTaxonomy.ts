@@ -264,7 +264,7 @@ export const EXPERIMENT_PLAYS: ExperimentPlay[] = [
   {
     id: 'robust_defense_play',
     title: '鲁棒聚合防御实验',
-    purpose: '观察 Krum / Median / TrimmedMean / Bulyan 如何削弱异常客户端更新。',
+    purpose: '观察无攻击或恶意模型更新条件下单个鲁棒聚合算法的处理效果。',
     attackModules: ['target_poisoning'],
     optionalDefenses: ['robust_aggregation'],
     auditModules: ['recommendation_audit', 'defense_audit'],
