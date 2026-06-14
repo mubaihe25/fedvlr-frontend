@@ -1671,7 +1671,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label}
       </button>
     );
-    const tagToggle = (selected: string[], value: string, onChange: (next: string[]) => void) => {
+    const tagToggle = (selected: string[], value: string, onChange: (next: string[]) => void, display?: string) => {
       const checked = selected.includes(value);
       return (
         <button
@@ -1686,7 +1686,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             checked ? 'border-violet-200/40 bg-violet-300/15 text-violet-50' : 'border-white/10 bg-white/[0.045] text-slate-400 hover:border-violet-200/25',
           )}
         >
-          {value}
+          {display ?? value}
         </button>
       );
     };
@@ -2082,7 +2082,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               segmented<EvidenceSource>(evidenceSource, ['rank', 'unmasked rank', 'checkpoint score', 'auto'], (value) => {
                 markParamChanged('输出证据');
                 setEvidenceSource(value);
-              }),
+              }, undefined, undefined, (value) => ({
+                'rank': '推荐排名',
+                'unmasked rank': '未屏蔽内部排名',
+                'checkpoint score': '模型检查点评分',
+                'auto': '自动选择',
+              }[value])),
             )}
             {fieldShell(
               '标签来源',
@@ -2094,8 +2099,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   setMembershipLabelSource(event.target.value);
                 }}
               >
-                {['membership labels', 'scenario labels', 'auto labels'].map((item) => (
-                  <option key={item} value={item}>{item}</option>
+                {[
+                  {value: 'membership labels', label: '成员身份标签'},
+                  {value: 'scenario labels', label: '场景预设标签'},
+                  {value: 'auto labels', label: '自动构造标签'},
+                ].map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
                 ))}
               </select>,
             )}
@@ -2104,31 +2113,39 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               segmented<string>(thresholdStrategy, ['auto', 'median', 'fixed'], (value) => {
                 markParamChanged('观测对象');
                 setThresholdStrategy(value);
-              }),
+              }, undefined, undefined, (value) => ({
+                'auto': '自动阈值',
+                'median': '中位数阈值',
+                'fixed': '固定阈值',
+              }[value])),
             )}
             {fieldShell(
               'MIA 模型',
               segmented<MiaModel>(miaModel, ['threshold', 'logistic_probe', 'rank_proxy'], (value) => {
                 markParamChanged('观测对象');
                 setMiaModel(value);
-              }),
+              }, undefined, undefined, (value) => ({
+                'threshold': '阈值判别',
+                'logistic_probe': '逻辑回归探针',
+                'rank_proxy': '排名代理攻击',
+              }[value])),
             )}
-            {fieldShell('采样数量', <input className={inputClass} type="number" min={20} max={5000} step={20} value={membershipSampleCount} onChange={(event) => {
+            {fieldShell('审计样本总数', <input className={inputClass} type="number" min={20} max={5000} step={20} value={membershipSampleCount} onChange={(event) => {
               markParamChanged('观测对象');
               setMembershipSampleCount(Number(event.target.value));
             }} />)}
-            {fieldShell('训练/非训练比例', <input className={inputClass} type="number" min={0.1} max={10} step={0.1} value={memberNonmemberRatio} onChange={(event) => {
+            {fieldShell('成员/非成员采样比例', <input className={inputClass} type="number" min={0.1} max={10} step={0.1} value={memberNonmemberRatio} onChange={(event) => {
               markParamChanged('观测对象');
               setMemberNonmemberRatio(Number(event.target.value));
             }} />)}
             {fieldShell('观测指标', <div className="flex flex-wrap gap-2">{['AUC', 'Accuracy', 'score gap'].map((item) => tagToggle(membershipMetrics, item, (next) => {
               markParamChanged('输出证据');
               setMembershipMetrics(next);
-            }))}</div>)}
-            {fieldShell('导出 pair scores', switchControl(exportPairScores, () => {
+            }, item === 'score gap' ? '成员与非成员得分差' : item))}</div>)}
+            {fieldShell('导出判别分数明细', switchControl(exportPairScores, () => {
               markParamChanged('输出证据');
               setExportPairScores((value) => !value);
-            }, '导出 pair scores'))}
+            }, '导出判别分数明细'))}
             {renderSharedDefenseControls()}
           </div>
         );
@@ -2884,7 +2901,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       membership_privacy_play: [
         {label: 'AUC', value: jobMetric('auc', formatMetricValue(privacyMetrics.miaAuc)), tone: 'text-violet-100'},
         {label: 'Accuracy', value: jobMetric('accuracy', formatMetricValue(privacyMetrics.miaAccuracy)), tone: 'text-violet-100'},
-        {label: 'score gap', value: jobMetric('score_gap', formatMetricValue(v3MembershipPanel?.scoreGap ?? null)), tone: 'text-violet-100'},
+        {label: '成员与非成员得分差', value: jobMetric('score_gap', formatMetricValue(v3MembershipPanel?.scoreGap ?? null)), tone: 'text-violet-100'},
         {label: '证据类型', value: jobMetric('evidence_type', privacyMetrics.miaEvidence), tone: 'text-slate-100'},
       ],
       update_leakage_play: [
@@ -3193,7 +3210,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       membership_privacy_play: [
         {label: 'AUC', value: analysisJobMetric('auc'), tone: 'text-violet-100'},
         {label: 'Accuracy', value: analysisJobMetric('accuracy'), tone: 'text-violet-100'},
-        {label: 'score gap', value: analysisJobMetric('score_gap'), tone: 'text-violet-100'},
+        {label: '成员与非成员得分差', value: analysisJobMetric('score_gap'), tone: 'text-violet-100'},
         {label: '证据类型', value: analysisJobMetric('evidence_type'), tone: 'text-slate-100'},
       ],
       update_leakage_play: [
