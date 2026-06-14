@@ -232,9 +232,10 @@ npm run build
 - “校验配置”必须调用 `/workbench/validate`；“开始实验”必须调用 `/workbench/jobs`，并显示 `queued` / `running` / `completed` / `partial` / `failed` 等真实 job 状态。
 - 点击“开始实验”时立即生成 `started_at` 和 `experiment_name`，名称格式固定为 `{推荐操纵|成员推断|更新泄露|聚合防御} · YYYY-MM-DD HH:mm:ss`。历史读取优先使用 API 持久化字段；旧 job 缺失时可回退原 job 标识和 `created_at`，不得使用 `finished_at` 代替开始时间。
 - 运行监控有 `job_id` 时优先轮询 `/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=100` 和 terminal result；terminal 后读取 `/workbench/jobs/{job_id}/result`，没有 `job_id` 时继续使用 V3 runtime/curves 或摘要曲线。
-- 失败文案应优先使用 `field_errors`、`failure_stage`、`error_summary` 和 `error_detail`；运行监控和历史卡片显示 job_id、模型、数据集、方向和 subprocess return code，完整错误可展开且不得重复。网络不可达时显示“后端服务未连接”，不要直接显示 `Failed to fetch`。
+- 失败文案应优先使用 `field_errors`、`failure_stage`、`error_summary` 和 `error_detail`；运行监控和历史卡片显示 job_id、模型、数据集、方向、实际 tensor shape、模型期望 shape 和 subprocess return code，完整错误可展开且不得重复。网络不可达时显示“后端服务未连接”，不要直接显示 `Failed to fetch`。
 - 单次分析如有 job `metrics_summary`，必须优先使用其中真实的 target rank、rank gain、masked Top50 hit 和 baseline/attack Top50，不得混入 showcase 的旧排名；新任务 `source=full_train`，`partial` 必须保留部分完成边界。
-- `/workbench/options` 的 `model_dataset_execution`、`common_parameters`、`fixed_parameters` 和 `parameter_descriptors` 是高级参数、模型提示、范围默认值和执行边界说明的来源；不要在页面里维护第二套参数 schema 或执行能力矩阵。
+- `/workbench/options` 的 `model_dataset_execution`、`common_parameters`、`fixed_parameters` 和 `parameter_descriptors` 是高级参数、模型提示、范围默认值和执行边界说明的来源；不要在页面里维护第二套参数 schema 或执行能力矩阵。能力状态必须区分 `construct_verified`、`forward_verified`、`train_verified`、`direction_verified`，构造成功不得展示为真实训练支持。
+- “校验配置”和“开始实验”都依赖后端真实最小 forward preflight；preflight 失败只展示字段错误，不切换到运行监控，也不生成本地伪 job。
 - 高级参数提交给 workbench 时必须保留用户填写的训练轮数、本地轮数、采样比例、学习率和防御参数；前端固定提交 `execution_mode=full_train`。
 - 鲁棒聚合算法在前端是可空单选；单次实验最多选择一个，没有选中算法表示普通 FedAvg 聚合，不要恢复“无防御”按钮。聚合防御方向提交用户选择的 `base_attack=none|malicious_update`，默认 `none`。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。
 - Showcase 加载应按 scenarios 摘要字段请求 V3 panels 和旧版 endpoints；场景未声明 V3/旧证据时不要主动探测一堆 404。缺失证据显示“未导出 / 暂无证据”，不要用 mock 补单个缺口。

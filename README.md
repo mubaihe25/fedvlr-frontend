@@ -209,10 +209,11 @@ npm run preview
 - 攻防工作台的“校验配置”调用 `/workbench/validate`；“开始实验”调用 `/workbench/jobs` 并切换到运行监控。
 - 创建 job 时前端提交点击瞬间的 `started_at` 和中文 `experiment_name`；API 列表和状态响应回传这两个字段，刷新页面后名称和开始时间保持不变。
 - 当前 API 会创建并启动真实全量训练 job，状态可能为 `queued`、`running`、`completed`、`partial` 或 `failed`。前端在有 `job_id` 时优先轮询 job 状态、日志和 result；没有 job 时继续读取已完成 showcase/V3 证据。
-- `/workbench/validate` 和 invalid `/workbench/jobs` 的 `field_errors` 会展示为中文字段错误；网络不可达时显示“后端服务未连接”，不要直接暴露 `Failed to fetch`。
+- `/workbench/validate` 和 invalid `/workbench/jobs` 的 `field_errors` 会展示为中文字段错误；API 会先执行当前方向/数据集/模型的真实最小 forward preflight，未通过时不会创建 job。网络不可达时显示“后端服务未连接”，不要直接暴露 `Failed to fetch`。
 - 新建任务固定使用 `metrics_summary.source=full_train`。旧 job 的历史 source 只做兼容读取，不再作为新任务执行选项。`partial` 仍表示训练或结果导出只完成部分，不要补写成功效果。
 - 工作台模型选择只展示可进入配置的 8 个模型；MGCN 系列继续作为需要适配器的边界说明，不放进启动 select。模型不在下拉里按数据集硬禁用，是否支持当前方向的全量训练由 `/workbench/validate` 返回。
-- 运行监控如果有 `job_id`，优先轮询 workbench job 日志；没有 job 时继续使用 V3 运行时间线或摘要曲线。
+- 运行监控如果有 `job_id`，优先轮询 workbench job 日志；失败状态同时展示失败阶段、中文摘要、实际 tensor shape、模型期望 shape 和 return code。没有 job 时继续使用 V3 运行时间线或摘要曲线。
+- `/workbench/options` 的模型能力记录区分 `construct_verified`、`forward_verified`、`train_verified` 和 `direction_verified`；前端不得把构造成功改写为已训练支持。
 - 当前 job 的监控曲线只使用 v2 `training.rounds` 或聚合防御 `direction_result.rounds`；日志为空时显示等待 `run.log`，不显示固定示例日志。terminal 后停止轮询并读取 result，`partial` 展示缺失证据。
 - 商品 metadata 由当前 job result 提供 item ID/title/category，并把 `/showcase/images/{datasetId}/{itemId}?size=thumb` 改写为前端 `/api/showcase/...` 请求；404 只降级到占位图。
 - showcase 加载只在场景声明 V3 或 `available_panels` 时探测 V3 panel，旧版 metrics/privacy/recommendations 等端点也按 scenarios 摘要字段按需读取；缺失证据显示未导出，不用演示数据补齐。

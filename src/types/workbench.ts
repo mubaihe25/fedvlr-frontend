@@ -171,6 +171,13 @@ export interface WorkbenchValidationResponse {
   expected_outputs?: string[];
   disabled_reason?: string;
   error_message?: string;
+  failure_stage?: string | null;
+  error_summary?: string | null;
+  error_detail?: string | null;
+  actual_tensor_shapes?: Record<string, unknown> | string | null;
+  model_expected_shapes?: Record<string, unknown> | string | null;
+  return_code?: number | null;
+  forward_preflight?: Record<string, unknown> | null;
 }
 
 export interface WorkbenchJobResponse extends WorkbenchValidationResponse {
@@ -222,6 +229,9 @@ export interface WorkbenchJobStatusResponse {
   warnings: string[];
   errors: string[];
   config_summary?: Record<string, unknown>;
+  actual_tensor_shapes?: Record<string, unknown> | string | null;
+  model_expected_shapes?: Record<string, unknown> | string | null;
+  forward_preflight?: Record<string, unknown> | null;
 }
 
 export interface WorkbenchLogsResponse {
@@ -245,6 +255,8 @@ export interface WorkbenchResultResponse {
   error_summary?: string | null;
   error_detail?: string | null;
   message?: string | null;
+  actual_tensor_shapes?: Record<string, unknown> | string | null;
+  model_expected_shapes?: Record<string, unknown> | string | null;
 }
 
 export interface WorkbenchJobListItem {
@@ -267,6 +279,9 @@ export interface WorkbenchJobListItem {
   key_metrics?: Record<string, unknown>;
   result_dir?: string | null;
   artifact_dir?: string | null;
+  actual_tensor_shapes?: Record<string, unknown> | string | null;
+  model_expected_shapes?: Record<string, unknown> | string | null;
+  forward_preflight?: Record<string, unknown> | null;
 }
 
 export interface WorkbenchJobListResponse {

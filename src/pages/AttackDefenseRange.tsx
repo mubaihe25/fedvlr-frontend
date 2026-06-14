@@ -218,7 +218,12 @@ const workbenchStageLabel = (value?: string | null) => (
 type WorkbenchFailureInfo = Pick<
   WorkbenchJobStatusResponse,
   'error_summary' | 'error_detail' | 'error_message' | 'failure_stage' | 'return_code'
+  | 'actual_tensor_shapes' | 'model_expected_shapes'
 >;
+const formatShapeEvidence = (value: WorkbenchFailureInfo['actual_tensor_shapes']) => {
+  if (value == null) return EMPTY_VALUE;
+  return typeof value === 'string' ? value : JSON.stringify(value);
+};
 const workbenchFailureSummary = (job?: WorkbenchFailureInfo | null) => (
   job?.error_summary
   ?? (job?.return_code != null ? `训练子进程异常退出（return code ${job.return_code}）` : null)
@@ -3317,6 +3322,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <div className="mt-3 grid gap-2 text-xs text-rose-50/85 sm:grid-cols-2 lg:grid-cols-3">
                     <p>失败阶段：{workbenchStageLabel(workbenchJob.failure_stage ?? workbenchJob.stage)}</p>
                     <p>return code：{workbenchJob.return_code ?? EMPTY_VALUE}</p>
+                    <p>实际 tensor shape：{formatShapeEvidence(workbenchJob.actual_tensor_shapes)}</p>
+                    <p>模型期望 shape：{formatShapeEvidence(workbenchJob.model_expected_shapes)}</p>
                     <p>job_id：{workbenchJob.job_id}</p>
                     <p>方向：{workbenchDirectionLabel(workbenchJob.direction)}</p>
                     <p>数据集：{datasetLabel(workbenchJob.dataset ?? '')}</p>
@@ -3503,6 +3510,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <h2 className="mt-2 text-2xl font-black text-white">该实验未完成，无法进入单次分析</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
               失败阶段：{workbenchStageLabel(workbenchJob.failure_stage ?? workbenchJob.stage)}
+            </p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+              实际 tensor shape：{formatShapeEvidence(workbenchJob.actual_tensor_shapes)} · 模型期望 shape：{formatShapeEvidence(workbenchJob.model_expected_shapes)}
             </p>
             <p className="mt-3 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
               {workbenchFailureSummary(workbenchJob)}
@@ -4612,6 +4622,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <p>失败阶段：{workbenchStageLabel(job.failure_stage)}</p>
                     <p>return code：{job.return_code ?? EMPTY_VALUE}</p>
+                    <p>实际 tensor shape：{formatShapeEvidence(job.actual_tensor_shapes)}</p>
+                    <p>模型期望 shape：{formatShapeEvidence(job.model_expected_shapes)}</p>
                     <p>job_id：{job.job_id}</p>
                     <p>{workbenchDirectionLabel(job.direction)} · {datasetLabel(job.dataset ?? '')} · {job.model ?? EMPTY_VALUE}</p>
                   </div>
