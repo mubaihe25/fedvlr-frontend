@@ -119,6 +119,26 @@ const DISTANCE_METRIC_LABELS: Record<string, string> = {
   cosine: '余弦距离',
   l2: 'L2 欧氏距离',
 };
+const UPDATE_INPUT_SOURCE_LABELS: Record<UpdateInputSource, string> = {
+  client_update: '客户端模型更新',
+  participant_params: '参与客户端参数',
+  item_embedding: '商品嵌入向量',
+};
+const RISK_MODALITY_LABELS: Record<RiskModality, string> = {
+  'item embedding': '商品嵌入',
+  image: '图像特征',
+  text: '文本特征',
+};
+const SIMILARITY_METHOD_LABELS: Record<SimilarityMethod, string> = {
+  cosine: '余弦相似度',
+  dot: '点积相似度',
+  l2: 'L2 欧氏距离',
+};
+const CANDIDATE_LIMIT_LABELS: Record<CandidateLimit, string> = {
+  Top10: '前10项',
+  Top20: '前20项',
+  Top50: '前50项',
+};
 const ATTACK_STRENGTH_LABELS: Record<AttackStrength, string> = {
   weak: '弱',
   medium: '中',
@@ -255,9 +275,26 @@ const WORKBENCH_DIRECTION_LABELS: Record<string, string> = {
   update_leakage: '更新泄露',
   aggregation_defense: '聚合防御',
 };
+type WorkbenchDirectionId = keyof typeof WORKBENCH_DIRECTION_LABELS;
+const isWorkbenchDirection = (value: unknown): value is WorkbenchDirectionId =>
+  typeof value === 'string' && Object.prototype.hasOwnProperty.call(WORKBENCH_DIRECTION_LABELS, value);
 const workbenchDirectionLabel = (value?: string | null) => (value ? WORKBENCH_DIRECTION_LABELS[value] ?? toChineseLabel(value) : EMPTY_VALUE);
 const workbenchDirectionFromFilter = (value: string) =>
   Object.entries(WORKBENCH_DIRECTION_LABELS).find(([, label]) => label === value)?.[0] ?? '';
+
+// 选择最近可分析历史 job：按 started_at 降序（不是 job_id 字符串），
+// 只接受 status in {completed, partial} 且有 started_at/created_at 的项。
+const ANALYZABLE_JOB_STATUSES = new Set(['completed', 'partial']);
+const pickMostRecentAnalyzableJob = (items: WorkbenchJobListItem[]): WorkbenchJobListItem | null => {
+  const candidates = items.filter((item) => item.status && ANALYZABLE_JOB_STATUSES.has(item.status));
+  if (!candidates.length) return null;
+  const sorted = [...candidates].sort((a, b) => {
+    const aTime = new Date(a.started_at ?? a.created_at ?? 0).getTime();
+    const bTime = new Date(b.started_at ?? b.created_at ?? 0).getTime();
+    return bTime - aTime;
+  });
+  return sorted[0] ?? null;
+};
 const padDatePart = (value: number) => String(value).padStart(2, '0');
 const formatDateTimeToSeconds = (value?: Date | string | null) => {
   if (!value) return null;
@@ -517,7 +554,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [updateInputSource, setUpdateInputSource] = useState<UpdateInputSource>('client_update');
   const [candidateLimit, setCandidateLimit] = useState<CandidateLimit>('Top50');
   const [candidatePoolSize, setCandidatePoolSize] = useState(500);
-  const [hitK, setHitK] = useState(50);
   const [clientCountForLeakage, setClientCountForLeakage] = useState(5);
   const [batchSize, setBatchSize] = useState(128);
   const [seed, setSeed] = useState(2026);
@@ -871,6 +907,34 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
   }, [activeTab, archivePage, jobDateFromFilter, jobDateToFilter, jobDatasetFilter, jobDirectionFilter, jobModelFilter, jobSourceFilter, jobStatusFilter]);
 
+  // 单次分析对象回退：进入"单次分析" Tab 且当前没有打开的 job 时，
+  // 从 /workbench/jobs 中按 started_at 降序（不是 job_id 字符串）选择一条
+  // status in {completed, partial} 且有 result 的最近可分析 job 并自动打开。
+  useEffect(() => {
+    if (activeTab !== 'analysis') return;
+    if (workbenchJobId) return;
+    let active = true;
+    fetchWorkbenchJobs({limit: 12, page: 1})
+      .then((result) => {
+        if (!active) return;
+        setWorkbenchJobs(result);
+        setWorkbenchJobsError('');
+        const candidate = pickMostRecentAnalyzableJob(result.items);
+        if (candidate && active) {
+          void openWorkbenchJob(candidate);
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setWorkbenchJobs(null);
+        setWorkbenchJobsError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, workbenchJobId]);
+
   const datasetOptions = useMemo(() => {
     const optionValues = workbenchOptions?.datasets?.map((item) => item.id).filter((item) => item === 'AMAZON_BEAUTY_POC' || item === 'KU') ?? [];
     const values = optionValues.length ? optionValues : ['AMAZON_BEAUTY_POC', 'KU'];
@@ -1189,7 +1253,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       update_input_source: updateInputSource,
       similarity_method: similarityMethod,
       show_candidate_images: showCandidateImages,
-      hit_k: hitK,
+      hit_k: Number(candidateLimit.replace('Top', '')) || 50,
       client_count: clientCountForLeakage,
       mia_evidence_source: evidenceSource,
       mia_model: miaModel,
@@ -1563,7 +1627,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '模型', value: config.model || selectedPlayDefaults.model},
         {label: '攻击方向', value: '客户端更新泄露'},
         {label: '防御策略', value: aggregationMode === 'secure_aggregation' ? '安全聚合模拟' : '可选扰动层'},
-        {label: '观测对象', value: `${riskModality} / Top${hitK} 候选`},
+        {label: '观测对象', value: `${riskModality} / ${candidateLimit} 候选`},
         {label: '输出证据', value: leakageMetrics.join(' / ')},
       ],
       robust_defense_play: [
@@ -2151,6 +2215,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         );
       }
       if (selectedPlay.id === 'update_leakage_play') {
+        const riskModalityDescriptor = getParameterDescriptor('risk_modality');
+        const supportedModalities = new Set((riskModalityDescriptor.options ?? []).map((item) => String(item)));
+        const modalityDisabled = (value: RiskModality) => value !== 'item embedding' && supportedModalities.size > 0 && !supportedModalities.has(value);
+        const modalityDisabledTitle = (value: RiskModality) => modalityDisabled(value)
+          ? '后端 options 未列出该模态；当前不可选'
+          : undefined;
+        const modalityDisplay = (value: RiskModality) => riskModalityDescriptor.option_labels?.[value] ?? RISK_MODALITY_LABELS[value] ?? value;
         return (
           <div className="grid gap-3">
             {renderCommonTrainingControls()}
@@ -2159,42 +2230,34 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               segmented<UpdateInputSource>(updateInputSource, ['client_update', 'participant_params', 'item_embedding'], (value) => {
                 markParamChanged('观测对象');
                 setUpdateInputSource(value);
-              }),
+              }, undefined, undefined, (value) => UPDATE_INPUT_SOURCE_LABELS[value] ?? value),
             )}
-            {fieldShell('候选池大小', <input className={inputClass} type="number" min={10} max={5000} step={10} value={candidatePoolSize} onChange={(event) => {
+            {fieldShell('候选商品池大小', <input className={inputClass} type="number" min={10} max={5000} step={10} value={candidatePoolSize} onChange={(event) => {
               markParamChanged('观测对象');
               setCandidatePoolSize(Number(event.target.value));
             }} />)}
             {fieldShell(
-              '候选数量',
+              '返回候选数量',
               segmented<CandidateLimit>(candidateLimit, ['Top10', 'Top20', 'Top50'], (value) => {
                 markParamChanged('观测对象');
                 setCandidateLimit(value);
-                setHitK(Number(value.replace('Top', '')) || 50);
-              }),
+              }, undefined, undefined, (value) => CANDIDATE_LIMIT_LABELS[value] ?? value),
             )}
             {fieldShell(
-              'hit@K',
-              segmented<string>(`Top${hitK}`, ['Top10', 'Top20', 'Top50'], (value) => {
-                markParamChanged('观测对象');
-                setHitK(Number(value.replace('Top', '')) || 50);
-              }),
-            )}
-            {fieldShell(
-              '风险模态',
+              '泄露目标模态',
               segmented<RiskModality>(riskModality, ['item embedding', 'image', 'text'], (value) => {
                 markParamChanged('观测对象');
                 setRiskModality(value);
-              }),
+              }, modalityDisabled, modalityDisabledTitle, modalityDisplay),
             )}
             {fieldShell(
               '相似度方法',
               segmented<SimilarityMethod>(similarityMethod, ['cosine', 'dot', 'l2'], (value) => {
                 markParamChanged('观测对象');
                 setSimilarityMethod(value);
-              }),
+              }, undefined, undefined, (value) => SIMILARITY_METHOD_LABELS[value] ?? value),
             )}
-            {fieldShell('客户端数量', <input className={inputClass} type="number" min={1} max={50} step={1} value={clientCountForLeakage} onChange={(event) => {
+            {fieldShell('审计客户端数量', <input className={inputClass} type="number" min={1} max={50} step={1} value={clientCountForLeakage} onChange={(event) => {
               markParamChanged('观测对象');
               setClientCountForLeakage(Number(event.target.value));
             }} />)}
@@ -2202,14 +2265,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               markParamChanged('输出证据');
               setLeakageMetrics(next);
             }))}</div>)}
-            {fieldShell('导出候选证据', switchControl(exportReconstruction, () => {
+            {fieldShell('导出候选还原明细', switchControl(exportReconstruction, () => {
               markParamChanged('输出证据');
               setExportReconstruction((value) => !value);
-            }, '导出候选还原'))}
-            {fieldShell('候选商品图', switchControl(showCandidateImages, () => {
+            }, '导出候选还原明细'))}
+            {fieldShell('显示候选商品缩略图', switchControl(showCandidateImages, () => {
               markParamChanged('输出证据');
               setShowCandidateImages((value) => !value);
-            }, '展示缩略图'))}
+            }, '显示候选商品缩略图'))}
             {renderSharedDefenseControls()}
           </div>
         );
@@ -3083,116 +3146,71 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   const renderAnalysis = () => {
     const targetTitle = targetProduct?.title ?? selectedPlayDefaults.targetLabel;
-    const candidateItems = (v3LeakagePanel?.candidateItems?.length
-      ? v3LeakagePanel.candidateItems
-      : [
-          ...(report.recommendationComparison?.attack ?? []),
-          ...(report.recommendationComparison?.baseline ?? []),
-          ...(report.recommendationComparison?.defense ?? []),
-        ]).slice(0, 6);
-    const priorityPanel = () => {
-      if (selectedPlay.id === 'membership_privacy_play') {
-        return (
-          <section className="sandbox-panel rounded-[28px] p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <UserSearch className="h-5 w-5 text-violet-100" />
-              <h3 className="text-xl font-bold text-white">成员推断优先证据</h3>
-            </div>
-            <p className="text-sm leading-6 text-slate-400">攻击者尝试判断匿名 user-item 记录是否参与训练，不展示完整用户历史。</p>
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <MetricTile label="MIA AUC" value={formatMetricValue(privacyMetrics.miaAuc)} tone="text-violet-100" />
-              <MetricTile label="准确率" value={formatMetricValue(privacyMetrics.miaAccuracy)} tone="text-violet-100" />
-              <MetricTile label="F1" value={formatMetricValue(privacyMetrics.miaF1)} tone="text-violet-100" />
-              <MetricTile label="证据类型" value={privacyMetrics.miaEvidence} />
-            </div>
-            {privacyMetrics.anonymizedExamples?.length ? (
-              <p className="mt-4 rounded-2xl border border-white/10 bg-slate-950/35 px-3 py-2 text-sm text-slate-300">
-                匿名样例：{privacyMetrics.anonymizedExamples.slice(0, 2).map((item) => (typeof item === 'string' ? item : 'user-*** / item-***')).join(' / ')}
-              </p>
-            ) : null}
-          </section>
-        );
-      }
-      if (selectedPlay.id === 'update_leakage_play') {
-        return (
-          <section className="sandbox-panel rounded-[28px] p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <Database className="h-5 w-5 text-cyan-100" />
-              <h3 className="text-xl font-bold text-white">客户端更新泄露优先证据</h3>
-            </div>
-            <p className="text-sm leading-6 text-slate-400">这是候选交互还原，不是完整用户历史恢复。</p>
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <MetricTile label="hit@10" value={formatMetricValue(privacyMetrics.hit10)} />
-              <MetricTile label="hit@20" value={formatMetricValue(privacyMetrics.hit20)} />
-              <MetricTile label="hit@50" value={formatMetricValue(privacyMetrics.hit50)} />
-              <MetricTile label="最高风险模态" value={privacyMetrics.riskyModality} />
-            </div>
-          </section>
-        );
-      }
-      if (selectedPlay.id === 'robust_defense_play') {
-        return (
-          <section className="sandbox-panel rounded-[28px] p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <ShieldCheck className="h-5 w-5 text-emerald-100" />
-              <h3 className="text-xl font-bold text-white">鲁棒防御优先证据</h3>
-            </div>
-            <p className="text-sm leading-6 text-slate-400">重点观察推荐性能恢复和异常更新过滤；鲁棒聚合要求服务端能看到逐客户端更新。</p>
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <MetricTile label="Recall@50" value={formatMetricValue(v3AggregationPanel?.recallAfter ?? report.metricsSummary?.defense?.recall50 ?? report.metricsSummary?.baseline?.recall50)} />
-              <MetricTile label="NDCG@50" value={formatMetricValue(v3AggregationPanel?.ndcgAfter ?? report.metricsSummary?.defense?.ndcg50 ?? report.metricsSummary?.baseline?.ndcg50)} />
-              <MetricTile label="恢复率" value={formatPercentValue(report.metricsSummary?.recoveryRate)} tone="text-emerald-100" />
-              <MetricTile label="状态" value={defenseStatusLabel(v3AggregationPanel?.status)} />
-            </div>
-          </section>
-        );
-      }
-      return null;
-    };
-    const analysisHeadlineByPlay: Record<ExperimentPlayId, string> = {
-      target_poisoning_play: activeJobMetrics
-        ? (displayRankLift ?? 0) > 0
-          ? `目标商品在本轮真实训练中从第 ${displayRankBefore} 位提升到第 ${displayRankAfter} 位，${displayFinalExposure}。`
-          : `目标商品在本轮真实训练前后均为第 ${displayRankAfter} 位，未观察到排名提升，${displayFinalExposure}。`
-        : `目标商品在未屏蔽排序中从第 ${displayRankBefore ?? 170} 位提升到第 ${displayRankAfter ?? 3} 位，但最终 Top50 推荐列表未曝光。`,
-      membership_privacy_play: `成员推断审计显示 AUC 为 ${formatMetricValue(privacyMetrics.miaAuc)}，攻击者尝试判断匿名 user-item 记录是否参与训练。`,
-      update_leakage_play: `客户端更新泄露审计显示 hit@50 为 ${formatMetricValue(privacyMetrics.hit50)}，这是候选交互还原，不是完整用户历史恢复。`,
-      robust_defense_play: `鲁棒聚合防御重点观察 Recall@50 / NDCG@50 恢复和异常更新过滤，当前恢复率为 ${formatPercentValue(report.metricsSummary?.recoveryRate)}。`,
-    };
-    const analysisFocusCards: Record<ExperimentPlayId, Array<{label: string; value: string; note?: string; tone?: string}>> = {
-      target_poisoning_play: [
-        {label: '目标排序', value: `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`, tone: 'text-rose-100'},
-        {label: '排名提升', value: formatSigned(displayRankLift, 0), tone: 'text-rose-100'},
-        {label: '最终 Top50 曝光', value: displayFinalExposure, tone: 'text-emerald-100'},
-        {label: '目标操纵指数', value: formatMetricValue(v3TargetPanel?.targetManipulationIndex ?? null), note: '展示指标，不作为标准学术指标。', tone: 'text-rose-100'},
-      ],
-      membership_privacy_play: [
-        {label: 'MIA AUC', value: formatMetricValue(privacyMetrics.miaAuc), tone: 'text-violet-100'},
-        {label: '准确率', value: formatMetricValue(privacyMetrics.miaAccuracy), tone: 'text-violet-100'},
-        {label: '证据类型', value: privacyMetrics.miaEvidence, tone: 'text-slate-100'},
-        {label: '匿名样例', value: 'user-*** / item-***', note: '只展示匿名形式，不泄露完整历史。', tone: 'text-slate-100'},
-      ],
-      update_leakage_play: [
-        {label: 'hit@10', value: formatMetricValue(privacyMetrics.hit10), tone: 'text-cyan-100'},
-        {label: 'hit@20', value: formatMetricValue(privacyMetrics.hit20), tone: 'text-cyan-100'},
-        {label: 'hit@50', value: formatMetricValue(privacyMetrics.hit50), tone: 'text-cyan-100'},
-        {label: '最高风险模态', value: privacyMetrics.riskyModality, note: '候选还原，不是完整用户历史恢复。', tone: 'text-cyan-100'},
-      ],
-      robust_defense_play: [
-        {label: 'Recall@50', value: formatMetricValue(report.metricsSummary?.defense?.recall50 ?? report.metricsSummary?.baseline?.recall50), tone: 'text-cyan-100'},
-        {label: 'NDCG@50', value: formatMetricValue(report.metricsSummary?.defense?.ndcg50 ?? report.metricsSummary?.baseline?.ndcg50), tone: 'text-violet-100'},
-        {label: '防御恢复率', value: formatPercentValue(report.metricsSummary?.recoveryRate), tone: 'text-emerald-100'},
-        {label: '异常更新过滤', value: formatPlainValue(report.defenseTrace?.filteredClients ?? report.defenseTrace?.clippedClients), tone: 'text-emerald-100'},
-      ],
-    };
+
+    // 1) 分析对象优先级：当前 workbench job.direction > workbenchResult.direction > 选中剧本默认 > 未知
+    const jobDirectionRaw = workbenchJob?.direction ?? workbenchResult?.direction ?? null;
+    const analysisDirection: WorkbenchDirectionId | null = isWorkbenchDirection(jobDirectionRaw)
+      ? jobDirectionRaw
+      : (() => {
+          if (selectedPlay.id === 'target_poisoning_play') return 'recommendation_manipulation';
+          if (selectedPlay.id === 'membership_privacy_play') return 'membership_inference';
+          if (selectedPlay.id === 'update_leakage_play') return 'update_leakage';
+          if (selectedPlay.id === 'robust_defense_play') return 'aggregation_defense';
+          return null;
+        })();
+
+    // 2) 紧凑"本次实验摘要"：只展示真实存在字段
+    const analysisSummaryEntries: Array<{label: string; value: string}> = [];
+    const summaryDirectionLabel = analysisDirection ? workbenchDirectionLabel(analysisDirection) : EMPTY_VALUE;
+    if (summaryDirectionLabel && summaryDirectionLabel !== EMPTY_VALUE) {
+      analysisSummaryEntries.push({label: '实验方向', value: summaryDirectionLabel});
+    }
+    if (workbenchJob?.dataset) {
+      analysisSummaryEntries.push({label: '数据集', value: datasetLabel(workbenchJob.dataset)});
+    } else if (config.dataset) {
+      analysisSummaryEntries.push({label: '数据集', value: datasetLabel(config.dataset)});
+    }
+    if (workbenchJob?.model) {
+      analysisSummaryEntries.push({label: '模型', value: workbenchJob.model});
+    } else if (config.model) {
+      analysisSummaryEntries.push({label: '模型', value: config.model});
+    }
+    const summaryStartedAt = workbenchJob?.started_at ?? workbenchJob?.created_at;
+    if (summaryStartedAt) {
+      analysisSummaryEntries.push({label: '开始时间', value: formatDateTimeToSeconds(summaryStartedAt) ?? EMPTY_VALUE});
+    }
+    if (workbenchJob?.status) {
+      analysisSummaryEntries.push({label: '完成状态', value: workbenchStatusLabel(workbenchJob.status)});
+    }
+    const analysisSummarySource = workbenchResult
+      ? `workbench job result · ${workbenchSourceLabel(workbenchResult.source)}`
+      : workbenchJob
+        ? `workbench job · ${workbenchSourceLabel(workbenchJob.source)}`
+        : '未选择分析对象';
+
+    // 3) 当前 workbench job 的真实字段访问
     const jobMetricsSummary = workbenchResult?.metrics_summary;
-    const jobMetricsSource = typeof jobMetricsSummary?.source === 'string' ? jobMetricsSummary.source : workbenchResult?.source;
     const jobMetrics = jobMetricsSummary?.metrics && typeof jobMetricsSummary.metrics === 'object' && !Array.isArray(jobMetricsSummary.metrics)
       ? (jobMetricsSummary.metrics as Record<string, unknown>)
       : null;
-    const jobMetricEntries = Object.entries(jobMetrics ?? {})
-      .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) || value === null)
-      .slice(0, 6);
+    const hasJobMetric = (key: string) => jobMetrics
+      ? Object.prototype.hasOwnProperty.call(jobMetrics, key) && jobMetrics[key] !== undefined && jobMetrics[key] !== null
+      : false;
+    const analysisJobMetricRaw = (key: string): number | null => {
+      const value = jobMetrics?.[key];
+      if (typeof value === 'number' && !Number.isNaN(value)) return value;
+      if (typeof value === 'string' && value.trim() !== '') {
+        const parsed = Number(value);
+        return Number.isNaN(parsed) ? null : parsed;
+      }
+      return null;
+    };
+    const analysisJobMetricScalar = (key: string): string | number | boolean | null => {
+      const value = jobMetrics?.[key];
+      if (value === null || value === undefined) return null;
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+      return null;
+    };
     const analysisJobMetric = (key: string, fallback: string = EMPTY_VALUE) => {
       const value = jobMetrics?.[key];
       if (['string', 'number', 'boolean'].includes(typeof value) || value === null) {
@@ -3200,236 +3218,548 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       }
       return fallback;
     };
-    const analysisFocusCardsFromJob: Record<ExperimentPlayId, Array<{label: string; value: string; note?: string; tone?: string}>> = {
-      target_poisoning_play: [
-        {label: '目标商品', value: targetTitle, tone: 'text-rose-100'},
-        {label: 'rank 变化', value: `${analysisJobMetric('target_rank_before')} -> ${analysisJobMetric('target_rank_after')}`, tone: 'text-rose-100'},
-        {label: 'Top50 是否命中', value: analysisJobMetric('masked_top50_hit'), tone: 'text-emerald-100'},
-        {label: '排名提升', value: analysisJobMetric('rank_gain'), tone: 'text-rose-100'},
+
+    // 4) 防御是否在当前 job 真正启用：基于 job 自身配置/导出，不引入 V3 fallback
+    const jobConfigSummary = (workbenchJob?.config_summary ?? null) as Record<string, unknown> | null;
+    const defenseActiveForJob = Boolean(
+      activeJobDefenses.length ||
+        (jobConfigSummary && Array.isArray(jobConfigSummary.robust_aggregators) && (jobConfigSummary.robust_aggregators as unknown[]).length > 0) ||
+        (jobConfigSummary && jobConfigSummary.defense_algorithm && typeof jobConfigSummary.defense_algorithm === 'string'),
+    );
+    const baseAttackForJob: string | null = (() => {
+      if (jobConfigSummary && typeof jobConfigSummary.base_attack === 'string') return String(jobConfigSummary.base_attack);
+      if (hasJobMetric('base_attack')) {
+        const v = analysisJobMetricScalar('base_attack');
+        if (typeof v === 'string') return v;
+      }
+      return null;
+    })();
+
+    // 5) 训练质量指标（Loss / Recall@50 / NDCG@50 / 训练轮数）：仅当实际导出才显示
+    const trainingQualityTiles: Array<{label: string; value: string; tone?: string}> = [];
+    if (hasJobMetric('loss_final') || hasJobMetric('loss')) {
+      trainingQualityTiles.push({label: 'Loss', value: formatMetricValue(analysisJobMetricRaw('loss_final') ?? analysisJobMetricRaw('loss'))});
+    }
+    if (hasJobMetric('recall_at_50')) {
+      trainingQualityTiles.push({label: 'Recall@50', value: formatMetricValue(analysisJobMetricRaw('recall_at_50')), tone: 'text-cyan-100'});
+    }
+    if (hasJobMetric('ndcg_at_50')) {
+      trainingQualityTiles.push({label: 'NDCG@50', value: formatMetricValue(analysisJobMetricRaw('ndcg_at_50')), tone: 'text-violet-100'});
+    }
+    if (hasJobMetric('total_rounds')) {
+      trainingQualityTiles.push({label: '训练轮数', value: String(analysisJobMetricRaw('total_rounds'))});
+    }
+
+    // 6) 方向 → section 顺序映射；旧方向切换时通过 key 强制重挂以彻底卸载旧数据
+    const sectionsForDirection: Record<WorkbenchDirectionId, ReadonlyArray<string>> = {
+      recommendation_manipulation: [
+        'header',
+        'target_trajectory',
+        'recommendation_size',
+        'recommendation_comparison',
+        'recommendation_metrics',
+        'defense_summary',
       ],
-      membership_privacy_play: [
-        {label: 'AUC', value: analysisJobMetric('auc'), tone: 'text-violet-100'},
-        {label: 'Accuracy', value: analysisJobMetric('accuracy'), tone: 'text-violet-100'},
-        {label: '成员与非成员得分差', value: analysisJobMetric('score_gap'), tone: 'text-violet-100'},
-        {label: '证据类型', value: analysisJobMetric('evidence_type'), tone: 'text-slate-100'},
+      membership_inference: [
+        'header',
+        'mia_metrics',
+        'mia_config',
+        'mia_score_distribution',
       ],
-      update_leakage_play: [
-        {label: 'hit@10', value: analysisJobMetric('hit_at_10'), tone: 'text-cyan-100'},
-        {label: 'hit@20', value: analysisJobMetric('hit_at_20'), tone: 'text-cyan-100'},
-        {label: 'hit@50', value: analysisJobMetric('hit_at_50'), tone: 'text-cyan-100'},
-        {label: '风险模态', value: analysisJobMetric('highest_risk_modality'), tone: 'text-cyan-100'},
+      update_leakage: [
+        'header',
+        'leakage_metrics',
+        'leakage_config',
+        'leakage_candidates',
       ],
-      robust_defense_play: [
-        {label: '聚合算法', value: analysisJobMetric('defense_algorithm'), tone: 'text-emerald-100'},
-        {label: 'Recall@50', value: analysisJobMetric('recall_at_50'), tone: 'text-cyan-100'},
-        {label: 'NDCG@50', value: analysisJobMetric('ndcg_at_50'), tone: 'text-violet-100'},
-        {label: '过滤结果', value: analysisJobMetric('rejected_client_count'), tone: 'text-emerald-100'},
+      aggregation_defense: [
+        'header',
+        'defense_metrics',
+        'defense_config',
+        'defense_filter',
       ],
     };
-    const selectedAnalysisFocusCards = jobMetrics ? analysisFocusCardsFromJob[selectedPlay.id] : analysisFocusCards[selectedPlay.id];
-    const analysisEvidenceSource = jobMetrics ? '当前 workbench job result' : v3EvidenceAvailable ? '当前 showcase V3 artifact' : '未导出';
 
-    return (
-      <div className="space-y-5">
-        <section className="sandbox-panel rounded-[28px] p-6">
-          <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-            <div>
-              <p className="text-xs font-bold tracking-[0.2em] text-rose-100/75">本次实验结论</p>
-              <h2 className="mt-2 text-2xl font-black leading-tight text-white">{analysisHeadlineByPlay[selectedPlay.id]}</h2>
-              <p className="mt-2 inline-flex rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">
-                证据来源：{analysisEvidenceSource}
-              </p>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
-                当前单次分析会优先展示所选剧本的关键证据，再给出推荐、隐私和防御的交叉摘要。
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {selectedAnalysisFocusCards.map((item) => (
-                <MetricTile key={item.label} label={item.label} value={item.value} note={item.note} tone={item.tone} />
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {workbenchResult?.metrics_summary ? (
+    // 7) 失败 job 单独分支
+    if (workbenchJob && workbenchJob.status === 'failed') {
+      return (
+        <div className="space-y-5">
           <section className="sandbox-panel rounded-[28px] p-5">
-            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-              <div>
-                <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">WORKBENCH 结果回填</p>
-                <h3 className="mt-1 text-xl font-bold text-white">{workbenchStatusLabel(workbenchResult.status)} · {workbenchSourceLabel(jobMetricsSource)}</h3>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                  {typeof jobMetricsSummary.message === 'string' ? jobMetricsSummary.message : '真实全量训练任务已返回结果摘要。'}
-                </p>
-              </div>
-              <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">
-                job {shortWorkbenchJobId(workbenchResult.job_id)}
-              </span>
-            </div>
-            {jobMetricEntries.length ? (
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {jobMetricEntries.map(([key, value]) => (
-                  <MetricTile key={key} label={workbenchMetricLabel(key)} value={workbenchMetricValue(key, value as string | number | boolean | null)} />
-                ))}
-              </div>
-            ) : (
-              <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-400">该 job 尚未导出可展示指标。</p>
-            )}
-            {jobMetricsSource === 'full_train' ? (
-              <p className="mt-3 text-xs font-semibold text-emerald-100">该结果来自本次真实全量训练。</p>
+            <p className="text-xs font-bold tracking-[0.2em] text-rose-100/75">单次分析</p>
+            <h2 className="mt-2 text-2xl font-black text-white">该实验未完成，无法进入单次分析</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+              失败阶段：{workbenchStageLabel(workbenchJob.failure_stage ?? workbenchJob.stage)}
+            </p>
+            <p className="mt-3 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
+              {workbenchFailureSummary(workbenchJob)}
+            </p>
+            {workbenchJob.error_detail ? (
+              <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950/65 p-3 font-mono text-[11px] leading-5 text-slate-300">{workbenchJob.error_detail}</pre>
             ) : null}
           </section>
-        ) : null}
+        </div>
+      );
+    }
 
-        {priorityPanel()}
+    // 8) 无分析对象：简洁空状态
+    if (!analysisDirection && !workbenchJobId) {
+      return (
+        <div className="space-y-5">
+          <section className="sandbox-panel rounded-[28px] p-6">
+            <p className="text-xs font-bold tracking-[0.2em] text-rose-100/75">单次分析</p>
+            <h2 className="mt-2 text-2xl font-black text-white">暂无可分析实验</h2>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+              请先在「实验编排」开始一次训练，或在「历史实验」中选择一条已完成或部分完成的 job。系统会自动读取对应的 workbench job result，不会跨实验或跨 V3 场景拼接证据。
+            </p>
+          </section>
+        </div>
+      );
+    }
 
-        <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="sandbox-panel rounded-[28px] p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <Target className="h-5 w-5 text-rose-100" />
-              <h3 className="text-xl font-bold text-white">目标商品轨迹</h3>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-[160px_minmax(0,1fr)]">
-              <ProductImage item={targetImageItem} className="h-40 w-full sm:w-40" />
-              <div className="min-w-0">
-                <h4 className="line-clamp-3 text-lg font-black leading-6 text-white">{targetTitle}</h4>
-                <p className="mt-2 text-sm text-slate-400">{targetProduct?.category ?? '暂无类目'}</p>
-                <div className="mt-4 flex items-center gap-3">
-                  <span className="rounded-2xl border border-slate-200/20 bg-slate-300/10 px-4 py-2 font-mono text-2xl font-black text-slate-100">
-                    {displayRankBefore ?? 170}
-                  </span>
-                  <ChevronRight className="h-6 w-6 text-rose-100" />
-                  <span className="rounded-2xl border border-rose-200/35 bg-rose-300/12 px-4 py-2 font-mono text-2xl font-black text-rose-100">
-                    {displayRankAfter ?? 3}
-                  </span>
-                </div>
-                <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
-                  {activeJobMetrics
-                    ? (displayRankLift ?? 0) > 0
-                      ? `本轮真实训练中目标排名提升 ${formatPlainValue(displayRankLift)} 位，${displayFinalExposure}。`
-                      : `本轮真实训练未观察到目标排名提升，${displayFinalExposure}。`
-                    : '内部排序已推进，但最终曝光未命中。'}
-                </p>
-                {!targetAppearsInLoadedList && displayFinalExposure === '最终曝光未命中' ? (
-                  <p className="mt-4 rounded-2xl border border-emerald-200/20 bg-emerald-300/10 px-3 py-2 text-sm font-semibold text-emerald-100">
-                    目标商品未进入最终推荐列表，不插入推荐对照。
-                  </p>
-                ) : null}
-              </div>
-            </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <MetricTile label="原始未屏蔽排序" value={formatRank(displayRankBefore)} />
-              <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" />
-              <MetricTile label="归一化提升" value={formatRatio(displayNormalizedLift)} tone="text-rose-100" />
-              <MetricTile label="倒数排名增益" value={formatSmallNumber(displayReciprocalGain)} tone="text-amber-100" />
-              <MetricTile label="目标操纵指数" value={activeJobMetrics ? EMPTY_VALUE : formatMetricValue(v3TargetPanel?.targetManipulationIndex ?? null)} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
-              <MetricTile label="最终 Top50 曝光" value={displayFinalExposure} tone="text-emerald-100" />
-              <MetricTile label="推荐 Jaccard" value={activeJobMetrics ? EMPTY_VALUE : formatMetricValue(v3TargetPanel?.recommendationJaccard ?? null)} />
-              <MetricTile label="变化用户" value={activeJobMetrics ? EMPTY_VALUE : formatPlainValue(v3TargetPanel?.changedUserCount)} />
-              <MetricTile label="变化商品" value={activeJobMetrics ? EMPTY_VALUE : formatPlainValue(v3TargetPanel?.changedItemCount)} />
-            </div>
-          </div>
-
-          <div className="sandbox-panel rounded-[28px] p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <BarChart3 className="h-5 w-5 text-cyan-100" />
-              <h3 className="text-xl font-bold text-white">本次推荐列表规模</h3>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <MetricTile label="正常推荐" value={`${recommendationCounts.baseline}`} />
-              <MetricTile label="攻击后推荐" value={`${recommendationCounts.attack}`} tone="text-rose-100" />
-              <MetricTile label="防御后推荐" value={`${recommendationCounts.defense}`} tone="text-emerald-100" />
-            </div>
-            <p className="mt-4 text-sm leading-6 text-slate-400">
-              推荐项变化在下方逐项展示：新增、上升、下降、保持。分数为空时不显示；图片优先使用缩略图，其次本地缓存图，再其次远程图。
+    // 9) section 渲染器：每个 section 仅当对应真实字段存在才返回内容，否则返回 null
+    const renderHeader = () => (
+      <section className="sandbox-panel rounded-[28px] p-5">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+          <div>
+            <p className="text-xs font-bold tracking-[0.2em] text-rose-100/75">本次实验摘要</p>
+            <h2 className="mt-2 text-2xl font-black leading-tight text-white">
+              {analysisDirection ? workbenchDirectionLabel(analysisDirection) : '尚未选择分析对象'}
+            </h2>
+            <p className="mt-2 inline-flex rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">
+              结果来源：{analysisSummarySource}
             </p>
           </div>
-        </section>
+          {workbenchJobId ? (
+            <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">
+              job {shortWorkbenchJobId(workbenchJobId)}
+            </span>
+          ) : null}
+        </div>
+        {analysisSummaryEntries.length ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+            {analysisSummaryEntries.map((entry) => (
+              <MetricTile key={entry.label} label={entry.label} value={entry.value} />
+            ))}
+          </div>
+        ) : null}
+        {trainingQualityTiles.length ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+            {trainingQualityTiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+            ))}
+          </div>
+        ) : null}
+      </section>
+    );
 
+    const renderTargetTrajectory = () => {
+      const hasAnyTargetMetric =
+        hasJobMetric('target_rank_before') ||
+        hasJobMetric('target_rank_after') ||
+        hasJobMetric('normalized_lift') ||
+        hasJobMetric('normalized_rank_gain') ||
+        hasJobMetric('reciprocal_rank_gain') ||
+        hasJobMetric('target_manipulation_index') ||
+        hasJobMetric('masked_top50_hit') ||
+        hasJobMetric('attack_topk_hit') ||
+        hasJobMetric('recommendation_jaccard') ||
+        hasJobMetric('changed_user_count') ||
+        hasJobMetric('changed_item_count') ||
+        hasJobMetric('rank_gain');
+      if (!hasAnyTargetMetric) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <Target className="h-5 w-5 text-rose-100" />
+            <h3 className="text-xl font-bold text-white">目标商品轨迹</h3>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-[160px_minmax(0,1fr)]">
+            <ProductImage item={targetImageItem} className="h-40 w-full sm:w-40" />
+            <div className="min-w-0">
+              <h4 className="line-clamp-3 text-lg font-black leading-6 text-white">{targetTitle}</h4>
+              <p className="mt-2 text-sm text-slate-400">{targetProduct?.category ?? EMPTY_VALUE}</p>
+              <div className="mt-4 flex items-center gap-3">
+                <span className="rounded-2xl border border-slate-200/20 bg-slate-300/10 px-4 py-2 font-mono text-2xl font-black text-slate-100">
+                  {hasJobMetric('target_rank_before') ? formatRank(displayRankBefore) : EMPTY_VALUE}
+                </span>
+                <ChevronRight className="h-6 w-6 text-rose-100" />
+                <span className="rounded-2xl border border-rose-200/35 bg-rose-300/12 px-4 py-2 font-mono text-2xl font-black text-rose-100">
+                  {hasJobMetric('target_rank_after') ? formatRank(displayRankAfter) : EMPTY_VALUE}
+                </span>
+              </div>
+              <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
+                {activeJobMetrics
+                  ? (displayRankLift ?? 0) > 0
+                    ? `本轮真实训练中目标排名提升 ${formatPlainValue(displayRankLift)} 位，${displayFinalExposure}。`
+                    : `本轮真实训练未观察到目标排名提升，${displayFinalExposure}。`
+                  : '内部排序已推进，但最终曝光未命中。'}
+              </p>
+              {!targetAppearsInLoadedList && displayFinalExposure === '最终曝光未命中' ? (
+                <p className="mt-4 rounded-2xl border border-emerald-200/20 bg-emerald-300/10 px-3 py-2 text-sm font-semibold text-emerald-100">
+                  目标商品未进入最终推荐列表，不插入推荐对照。
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {hasJobMetric('target_rank_before') ? <MetricTile label="原始未屏蔽排序" value={formatRank(displayRankBefore)} /> : null}
+            {hasJobMetric('target_rank_after') ? <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" /> : null}
+            {hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain') ? (
+              <MetricTile label="归一化提升" value={formatRatio(displayNormalizedLift)} tone="text-rose-100" />
+            ) : null}
+            {hasJobMetric('reciprocal_rank_gain') ? (
+              <MetricTile label="倒数排名增益" value={formatSmallNumber(displayReciprocalGain)} tone="text-amber-100" />
+            ) : null}
+            {hasJobMetric('target_manipulation_index') ? (
+              <MetricTile label="目标操纵指数" value={formatMetricValue(analysisJobMetricRaw('target_manipulation_index'))} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
+            ) : null}
+            {hasJobMetric('masked_top50_hit') || hasJobMetric('attack_topk_hit') ? (
+              <MetricTile label="最终 Top50 曝光" value={displayFinalExposure} tone="text-emerald-100" />
+            ) : null}
+            {hasJobMetric('recommendation_jaccard') ? (
+              <MetricTile label="推荐 Jaccard" value={formatMetricValue(analysisJobMetricRaw('recommendation_jaccard'))} />
+            ) : null}
+            {hasJobMetric('changed_user_count') ? (
+              <MetricTile label="变化用户" value={formatPlainValue(analysisJobMetricRaw('changed_user_count'))} />
+            ) : null}
+            {hasJobMetric('changed_item_count') ? (
+              <MetricTile label="变化商品" value={formatPlainValue(analysisJobMetricRaw('changed_item_count'))} />
+            ) : null}
+            {hasJobMetric('rank_gain') ? (
+              <MetricTile label="排名提升" value={analysisJobMetric('rank_gain')} tone="text-rose-100" />
+            ) : null}
+          </div>
+        </section>
+      );
+    };
+
+    const renderRecommendationSize = () => {
+      if (recommendationCounts.baseline === 0 && recommendationCounts.attack === 0 && recommendationCounts.defense === 0) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <BarChart3 className="h-5 w-5 text-cyan-100" />
+            <h3 className="text-xl font-bold text-white">本次推荐列表规模</h3>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <MetricTile label="正常推荐" value={`${recommendationCounts.baseline}`} />
+            <MetricTile label="攻击后推荐" value={`${recommendationCounts.attack}`} tone="text-rose-100" />
+            <MetricTile label="防御后推荐" value={`${recommendationCounts.defense}`} tone="text-emerald-100" />
+          </div>
+          <p className="mt-4 text-sm leading-6 text-slate-400">
+            推荐项变化在下方逐项展示：新增、上升、下降、保持。分数为空时不显示；图片优先使用缩略图，其次本地缓存图，再其次远程图。
+          </p>
+        </section>
+      );
+    };
+
+    const renderRecommendationComparison = () => {
+      if (!activeRecommendationComparison) return null;
+      return (
         <RecommendationComparisonBoard
           comparison={activeRecommendationComparison}
           scenarioId={jobRecommendationComparison ? null : selectedScenario.scenarioId}
           targetItemId={(activeJobMetrics?.target_item_id as string | number | null | undefined) ?? targetProduct?.itemId}
         />
+      );
+    };
 
-        <section className="grid gap-5 xl:grid-cols-2">
-          <div className="sandbox-panel rounded-[28px] p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <UserSearch className="h-5 w-5 text-violet-100" />
-              <h3 className="text-xl font-bold text-white">成员推断攻击</h3>
-            </div>
-            <p className="text-sm leading-6 text-slate-400">攻击者尝试判断某条 user-item 记录是否参与训练。当前展示依赖结果文件中的摘要证据。</p>
-            {activeJobMetrics ? (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400">当前 job 未执行成员推断评估，未导出该方向证据。</div>
-            ) : <><div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <MetricTile label="AUC" value={formatMetricValue(privacyMetrics.miaAuc)} tone="text-violet-100" />
-              <MetricTile label="准确率" value={formatMetricValue(privacyMetrics.miaAccuracy)} tone="text-violet-100" />
-              <MetricTile label="证据类型" value={privacyMetrics.miaEvidence} tone="text-slate-100" />
-              <MetricTile label="Precision" value={formatMetricValue(privacyMetrics.miaPrecision)} tone="text-violet-100" />
-              <MetricTile label="Recall" value={formatMetricValue(privacyMetrics.miaRecall)} tone="text-violet-100" />
-              <MetricTile label="Score gap" value={formatMetricValue(privacyMetrics.miaScoreGap)} tone="text-violet-100" />
-            </div>
-            <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/35 p-4">
-              {[
-                {label: '参与训练记录', value: Math.min(0.92, Math.max(0.45, privacyMetrics.miaAuc ?? 0.56)), tone: 'bg-violet-300'},
-                {label: '未参与训练记录', value: Math.min(0.82, Math.max(0.32, 1 - (privacyMetrics.miaAuc ?? 0.56) + 0.12)), tone: 'bg-slate-400'},
-              ].map((item) => (
-                <div key={item.label} className="mb-3 last:mb-0">
-                  <div className="mb-1 flex justify-between text-xs text-slate-400">
-                    <span>{item.label}</span>
-                    <span>{formatRatio(item.value)}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-800">
-                    <div className={cn('h-2 rounded-full', item.tone)} style={{width: `${item.value * 100}%`}} />
-                  </div>
-                </div>
-              ))}
-            </div></>}
-          </div>
-
-          <div className="sandbox-panel rounded-[28px] p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <Database className="h-5 w-5 text-cyan-100" />
-              <h3 className="text-xl font-bold text-white">客户端更新泄露</h3>
-            </div>
-            <p className="text-sm leading-6 text-slate-400">这是候选交互还原，不是完整用户历史恢复，也不是图像反演。</p>
-            {activeJobMetrics ? (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400">当前 job 未执行客户端更新泄露评估，未导出候选还原证据。</div>
-            ) : <><div className="mt-4 grid gap-3 sm:grid-cols-4">
-              <MetricTile label="hit@10" value={formatMetricValue(privacyMetrics.hit10)} />
-              <MetricTile label="hit@20" value={formatMetricValue(privacyMetrics.hit20)} />
-              <MetricTile label="hit@50" value={formatMetricValue(privacyMetrics.hit50)} />
-              <MetricTile label="最高风险模态" value={privacyMetrics.riskyModality} tone="text-cyan-100" />
-            </div>
-            <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-6">
-              {candidateItems.length ? (
-                candidateItems.map((item, index) => (
-                  <div key={`${item.itemId ?? index}-candidate`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
-                    <ProductImage item={item} className="h-16 w-full rounded-xl" />
-                    <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-300">{getProductTitle(item)}</p>
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400">暂无候选商品 metadata。</div>
-              )}
-            </div></>}
+    const renderRecommendationMetrics = () => {
+      const tiles: Array<{label: string; value: string; tone?: string}> = [];
+      if (hasJobMetric('recommendation_jaccard')) tiles.push({label: '推荐 Jaccard', value: formatMetricValue(analysisJobMetricRaw('recommendation_jaccard'))});
+      if (hasJobMetric('changed_user_count')) tiles.push({label: '变化用户', value: formatPlainValue(analysisJobMetricRaw('changed_user_count'))});
+      if (hasJobMetric('changed_item_count')) tiles.push({label: '变化商品', value: formatPlainValue(analysisJobMetricRaw('changed_item_count'))});
+      if (hasJobMetric('target_manipulation_index')) tiles.push({label: '目标操纵指数', value: formatMetricValue(analysisJobMetricRaw('target_manipulation_index')), tone: 'text-rose-100'});
+      if (hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain')) tiles.push({label: '归一化提升', value: formatRatio(displayNormalizedLift), tone: 'text-rose-100'});
+      if (hasJobMetric('reciprocal_rank_gain')) tiles.push({label: '倒数排名增益', value: formatSmallNumber(displayReciprocalGain), tone: 'text-amber-100'});
+      if (!tiles.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <h3 className="text-xl font-bold text-white">已导出推荐指标</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+            ))}
           </div>
         </section>
+      );
+    };
 
+    const renderDefenseSummary = () => {
+      if (!defenseActiveForJob) return null;
+      const tiles: Array<{label: string; value: string; tone?: string}> = [];
+      const algVal = analysisJobMetricScalar('defense_algorithm');
+      if (typeof algVal === 'string' && algVal) tiles.push({label: '聚合算法', value: algVal, tone: 'text-emerald-100'});
+      if (hasJobMetric('recall_at_50')) tiles.push({label: 'Recall@50', value: formatMetricValue(analysisJobMetricRaw('recall_at_50')), tone: 'text-cyan-100'});
+      if (hasJobMetric('ndcg_at_50')) tiles.push({label: 'NDCG@50', value: formatMetricValue(analysisJobMetricRaw('ndcg_at_50')), tone: 'text-violet-100'});
+      if (hasJobMetric('recovery_rate_recall')) tiles.push({label: '恢复率', value: formatPercentValue(analysisJobMetricRaw('recovery_rate_recall') as number | null), tone: 'text-emerald-100'});
+      if (hasJobMetric('rejected_client_count') || hasJobMetric('filtered_client_count')) {
+        tiles.push({label: '过滤结果', value: formatPlainValue(analysisJobMetricRaw('rejected_client_count') ?? analysisJobMetricRaw('filtered_client_count')), tone: 'text-emerald-100'});
+      }
+      if (!tiles.length) return null;
+      return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
             <ShieldCheck className="h-5 w-5 text-emerald-100" />
             <h3 className="text-xl font-bold text-white">防御摘要</h3>
           </div>
-          {activeJobMetrics && !activeJobDefenses.length ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400">当前 job 未启用聚合防御或更新扰动，未导出防御结果。</div>
-          ) : <div className="grid gap-3 md:grid-cols-4">
-            <MetricTile label="聚合规则" value={report.defenseTrace?.aggregationRule ?? inferDefenseType(selectedScenario, report)} tone="text-emerald-100" />
-            <MetricTile label="选中/拒绝客户端" value={`${v3AggregationPanel?.selectedClients?.length ?? report.defenseTrace?.krumSelected?.length ?? 0} / ${v3AggregationPanel?.rejectedClients?.length ?? report.defenseTrace?.krumRejected?.length ?? report.defenseTrace?.filteredClients ?? 0}`} />
-            <MetricTile label="安全聚合残差" value={formatSmallNumber(report.v25Summary?.secAggResidual)} tone="text-emerald-100" />
-            <MetricTile label="防御状态" value={defenseStatusLabel(v3AggregationPanel?.status)} tone="text-emerald-100" />
-          </div>}
-          <p className="mt-4 text-sm leading-6 text-slate-400">安全聚合为模拟展示；差分隐私风格加噪没有正式隐私会计；鲁棒聚合需要可观察逐客户端更新。</p>
+          <div className="grid gap-3 md:grid-cols-4">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+            ))}
+          </div>
         </section>
+      );
+    };
+
+    const renderMiaMetrics = () => {
+      const tiles: Array<{label: string; value: string; tone?: string}> = [];
+      if (hasJobMetric('auc')) tiles.push({label: 'AUC', value: formatMetricValue(analysisJobMetricRaw('auc')), tone: 'text-violet-100'});
+      if (hasJobMetric('accuracy')) tiles.push({label: 'Accuracy', value: formatMetricValue(analysisJobMetricRaw('accuracy')), tone: 'text-violet-100'});
+      if (hasJobMetric('precision')) tiles.push({label: 'Precision', value: formatMetricValue(analysisJobMetricRaw('precision')), tone: 'text-violet-100'});
+      if (hasJobMetric('recall')) tiles.push({label: 'Recall', value: formatMetricValue(analysisJobMetricRaw('recall')), tone: 'text-violet-100'});
+      if (hasJobMetric('f1')) tiles.push({label: 'F1', value: formatMetricValue(analysisJobMetricRaw('f1')), tone: 'text-violet-100'});
+      if (hasJobMetric('score_gap')) tiles.push({label: '成员与非成员得分差', value: formatMetricValue(analysisJobMetricRaw('score_gap')), tone: 'text-violet-100'});
+      if (hasJobMetric('evidence_type')) tiles.push({label: '证据类型', value: analysisJobMetric('evidence_type'), tone: 'text-slate-100'});
+      if (!tiles.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <UserSearch className="h-5 w-5 text-violet-100" />
+            <h3 className="text-xl font-bold text-white">成员推断指标</h3>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+            ))}
+          </div>
+        </section>
+      );
+    };
+
+    const renderMiaConfig = () => {
+      const tiles: Array<{label: string; value: string}> = [];
+      const evidenceSource = hasJobMetric('mia_evidence_source') ? analysisJobMetric('mia_evidence_source') : hasJobMetric('evidence_source') ? analysisJobMetric('evidence_source') : null;
+      if (evidenceSource !== null) tiles.push({label: '证据来源', value: evidenceSource});
+      const labelSource = hasJobMetric('label_source') ? analysisJobMetric('label_source') : hasJobMetric('membership_label_source') ? analysisJobMetric('membership_label_source') : null;
+      if (labelSource !== null) tiles.push({label: '标签来源', value: labelSource});
+      if (hasJobMetric('mia_model')) tiles.push({label: 'MIA 模型', value: analysisJobMetric('mia_model')});
+      if (hasJobMetric('threshold_strategy')) tiles.push({label: '阈值策略', value: analysisJobMetric('threshold_strategy')});
+      const sampleCount = hasJobMetric('membership_sample_count') ? analysisJobMetricRaw('membership_sample_count') : hasJobMetric('mia_sample_count') ? analysisJobMetricRaw('mia_sample_count') : null;
+      if (sampleCount !== null) tiles.push({label: '成员/非成员样本数', value: String(sampleCount)});
+      if (hasJobMetric('member_nonmember_ratio')) tiles.push({label: '成员/非成员采样比例', value: String(analysisJobMetricRaw('member_nonmember_ratio'))});
+      if (hasJobMetric('export_pair_scores')) {
+        tiles.push({label: '导出判别分数明细', value: analysisJobMetricScalar('export_pair_scores') ? '已导出' : '未导出'});
+      }
+      if (!tiles.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <h3 className="text-xl font-bold text-white">成员推断参数</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} />
+            ))}
+          </div>
+        </section>
+      );
+    };
+
+    const renderMiaScoreDistribution = () => {
+      if (!hasJobMetric('mia_score_distribution') && !hasJobMetric('roc_curve') && !privacyMetrics.anonymizedExamples?.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <h3 className="text-xl font-bold text-white">判别分数分布</h3>
+          {privacyMetrics.anonymizedExamples?.length ? (
+            <p className="mt-3 rounded-2xl border border-white/10 bg-slate-950/35 px-3 py-2 text-sm text-slate-300">
+              匿名样例：{privacyMetrics.anonymizedExamples.slice(0, 2).map((item) => (typeof item === 'string' ? item : 'user-*** / item-***')).join(' / ')}
+            </p>
+          ) : null}
+        </section>
+      );
+    };
+
+    const renderLeakageMetrics = () => {
+      const tiles: Array<{label: string; value: string; tone?: string}> = [];
+      if (hasJobMetric('hit_at_10') || hasJobMetric('hit@10')) tiles.push({label: 'hit@10', value: formatMetricValue(analysisJobMetricRaw('hit_at_10') ?? analysisJobMetricRaw('hit@10')), tone: 'text-cyan-100'});
+      if (hasJobMetric('hit_at_20') || hasJobMetric('hit@20')) tiles.push({label: 'hit@20', value: formatMetricValue(analysisJobMetricRaw('hit_at_20') ?? analysisJobMetricRaw('hit@20')), tone: 'text-cyan-100'});
+      if (hasJobMetric('hit_at_50') || hasJobMetric('hit@50')) tiles.push({label: 'hit@50', value: formatMetricValue(analysisJobMetricRaw('hit_at_50') ?? analysisJobMetricRaw('hit@50')), tone: 'text-cyan-100'});
+      if (hasJobMetric('highest_risk_modality') || hasJobMetric('risk_modality')) {
+        const v = hasJobMetric('highest_risk_modality') ? analysisJobMetric('highest_risk_modality') : analysisJobMetric('risk_modality');
+        tiles.push({label: '风险模态', value: v, tone: 'text-cyan-100'});
+      }
+      if (!tiles.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <Database className="h-5 w-5 text-cyan-100" />
+            <h3 className="text-xl font-bold text-white">更新泄露指标</h3>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+            ))}
+          </div>
+        </section>
+      );
+    };
+
+    const renderLeakageConfig = () => {
+      const tiles: Array<{label: string; value: string}> = [];
+      if (hasJobMetric('update_input_source')) tiles.push({label: '输入来源', value: analysisJobMetric('update_input_source')});
+      if (hasJobMetric('risk_modality')) tiles.push({label: '泄露目标模态', value: analysisJobMetric('risk_modality')});
+      if (hasJobMetric('similarity_method')) tiles.push({label: '相似度方法', value: analysisJobMetric('similarity_method')});
+      if (hasJobMetric('client_count')) tiles.push({label: '审计客户端数量', value: String(analysisJobMetricRaw('client_count'))});
+      if (hasJobMetric('candidate_pool_size')) tiles.push({label: '候选商品池大小', value: String(analysisJobMetricRaw('candidate_pool_size'))});
+      if (hasJobMetric('candidate_k')) tiles.push({label: '返回候选数量', value: String(analysisJobMetricRaw('candidate_k'))});
+      if (!tiles.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <h3 className="text-xl font-bold text-white">更新泄露参数</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} />
+            ))}
+          </div>
+        </section>
+      );
+    };
+
+    const renderLeakageCandidates = () => {
+      // 仅在有真实候选 item 且来自 workbench / V3 panel 时显示；无 job metrics 也不引入 V3 拼装
+      const itemsFromV3 = v3LeakagePanel?.candidateItems ?? [];
+      const items = itemsFromV3.length ? itemsFromV3.slice(0, 6) : [];
+      if (!items.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <h3 className="text-xl font-bold text-white">候选还原商品</h3>
+          <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
+            {items.map((item, index) => (
+              <div key={`${item.itemId ?? index}-candidate`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
+                <ProductImage item={item} className="h-16 w-full rounded-xl" />
+                <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-300">{getProductTitle(item)}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    };
+
+    const renderDefenseMetrics = () => {
+      const tiles: Array<{label: string; value: string; tone?: string}> = [];
+      if (hasJobMetric('recall_at_50')) tiles.push({label: 'Recall@50', value: formatMetricValue(analysisJobMetricRaw('recall_at_50')), tone: 'text-cyan-100'});
+      if (hasJobMetric('ndcg_at_50')) tiles.push({label: 'NDCG@50', value: formatMetricValue(analysisJobMetricRaw('ndcg_at_50')), tone: 'text-violet-100'});
+      if (hasJobMetric('recall_at_50_before')) tiles.push({label: '防御前 Recall@50', value: formatMetricValue(analysisJobMetricRaw('recall_at_50_before'))});
+      if (hasJobMetric('ndcg_at_50_before')) tiles.push({label: '防御前 NDCG@50', value: formatMetricValue(analysisJobMetricRaw('ndcg_at_50_before'))});
+      if (hasJobMetric('recovery_rate_recall')) tiles.push({label: '防御恢复率', value: formatPercentValue(analysisJobMetricRaw('recovery_rate_recall') as number | null), tone: 'text-emerald-100'});
+      if (hasJobMetric('defense_status')) tiles.push({label: '防御状态', value: analysisJobMetric('defense_status'), tone: 'text-emerald-100'});
+      if (!tiles.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <ShieldCheck className="h-5 w-5 text-emerald-100" />
+            <h3 className="text-xl font-bold text-white">防御效果指标</h3>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+            ))}
+          </div>
+        </section>
+      );
+    };
+
+    const renderDefenseConfig = () => {
+      const tiles: Array<{label: string; value: string}> = [];
+      // base_attack=none 时不显示恶意相关参数
+      if (baseAttackForJob && baseAttackForJob !== 'none') tiles.push({label: '基础攻击', value: baseAttackForJob});
+      if (hasJobMetric('defense_algorithm')) tiles.push({label: '鲁棒聚合算法', value: analysisJobMetric('defense_algorithm')});
+      if (hasJobMetric('anomaly_client_ratio')) tiles.push({label: '恶意客户端比例', value: String(analysisJobMetricRaw('anomaly_client_ratio'))});
+      if (hasJobMetric('rejected_client_count') || hasJobMetric('filtered_client_count')) {
+        tiles.push({label: '异常更新数量', value: formatPlainValue(analysisJobMetricRaw('rejected_client_count') ?? analysisJobMetricRaw('filtered_client_count'))});
+      }
+      if (hasJobMetric('krum_f')) tiles.push({label: 'Krum 容错数', value: String(analysisJobMetricRaw('krum_f'))});
+      if (hasJobMetric('bulyan_f')) tiles.push({label: 'Bulyan 容错数', value: String(analysisJobMetricRaw('bulyan_f'))});
+      if (hasJobMetric('trim_ratio')) tiles.push({label: '截尾比例', value: String(analysisJobMetricRaw('trim_ratio'))});
+      if (hasJobMetric('outlier_strategy')) tiles.push({label: '异常值策略', value: analysisJobMetric('outlier_strategy')});
+      if (hasJobMetric('distance_metric')) tiles.push({label: '距离度量', value: analysisJobMetric('distance_metric')});
+      if (!tiles.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <h3 className="text-xl font-bold text-white">防御参数摘要</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} />
+            ))}
+          </div>
+        </section>
+      );
+    };
+
+    const renderDefenseFilter = () => {
+      const tiles: Array<{label: string; value: string; tone?: string}> = [];
+      if (hasJobMetric('selected_client_count') || hasJobMetric('rejected_client_count')) {
+        const selected = hasJobMetric('selected_client_count') ? Number(analysisJobMetricRaw('selected_client_count')) : 0;
+        const rejected = hasJobMetric('rejected_client_count') ? Number(analysisJobMetricRaw('rejected_client_count')) : 0;
+        tiles.push({label: '选中 / 拒绝客户端', value: `${selected} / ${rejected}`, tone: 'text-emerald-100'});
+      }
+      if (hasJobMetric('kept_client_count')) tiles.push({label: '保留客户端数量', value: String(analysisJobMetricRaw('kept_client_count'))});
+      const rejected = hasJobMetric('rejected_client_count') ? analysisJobMetricRaw('rejected_client_count') : hasJobMetric('filtered_client_count') ? analysisJobMetricRaw('filtered_client_count') : null;
+      if (rejected !== null) tiles.push({label: '异常更新数量', value: formatPlainValue(rejected), tone: 'text-emerald-100'});
+      if (!tiles.length) return null;
+      return (
+        <section className="sandbox-panel rounded-[28px] p-5">
+          <h3 className="text-xl font-bold text-white">客户端审计明细</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+            {tiles.map((tile) => (
+              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+            ))}
+          </div>
+        </section>
+      );
+    };
+
+    const sectionRenderers: Record<string, () => React.ReactNode> = {
+      header: renderHeader,
+      target_trajectory: renderTargetTrajectory,
+      recommendation_size: renderRecommendationSize,
+      recommendation_comparison: renderRecommendationComparison,
+      recommendation_metrics: renderRecommendationMetrics,
+      defense_summary: renderDefenseSummary,
+      mia_metrics: renderMiaMetrics,
+      mia_config: renderMiaConfig,
+      mia_score_distribution: renderMiaScoreDistribution,
+      leakage_metrics: renderLeakageMetrics,
+      leakage_config: renderLeakageConfig,
+      leakage_candidates: renderLeakageCandidates,
+      defense_metrics: renderDefenseMetrics,
+      defense_config: renderDefenseConfig,
+      defense_filter: renderDefenseFilter,
+    };
+
+    // 10) 任务完成但未导出任何方向证据 → 单一空状态
+    const sectionList = analysisDirection ? sectionsForDirection[analysisDirection] : [];
+    const hasAnyExportedMetric = jobMetrics !== null && Object.keys(jobMetrics).length > 0;
+    if (analysisDirection && !hasAnyExportedMetric && !activeJobDefenses.length && !workbenchResult) {
+      return (
+        <div className="space-y-5">
+          {renderHeader()}
+          <section className="sandbox-panel rounded-[28px] p-6">
+            <p className="text-base font-bold text-white">该实验未导出可用于单次分析的方向证据。</p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">仅展示本 job 真实导出的指标；不混入 V3 artifact 或其他 job 的字段。</p>
+          </section>
+        </div>
+      );
+    }
+
+    // 11) 正常渲染：按 direction 顺序展示 section；key 强制重挂以彻底卸载旧方向
+    const sectionKey = `${analysisDirection ?? 'unknown'}-${workbenchJobId ?? 'none'}`;
+    return (
+      <div key={sectionKey} className="space-y-5">
+        {sectionList.map((sectionId) => {
+          const renderer = sectionRenderers[sectionId];
+          if (!renderer) return null;
+          return <React.Fragment key={sectionId}>{renderer()}</React.Fragment>;
+        })}
       </div>
     );
   };

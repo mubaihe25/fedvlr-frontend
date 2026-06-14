@@ -114,7 +114,22 @@
 
 运行监控要表达本地训练、更新/梯度上传、服务端聚合、恶意更新、防御过滤、终端日志、状态摘要和曲线来源。有 `job_id` 时每 1-2 秒轮询 `/workbench/jobs/{job_id}` 和 `/workbench/jobs/{job_id}/logs?tail=100`，展示 job_id、direction、dataset、model、source、status、stage、progress、started_at、finished_at、result_dir、artifact_dir 和真实 `run.log` 内容；新任务的 source 为 `full_train`。completed/failed 后停止轮询。没有 `job_id` 时继续读取 V3 运行时间线和训练曲线；`summary_curve` 显示“摘要曲线”，`real_points` 显示“真实记录点”。若没有真实曲线，必须标注“实验摘要曲线”，不要伪造完整训练全过程。
 
-单次分析必须先给一句话实验结论，再展示目标商品轨迹、推荐三列、成员推断和客户端更新泄露。优先级是当前 workbench job result、当前 showcase V3 artifact、未导出；缺失 panel 显示“未导出 / 暂无证据”，不要用 mock 补齐。候选还原不是完整用户历史恢复；不要把 DLG/IG 写成已完整还原真实图片。
+单次分析必须按当前 workbench job 的 direction 动态选择分析模板，**不再同时展示所有攻防模块**：
+
+- **分析对象优先级**：进入单次分析 Tab 时，按以下顺序选择分析对象。
+  1. 当前 workbench job 刚启动且 `metrics_summary` 已返回结果；
+  2. 用户从历史实验点击选中的 job；
+  3. 自动读取 `/workbench/jobs` 中 `started_at` 最新（按 `started_at` 降序，**不是 job_id 字符串**）、`status` 为 `completed` 或 `partial` 且存在 result 的最近可分析 job；
+  4. 若没有任何可分析 job，只显示一个简洁空状态。
+- **不跨 job 拼接证据**：当前 job 未导出的方向、模块或字段一律隐藏，不回退到本地演示数据、showcase V3 artifact 或其他 job 的指标补造。禁止把当前 job result 与 showcase 旧 artifact 字段拼成一份结果。历史列表的选择也按 `started_at` 降序排序，不是 job_id 字符串。
+- **顶部"本次实验摘要"**：紧凑显示真实存在字段：实验方向、数据集、模型、开始时间、完成状态、结果来源；`Loss` / `Recall@50` / `NDCG@50` / 训练轮数等训练质量指标只在当前 job result 实际导出这些字段时显示，缺失时隐藏（不写"暂无 / 不适用"占位卡片）。
+- **方向模块映射**（仅渲染当前 direction 应当出现的模块；旧 direction 切换时通过 `key={direction}` 强制重挂以彻底卸载旧数据）：
+  - `recommendation_manipulation` 推荐操纵：目标商品轨迹、攻击前后目标排序、rank gain、最终 Top50 是否命中、推荐列表规模、正常/攻击后/防御后三列、Jaccard/变化用户/目标操纵指数；**防御摘要**仅在当前 job 实际启用防御并导出防御结果时显示；**隐藏**成员推断、客户端更新泄露模块。
+  - `membership_inference` 成员推断：MIA AUC/Accuracy/Precision/Recall/F1、成员与非成员得分差、证据来源、标签来源、MIA 模型、阈值策略、样本数量/比例、判别分数分布/ROC；**隐藏**目标商品轨迹、推荐列表规模、三列推荐对比、客户端更新泄露。
+  - `update_leakage` 更新泄露：Hit@10/Hit@20/Hit@50、候选还原商品列表（仅真实图片 URL）、候选排名及相似度/距离、输入来源、泄露目标模态、相似度方法、审计客户端数量；**隐藏**目标商品轨迹、推荐列表规模、三列、成员推断。
+  - `aggregation_defense` 聚合防御：基础攻击类型、鲁棒聚合算法、恶意客户端比例、异常更新数量、选中/拒绝/保留客户端数量、防御前后 Recall@50/NDCG@50、防御恢复率、过滤结果/客户端审计明细、防御参数摘要；**隐藏**目标商品轨迹、推荐列表规模、三列、成员推断、客户端更新泄露；`base_attack=none` 时不显示恶意客户端或攻击效果相关卡片。
+- **缺失数据处理**：模块或字段无真实数据时直接隐藏对应 section，**不用 mock / V3 / 其他 job 数据补造**。任务已完成但未导出任何方向证据时，仅显示一次"该实验未导出可用于单次分析的方向证据"。失败任务单独走"未完成，无法进入单次分析"分支，展示失败阶段与真实错误摘要，不渲染为分析结果。
+- **实现约束**：构建清晰的 direction 分支或 config mapping（例如 `analysisSectionsByDirection`）；不要继续依赖散落的跨条件 if/else。保留现有的真实字段归一化逻辑（如 `displayRankBefore` 等），不要对页面进行广泛重写。
 
 推荐三列默认请求 5 条，支持展开 15 条、展开 50 条和收起；展开动作应按需请求 recommendations endpoint，不要一次渲染全量推荐。推荐项应显示图片、标题、类目、rank、变化状态和是否目标商品。目标商品不在 Top50 时不要插入列表，只在目标轨迹中说明。
 
