@@ -352,7 +352,7 @@ const formatCellValue = (value?: string | number | null) => {
 };
 
 const curveSourceLabel = (value?: string | null) => {
-  if (value === 'real_points') return '真实记录点';
+  if (value === 'real_points') return '数据记录点';
   if (value === 'summary_curve') return '摘要曲线';
   return value ? toChineseLabel(value) : '摘要曲线';
 };
@@ -2563,7 +2563,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 <p className="text-xs font-bold tracking-[0.18em] text-cyan-100/70">攻防流程</p>
                 <h3 className="mt-1 text-xl font-black text-white">{directionMeta[selectedPlay.id].title}路径</h3>
               </div>
-              <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-bold text-slate-300">{selectedPlay.evidenceState}</span>
             </div>
             <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-slate-950/35 px-5 py-8">
               <svg className="pointer-events-none absolute inset-x-10 top-[4.15rem] hidden h-16 lg:block" viewBox="0 0 760 64" preserveAspectRatio="none">
@@ -2615,7 +2614,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <div className="mt-5 rounded-[26px] border border-white/10 bg-white/[0.04] p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="text-sm font-black text-white">防御控制条</p>
-                <span className="text-[11px] font-semibold text-slate-500">加噪层不是 formal DP</span>
               </div>
               <div className="space-y-3">
                 <div>
@@ -2692,13 +2690,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   差分隐私风格加噪
                 </button>
               </div>
-              <p className="mt-3 text-xs leading-5 text-slate-500">
-                {secureModeActive
-                  ? '安全聚合隐藏单客户端更新，不做逐客户端鲁棒筛选。'
-                  : robustActive
-                    ? '鲁棒聚合需要查看单客户端更新，因此安全聚合置灰。'
-                    : '差分隐私风格加噪是单独扰动层，不和聚合模式混在一起。'}
-              </p>
             </div>
           </div>
 
@@ -3092,7 +3083,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const maliciousRatio = v3RuntimePanel?.maliciousClientRatio ?? config.poisoningRatio ?? config.maliciousClientConfig?.ratio ?? 0;
     const roundNow = hasCurrentJob ? currentJobRounds.length : v3RuntimePanel?.currentRound ?? Math.max(1, Math.round((config.totalRounds || 10) * 0.7));
     const totalRounds = hasCurrentJob ? Number(jobTraining?.epochs ?? config.totalRounds ?? currentJobRounds.length) : v3RuntimePanel?.totalRounds ?? config.totalRounds ?? 10;
-    const curveBadge = hasCurrentJob ? '真实记录点' : curveSourceLabel(v3CurvesPanel?.curveSource);
+    const curveBadge = hasCurrentJob ? '数据记录点' : curveSourceLabel(v3CurvesPanel?.curveSource);
     const topologyDefenseActive = selectedPlay.id === 'robust_defense_play' ? true : selectedPlay.id === 'target_poisoning_play' ? false : defenseActive;
     const logLinesByPlay: Record<ExperimentPlayId, string[]> = {
       target_poisoning_play: [
