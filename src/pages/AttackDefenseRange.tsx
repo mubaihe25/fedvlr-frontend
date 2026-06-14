@@ -1659,7 +1659,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             </option>
           ))}
         </select>,
-        `8 个模型都可进入配置；${getModelDatasetHint()}`,
       );
     const renderCommonTrainingControls = () => (
       <>
@@ -1690,7 +1689,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <input className="w-full accent-cyan-300" type="range" min={descriptorNumber('client_sampling_ratio', 'min', 0.05)} max={descriptorNumber('client_sampling_ratio', 'max', 1)} step={descriptorNumber('client_sampling_ratio', 'step', 0.05)} value={clientSamplingRate} onChange={(event) => updateClientSamplingRate(Number(event.target.value))} />
             <span className="w-12 text-right font-mono text-sm font-bold text-cyan-100">{clientSamplingRate.toFixed(2)}</span>
           </div>,
-          `本轮预计采样 ${sampledClientCount} 个客户端。`,
         )}
         <div className="grid gap-3 sm:grid-cols-2">
           {fieldShell(getParameterDescriptor('learning_rate').label, <input className={numericInputClass} type="number" min={descriptorNumber('learning_rate', 'min', 0.00001)} max={descriptorNumber('learning_rate', 'max', 0.1)} step={descriptorNumber('learning_rate', 'step', 0.00001)} value={config.learningRate || 0.001} onChange={(event) => {
@@ -1705,7 +1703,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {fieldShell(getParameterDescriptor('gradient_clip').label, <input className={numericInputClass} type="number" min={descriptorNumber('gradient_clip', 'min', 0.1)} max={descriptorNumber('gradient_clip', 'max', 20)} step={descriptorNumber('gradient_clip', 'step', 0.1)} value={config.advanced.gradientClip ?? 5} onChange={(event) => {
           markParamChanged(getParameterDescriptor('gradient_clip').label);
           updateConfig({advanced: {...config.advanced, gradientClip: Number(event.target.value)}});
-        }} />, getParameterDescriptor('gradient_clip').help_text)}
+        }} />)}
       </>
     );
     const selectTargetOption = (id: string) => {
@@ -1843,7 +1841,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {fieldShell('更新扰动层', switchControl(dpLayerEnabled, () => {
           markParamChanged('防御策略');
           toggleDpLayer();
-        }, getParameterDescriptor('dp_noise_enabled').label), '当前为差分隐私风格裁剪与加噪，没有正式隐私会计器，不展示 ε。')}
+        }, getParameterDescriptor('dp_noise_enabled').label))}
         {robustAlgorithms.includes('Krum') && !secureModeActive ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {fieldShell(getParameterDescriptor('krum_f').label, <input className={inputClass} type="number" min={0} max={krumFMax} step={1} value={krumF} onChange={(event) => {
@@ -1925,7 +1923,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               }}>
                 {descriptorOptions<number>('target_delta', [0.001, 0.0001, 0.00001, 0.000001]).map((value) => <option key={value} value={value}>{value.toExponential(0)}</option>)}
               </select>,
-              '仅记录目标 δ；当前不计算或展示 ε。',
             )}
             {fieldShell(getParameterDescriptor('dp_seed').label, <input className={inputClass} type="number" min={descriptorNumber('dp_seed', 'min', 0)} max={descriptorNumber('dp_seed', 'max', 999999)} step={descriptorNumber('dp_seed', 'step', 1)} value={dpSeed} onChange={(event) => {
               markParamChanged('防御策略');
@@ -1969,7 +1966,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               {fieldShell(getParameterDescriptor('target_loss_weight').label, <input className={inputClass} type="number" min={descriptorNumber('target_loss_weight', 'min', 0)} max={descriptorNumber('target_loss_weight', 'max', 5)} step={descriptorNumber('target_loss_weight', 'step', 0.1)} value={targetLossWeight} onChange={(event) => {
                 markParamChanged('攻击强度');
                 setTargetLossWeight(Number(event.target.value));
-              }} />, getParameterDescriptor('target_loss_weight').help_text)}
+              }} />)}
               {fieldShell(
                 getParameterDescriptor('target_rank_selector').label,
                 segmented<string>(targetRankSelector, descriptorOptions<string>('target_rank_selector', ['unmasked_rank', 'masked_top50', 'both']), (value) => {
@@ -2137,7 +2134,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 },
               });
             }, undefined, undefined, (value) => BASE_ATTACK_LABELS[value]),
-            '无攻击时不注入恶意客户端更新。',
           )}
           {baseAttack === 'malicious_update' ? (
             <div className="grid gap-3 sm:grid-cols-3">
