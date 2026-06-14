@@ -2,6 +2,7 @@ import React from 'react';
 import {motion} from 'motion/react';
 import {ChevronDown, ChevronUp, ImageOff, Target, TrendingDown, TrendingUp} from 'lucide-react';
 import {cn} from '../../lib/utils';
+import {normalizeShowcaseDataset} from '../../lib/scenarioNarratives';
 import {fetchShowcaseRecommendations} from '../../services/showcase';
 import type {ShowcaseRecommendationComparison, ShowcaseRecommendationItem} from '../../types/showcase';
 
@@ -9,6 +10,9 @@ interface RecommendationComparisonBoardProps {
   comparison?: ShowcaseRecommendationComparison | null;
   scenarioId?: string | null;
   targetItemId?: string | number | null;
+  // 数据集名（来自 workbench metrics.dataset）。当推荐条目没有图片 URL 时，
+  // 用 /api/showcase/images/{dataset}/{itemId}?size=thumb 兜底拼缩略图，404 走 <ImageOff />。
+  dataset?: string | null;
 }
 
 type ColumnKey = 'baseline' | 'attack' | 'defense';
@@ -39,8 +43,26 @@ const changeToneClass: Record<ChangeStatus, string> = {
 
 const blockedImage = (value?: string | null) => !value || /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\');
 
-const imageSources = (item: ShowcaseRecommendationItem) =>
-  [item.thumbnailUrl, item.localImageUrl, item.imageUrl].filter((value): value is string => !blockedImage(value));
+// 当 item 的 thumbnailUrl/localImageUrl/imageUrl 全部为空，但数据集名 + itemId 都存在时，
+// 兜底拼 /api/showcase/images/{datasetId}/{itemId}?size=thumb，由 vite 代理转发到 FedVLR-API。
+// dataset 必须先归一化为后端注册过的数据集 ID（AMAZON_BEAUTY_POC / KU 等），不接受展示名。
+// 404 时现有 onError 链会循环到 <ImageOff /> 占位，不影响列表渲染。
+const fallbackShowcaseImageUrl = (item: ShowcaseRecommendationItem, dataset?: string | null) => {
+  const datasetId = normalizeShowcaseDataset(dataset);
+  if (!datasetId || blockedImage(datasetId)) return null;
+  const id = item.itemId;
+  if (id === undefined || id === null) return null;
+  const stringId = String(id).trim();
+  if (!stringId || blockedImage(stringId)) return null;
+  return `/api/showcase/images/${encodeURIComponent(datasetId)}/${encodeURIComponent(stringId)}?size=thumb`;
+};
+
+const imageSources = (item: ShowcaseRecommendationItem, dataset?: string | null) => {
+  const direct = [item.thumbnailUrl, item.localImageUrl, item.imageUrl].filter((value): value is string => !blockedImage(value));
+  if (direct.length) return direct;
+  const fallback = fallbackShowcaseImageUrl(item, dataset);
+  return fallback ? [fallback] : [];
+};
 
 const sameItem = (left?: string | number | null, right?: string | number | null) =>
   left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
@@ -87,8 +109,8 @@ const columnTotalCount = (comparison: ShowcaseRecommendationComparison | null | 
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 };
 
-const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; tone: keyof typeof toneClass}> = ({item, title, tone}) => {
-  const sources = imageSources(item);
+const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; tone: keyof typeof toneClass; dataset?: string | null}> = ({item, title, tone, dataset}) => {
+  const sources = imageSources(item, dataset);
   const [sourceIndex, setSourceIndex] = React.useState(0);
   const [loaded, setLoaded] = React.useState(false);
   const source = sources[sourceIndex];
@@ -96,7 +118,7 @@ const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; t
   React.useEffect(() => {
     setSourceIndex(0);
     setLoaded(false);
-  }, [item.itemId, item.thumbnailUrl, item.localImageUrl, item.imageUrl]);
+  }, [item.itemId, item.thumbnailUrl, item.localImageUrl, item.imageUrl, dataset]);
 
   if (source) {
     return (
@@ -133,7 +155,7 @@ const ChangeBadge: React.FC<{status: ChangeStatus}> = ({status}) => (
   </span>
 );
 
-export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison, scenarioId, targetItemId}) => {
+export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison, scenarioId, targetItemId, dataset}) => {
   const [activeComparison, setActiveComparison] = React.useState<ShowcaseRecommendationComparison | null | undefined>(comparison);
   const [visibleLimit, setVisibleLimit] = React.useState(DEFAULT_VISIBLE_COUNT);
   const [isLoadingLimit, setIsLoadingLimit] = React.useState(false);
@@ -259,7 +281,7 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
                         transition={{delay: index * 0.05, type: 'spring', stiffness: 160, damping: 22}}
                         whileHover={{scale: 1.012}}
                       >
-                        <ProductImage item={item} title={title} tone={column.tone} />
+                        <ProductImage item={item} title={title} tone={column.tone} dataset={dataset} />
                         <div className="min-w-0">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             <span className={cn('rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold', toneClass[column.tone])}>

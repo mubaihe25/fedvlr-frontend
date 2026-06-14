@@ -43,8 +43,10 @@ import {
   inferDefenseType,
   inferEvidenceLabels,
   inferScenarioUsage,
+  normalizeShowcaseDataset,
   scenarioText,
 } from '../lib/scenarioNarratives';
+import type {WorkbenchTargetContext} from '../lib/scenarioNarratives';
 import {
   AGGREGATION_VISIBILITY_MODES,
   ExperimentPlayId,
@@ -440,6 +442,33 @@ const buildSummaryCurve = (values: Array<number | null | undefined>, fallbackSta
 const sameItem = (left?: string | number | null, right?: string | number | null) =>
   left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 
+// 从 metrics dict 中按 key 列表依次读取第一个非空字符串值。
+// 注意：metrics_summary.metrics 是无类型 Record<string, unknown>，键名形态（snake / camel）
+// 取决于后端写入；同一语义字段要尝试多个变体以兼容当前和后续 Codex 注入。
+const firstStringLike = (record: Record<string, unknown> | null | undefined, keys: string[]): string | null => {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  }
+  return null;
+};
+
+// 读取看起来像合法 URL 的字段；过滤空值、Windows 路径、UNC 路径。
+const firstHttpUrl = (record: Record<string, unknown> | null | undefined, keys: string[]): string | null => {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (/^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\')) continue;
+    return trimmed;
+  }
+  return null;
+};
+
 const getProductTitle = (item?: ShowcaseRecommendationItem | null) => item?.title ?? (item?.itemId ? `商品 ${item.itemId}` : '候选商品');
 
 const getScenarioSourceLabel = (bundle: ShowcaseBundle) => {
@@ -532,8 +561,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [aggregationMode, setAggregationMode] = useState<AggregationMode>('plain_updates');
   const [robustAlgorithms, setRobustAlgorithms] = useState<string[]>([]);
   const [dpLayerEnabled, setDpLayerEnabled] = useState(false);
-  const [targetItemTitle, setTargetItemTitle] = useState('Empty Amber Glass Spray Bottles');
-  const [targetItemId, setTargetItemId] = useState('0');
+  const [targetItemTitle, setTargetItemTitle] = useState('');
+  const [targetItemId, setTargetItemId] = useState('');
   const [targetSearch, setTargetSearch] = useState('');
   const [targetComboboxOpen, setTargetComboboxOpen] = useState(false);
   const [attackStrength, setAttackStrength] = useState<AttackStrength>('strong');
@@ -648,6 +677,29 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const activeJobMetrics = activeJobMetricsSummary?.metrics && typeof activeJobMetricsSummary.metrics === 'object' && !Array.isArray(activeJobMetricsSummary.metrics)
     ? (activeJobMetricsSummary.metrics as Record<string, unknown>)
     : null;
+  // workbench 任务目标商品派生：runner 写出的扁平 key 优先；仅 itemId 时显示"商品 {id}"。
+  // 不再依赖 V3 fixture（"Empty Amber Glass Spray Bottles" 棕色玻璃瓶就是从这里漏出来的）。
+  // 嵌套对象形态（target_item_info）本版本暂不解析；如后端后续改用嵌套结构，再追加 fallback。
+  const workbenchTargetInfo = useMemo<WorkbenchTargetContext | null>(() => {
+    if (!activeJobMetrics) return null;
+    const itemId = firstStringLike(activeJobMetrics, ['target_item_id', 'targetItemId']);
+    if (itemId == null || itemId === '') return null;
+    const title = firstStringLike(activeJobMetrics, ['target_item_title', 'targetItemTitle']);
+    const category = firstStringLike(activeJobMetrics, ['target_item_category', 'targetItemCategory']);
+    const thumbnailUrl = firstHttpUrl(activeJobMetrics, [
+      'target_item_thumbnail_url', 'targetItemThumbnailUrl',
+      'target_item_thumbnail', 'target_thumbnail_url',
+    ]);
+    const localImageUrl = firstHttpUrl(activeJobMetrics, [
+      'target_item_local_image_url', 'targetItemLocalImageUrl',
+      'target_item_local_image', 'target_local_image_url',
+    ]);
+    const imageUrl = firstHttpUrl(activeJobMetrics, [
+      'target_item_image_url', 'targetItemImageUrl',
+      'target_item_image', 'target_image_url',
+    ]);
+    return {itemId, title, category, thumbnailUrl, localImageUrl, imageUrl};
+  }, [activeJobMetrics]);
   const jobMetricNumber = (key: string) => {
     const value = activeJobMetrics?.[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -716,13 +768,33 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const v3CurvesPanel = report.v3?.curves ?? null;
   const v3RuntimePanel = report.v3?.runtime ?? null;
   const v3EvidenceAvailable = Boolean(report.v3 || selectedScenario.hasV3);
-  const targetProduct = getTargetProduct(report);
+  // 数据集名（后端 ID 形态）用于图片兜底；展示名（"Amazon Beauty"/"KU 多模态数据集"）
+  // 在 normalizeShowcaseDataset 里被映射回后端 ID。
+  const targetBoardDataset = normalizeShowcaseDataset(
+    (typeof activeJobMetrics?.dataset === 'string' ? (activeJobMetrics.dataset as string) : null)
+    ?? workbenchJob?.dataset
+    ?? config.dataset,
+  );
+  const targetProduct = getTargetProduct(report, workbenchTargetInfo);
   const targetImageItem = targetProduct
-    ? {
-        thumbnailUrl: targetProduct.thumbnailUrl,
-        localImageUrl: targetProduct.localImageUrl,
-        imageUrl: targetProduct.imageUrl,
-      }
+    ? (() => {
+        // 三个 URL 字段全空 + itemId 与 datasetId 都存在时，兜底拼 /api/showcase/images/{datasetId}/{itemId}?size=thumb。
+        // 失败时现有 ProductImage 的 onError 链会落到 <ImageOff /> 占位，不回退 V3 旧 fixture。
+        const itemId = targetProduct.itemId;
+        const hasUrl = Boolean(targetProduct.thumbnailUrl || targetProduct.localImageUrl || targetProduct.imageUrl);
+        const fallbackUrl =
+          !hasUrl
+          && itemId !== undefined
+          && itemId !== null
+          && targetBoardDataset
+            ? `/api/showcase/images/${encodeURIComponent(targetBoardDataset)}/${encodeURIComponent(String(itemId))}?size=thumb`
+            : null;
+        return {
+          thumbnailUrl: targetProduct.thumbnailUrl ?? fallbackUrl,
+          localImageUrl: targetProduct.localImageUrl,
+          imageUrl: targetProduct.imageUrl,
+        };
+      })()
     : null;
   const recommendationCounts = getRecommendationCounts(activeRecommendationComparison);
   const targetAppearsInLoadedList = [
@@ -3316,7 +3388,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       );
     }
 
-    // 9) section 渲染器：每个 section 仅当对应真实字段存在才返回内容，否则返回 null
+    // 9) section 渲染器：每个 section 固定模块保留；空时整块显示一次统一占位，
+    //    不再为每个指标分别显示"暂无 / 不适用"。
+    const EmptyModuleBlock = () => (
+      <div className="mt-2 rounded-2xl border border-dashed border-white/15 bg-slate-900/40 px-3 py-2 text-xs leading-5 text-slate-400">
+        本次实验未导出该项分析证据。
+      </div>
+    );
+
+
     const renderHeader = () => (
       <section className="sandbox-panel rounded-[28px] p-5">
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
@@ -3366,75 +3446,101 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         hasJobMetric('changed_user_count') ||
         hasJobMetric('changed_item_count') ||
         hasJobMetric('rank_gain');
-      if (!hasAnyTargetMetric) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
             <Target className="h-5 w-5 text-rose-100" />
             <h3 className="text-xl font-bold text-white">目标商品轨迹</h3>
           </div>
-          <div className="grid gap-4 sm:grid-cols-[160px_minmax(0,1fr)]">
-            <ProductImage item={targetImageItem} className="h-40 w-full sm:w-40" />
-            <div className="min-w-0">
-              <h4 className="line-clamp-3 text-lg font-black leading-6 text-white">{targetTitle}</h4>
-              <p className="mt-2 text-sm text-slate-400">{targetProduct?.category ?? EMPTY_VALUE}</p>
-              <div className="mt-4 flex items-center gap-3">
-                <span className="rounded-2xl border border-slate-200/20 bg-slate-300/10 px-4 py-2 font-mono text-2xl font-black text-slate-100">
-                  {hasJobMetric('target_rank_before') ? formatRank(displayRankBefore) : EMPTY_VALUE}
-                </span>
-                <ChevronRight className="h-6 w-6 text-rose-100" />
-                <span className="rounded-2xl border border-rose-200/35 bg-rose-300/12 px-4 py-2 font-mono text-2xl font-black text-rose-100">
-                  {hasJobMetric('target_rank_after') ? formatRank(displayRankAfter) : EMPTY_VALUE}
-                </span>
+          {hasAnyTargetMetric ? (
+            <>
+              <div className="grid gap-4 sm:grid-cols-[160px_minmax(0,1fr)]">
+                <ProductImage item={targetImageItem} className="h-40 w-full sm:w-40" />
+                <div className="min-w-0">
+                  <h4 className="line-clamp-3 text-lg font-black leading-6 text-white">{targetTitle}</h4>
+                  <p className="mt-2 text-sm text-slate-400">{targetProduct?.category ?? EMPTY_VALUE}</p>
+                  <div className="mt-4 flex items-center gap-3">
+                    <span className="rounded-2xl border border-slate-200/20 bg-slate-300/10 px-4 py-2 font-mono text-2xl font-black text-slate-100">
+                      {hasJobMetric('target_rank_before') ? formatRank(displayRankBefore) : EMPTY_VALUE}
+                    </span>
+                    <ChevronRight className="h-6 w-6 text-rose-100" />
+                    <span className="rounded-2xl border border-rose-200/35 bg-rose-300/12 px-4 py-2 font-mono text-2xl font-black text-rose-100">
+                      {hasJobMetric('target_rank_after') ? formatRank(displayRankAfter) : EMPTY_VALUE}
+                    </span>
+                  </div>
+                  <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
+                    {activeJobMetrics
+                      ? (displayRankLift ?? 0) > 0
+                        ? `本轮真实训练中目标排名提升 ${formatPlainValue(displayRankLift)} 位，${displayFinalExposure}。`
+                        : `本轮真实训练未观察到目标排名提升，${displayFinalExposure}。`
+                      : '内部排序已推进，但最终曝光未命中。'}
+                  </p>
+                  {!targetAppearsInLoadedList && displayFinalExposure === '最终曝光未命中' ? (
+                    <p className="mt-4 rounded-2xl border border-emerald-200/20 bg-emerald-300/10 px-3 py-2 text-sm font-semibold text-emerald-100">
+                      目标商品未进入最终推荐列表，不插入推荐对照。
+                    </p>
+                  ) : null}
+                </div>
               </div>
-              <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
-                {activeJobMetrics
-                  ? (displayRankLift ?? 0) > 0
-                    ? `本轮真实训练中目标排名提升 ${formatPlainValue(displayRankLift)} 位，${displayFinalExposure}。`
-                    : `本轮真实训练未观察到目标排名提升，${displayFinalExposure}。`
-                  : '内部排序已推进，但最终曝光未命中。'}
-              </p>
-              {!targetAppearsInLoadedList && displayFinalExposure === '最终曝光未命中' ? (
-                <p className="mt-4 rounded-2xl border border-emerald-200/20 bg-emerald-300/10 px-3 py-2 text-sm font-semibold text-emerald-100">
-                  目标商品未进入最终推荐列表，不插入推荐对照。
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {hasJobMetric('target_rank_before') ? <MetricTile label="原始未屏蔽排序" value={formatRank(displayRankBefore)} /> : null}
-            {hasJobMetric('target_rank_after') ? <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" /> : null}
-            {hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain') ? (
-              <MetricTile label="归一化提升" value={formatRatio(displayNormalizedLift)} tone="text-rose-100" />
-            ) : null}
-            {hasJobMetric('reciprocal_rank_gain') ? (
-              <MetricTile label="倒数排名增益" value={formatSmallNumber(displayReciprocalGain)} tone="text-amber-100" />
-            ) : null}
-            {hasJobMetric('target_manipulation_index') ? (
-              <MetricTile label="目标操纵指数" value={formatMetricValue(analysisJobMetricRaw('target_manipulation_index'))} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
-            ) : null}
-            {hasJobMetric('masked_top50_hit') || hasJobMetric('attack_topk_hit') ? (
-              <MetricTile label="最终 Top50 曝光" value={displayFinalExposure} tone="text-emerald-100" />
-            ) : null}
-            {hasJobMetric('recommendation_jaccard') ? (
-              <MetricTile label="推荐 Jaccard" value={formatMetricValue(analysisJobMetricRaw('recommendation_jaccard'))} />
-            ) : null}
-            {hasJobMetric('changed_user_count') ? (
-              <MetricTile label="变化用户" value={formatPlainValue(analysisJobMetricRaw('changed_user_count'))} />
-            ) : null}
-            {hasJobMetric('changed_item_count') ? (
-              <MetricTile label="变化商品" value={formatPlainValue(analysisJobMetricRaw('changed_item_count'))} />
-            ) : null}
-            {hasJobMetric('rank_gain') ? (
-              <MetricTile label="排名提升" value={analysisJobMetric('rank_gain')} tone="text-rose-100" />
-            ) : null}
-          </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {hasJobMetric('target_rank_before') ? <MetricTile label="原始未屏蔽排序" value={formatRank(displayRankBefore)} /> : null}
+                {hasJobMetric('target_rank_after') ? <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" /> : null}
+                {hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain') ? (
+                  <MetricTile label="归一化提升" value={formatRatio(displayNormalizedLift)} tone="text-rose-100" />
+                ) : null}
+                {hasJobMetric('reciprocal_rank_gain') ? (
+                  <MetricTile label="倒数排名增益" value={formatSmallNumber(displayReciprocalGain)} tone="text-amber-100" />
+                ) : null}
+                {hasJobMetric('target_manipulation_index') ? (
+                  <MetricTile label="目标操纵指数" value={formatMetricValue(analysisJobMetricRaw('target_manipulation_index'))} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
+                ) : null}
+                {hasJobMetric('masked_top50_hit') || hasJobMetric('attack_topk_hit') ? (
+                  <MetricTile label="最终 Top50 曝光" value={displayFinalExposure} tone="text-emerald-100" />
+                ) : null}
+                {hasJobMetric('recommendation_jaccard') ? (
+                  <MetricTile label="推荐 Jaccard" value={formatMetricValue(analysisJobMetricRaw('recommendation_jaccard'))} />
+                ) : null}
+                {hasJobMetric('changed_user_count') ? (
+                  <MetricTile label="变化用户" value={formatPlainValue(analysisJobMetricRaw('changed_user_count'))} />
+                ) : null}
+                {hasJobMetric('changed_item_count') ? (
+                  <MetricTile label="变化商品" value={formatPlainValue(analysisJobMetricRaw('changed_item_count'))} />
+                ) : null}
+                {hasJobMetric('rank_gain') ? (
+                  <MetricTile label="排名提升" value={analysisJobMetric('rank_gain')} tone="text-rose-100" />
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
 
     const renderRecommendationSize = () => {
-      if (recommendationCounts.baseline === 0 && recommendationCounts.attack === 0 && recommendationCounts.defense === 0) return null;
+      // 只有后端 metrics 真实导出 baseline_top50 / attack_top50 时才显示规模统计（含真实 0）；
+      // 没有可分析 job 时回退到 V3 showcase 报告的 recommendationComparison（按需显示）。
+      // 三者都缺失时改为单条占位，不再显示"三个 0"。
+      const hasJobSource = hasJobMetric('baseline_top50') || hasJobMetric('attack_top50');
+      const hasV3Source = Boolean(
+        report.recommendationComparison && (
+          (report.recommendationComparison.baseline?.length ?? 0) > 0
+          || (report.recommendationComparison.attack?.length ?? 0) > 0
+          || (report.recommendationComparison.defense?.length ?? 0) > 0
+        ),
+      );
+      if (!hasJobSource && !hasV3Source) {
+        return (
+          <section className="sandbox-panel rounded-[28px] p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <BarChart3 className="h-5 w-5 text-cyan-100" />
+              <h3 className="text-xl font-bold text-white">本次推荐列表规模</h3>
+            </div>
+            <EmptyModuleBlock />
+          </section>
+        );
+      }
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
@@ -3454,12 +3560,29 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
 
     const renderRecommendationComparison = () => {
-      if (!activeRecommendationComparison) return null;
+      // 与 targetImageItem 共用同一个归一化后的 datasetId（后端注册过的 ID 形态）。
+      const boardDataset = normalizeShowcaseDataset(
+        (typeof activeJobMetrics?.dataset === 'string' ? (activeJobMetrics.dataset as string) : null)
+        ?? workbenchJob?.dataset
+        ?? config.dataset,
+      );
+      if (!activeRecommendationComparison) {
+        return (
+          <section className="sandbox-panel rounded-[28px] p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <GitCompare className="h-5 w-5 text-cyan-100" />
+              <h3 className="text-xl font-bold text-white">推荐列表对比</h3>
+            </div>
+            <EmptyModuleBlock />
+          </section>
+        );
+      }
       return (
         <RecommendationComparisonBoard
           comparison={activeRecommendationComparison}
           scenarioId={jobRecommendationComparison ? null : selectedScenario.scenarioId}
           targetItemId={(activeJobMetrics?.target_item_id as string | number | null | undefined) ?? targetProduct?.itemId}
+          dataset={boardDataset}
         />
       );
     };
@@ -3472,15 +3595,18 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('target_manipulation_index')) tiles.push({label: '目标操纵指数', value: formatMetricValue(analysisJobMetricRaw('target_manipulation_index')), tone: 'text-rose-100'});
       if (hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain')) tiles.push({label: '归一化提升', value: formatRatio(displayNormalizedLift), tone: 'text-rose-100'});
       if (hasJobMetric('reciprocal_rank_gain')) tiles.push({label: '倒数排名增益', value: formatSmallNumber(displayReciprocalGain), tone: 'text-amber-100'});
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">已导出推荐指标</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
@@ -3496,18 +3622,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('rejected_client_count') || hasJobMetric('filtered_client_count')) {
         tiles.push({label: '过滤结果', value: formatPlainValue(analysisJobMetricRaw('rejected_client_count') ?? analysisJobMetricRaw('filtered_client_count')), tone: 'text-emerald-100'});
       }
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
             <ShieldCheck className="h-5 w-5 text-emerald-100" />
             <h3 className="text-xl font-bold text-white">防御摘要</h3>
           </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="grid gap-3 md:grid-cols-4">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
@@ -3521,18 +3650,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('f1')) tiles.push({label: 'F1', value: formatMetricValue(analysisJobMetricRaw('f1')), tone: 'text-violet-100'});
       if (hasJobMetric('score_gap')) tiles.push({label: '成员与非成员得分差', value: formatMetricValue(analysisJobMetricRaw('score_gap')), tone: 'text-violet-100'});
       if (hasJobMetric('evidence_type')) tiles.push({label: '证据类型', value: analysisJobMetric('evidence_type'), tone: 'text-slate-100'});
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
             <UserSearch className="h-5 w-5 text-violet-100" />
             <h3 className="text-xl font-bold text-white">成员推断指标</h3>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
@@ -3551,29 +3683,37 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('export_pair_scores')) {
         tiles.push({label: '导出判别分数明细', value: analysisJobMetricScalar('export_pair_scores') ? '已导出' : '未导出'});
       }
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">成员推断参数</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
 
     const renderMiaScoreDistribution = () => {
-      if (!hasJobMetric('mia_score_distribution') && !hasJobMetric('roc_curve') && !privacyMetrics.anonymizedExamples?.length) return null;
+      const hasAny =
+        hasJobMetric('mia_score_distribution') || hasJobMetric('roc_curve') || Boolean(privacyMetrics.anonymizedExamples?.length);
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">判别分数分布</h3>
-          {privacyMetrics.anonymizedExamples?.length ? (
-            <p className="mt-3 rounded-2xl border border-white/10 bg-slate-950/35 px-3 py-2 text-sm text-slate-300">
-              匿名样例：{privacyMetrics.anonymizedExamples.slice(0, 2).map((item) => (typeof item === 'string' ? item : 'user-*** / item-***')).join(' / ')}
-            </p>
-          ) : null}
+          {hasAny ? (
+            privacyMetrics.anonymizedExamples?.length ? (
+              <p className="mt-3 rounded-2xl border border-white/10 bg-slate-950/35 px-3 py-2 text-sm text-slate-300">
+                匿名样例：{privacyMetrics.anonymizedExamples.slice(0, 2).map((item) => (typeof item === 'string' ? item : 'user-*** / item-***')).join(' / ')}
+              </p>
+            ) : null
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
@@ -3587,18 +3727,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         const v = hasJobMetric('highest_risk_modality') ? analysisJobMetric('highest_risk_modality') : analysisJobMetric('risk_modality');
         tiles.push({label: '风险模态', value: v, tone: 'text-cyan-100'});
       }
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
             <Database className="h-5 w-5 text-cyan-100" />
             <h3 className="text-xl font-bold text-white">更新泄露指标</h3>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
@@ -3611,35 +3754,42 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('client_count')) tiles.push({label: '审计客户端数量', value: String(analysisJobMetricRaw('client_count'))});
       if (hasJobMetric('candidate_pool_size')) tiles.push({label: '候选商品池大小', value: String(analysisJobMetricRaw('candidate_pool_size'))});
       if (hasJobMetric('candidate_k')) tiles.push({label: '返回候选数量', value: String(analysisJobMetricRaw('candidate_k'))});
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">更新泄露参数</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
 
     const renderLeakageCandidates = () => {
-      // 仅在有真实候选 item 且来自 workbench / V3 panel 时显示；无 job metrics 也不引入 V3 拼装
+      // 候选还原模块：job 未导出时显示空态；不主动用 V3 候选去填补 job metrics。
+      // 同样按"不跨 job 拼接证据"原则，模块整体保留、无候选时统一占位。
       const itemsFromV3 = v3LeakagePanel?.candidateItems ?? [];
       const items = itemsFromV3.length ? itemsFromV3.slice(0, 6) : [];
-      if (!items.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">候选还原商品</h3>
-          <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
-            {items.map((item, index) => (
-              <div key={`${item.itemId ?? index}-candidate`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
-                <ProductImage item={item} className="h-16 w-full rounded-xl" />
-                <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-300">{getProductTitle(item)}</p>
-              </div>
-            ))}
-          </div>
+          {items.length ? (
+            <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
+              {items.map((item, index) => (
+                <div key={`${item.itemId ?? index}-candidate`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
+                  <ProductImage item={item} className="h-16 w-full rounded-xl" />
+                  <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-300">{getProductTitle(item)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
@@ -3652,18 +3802,21 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('ndcg_at_50_before')) tiles.push({label: '防御前 NDCG@50', value: formatMetricValue(analysisJobMetricRaw('ndcg_at_50_before'))});
       if (hasJobMetric('recovery_rate_recall')) tiles.push({label: '防御恢复率', value: formatPercentValue(analysisJobMetricRaw('recovery_rate_recall') as number | null), tone: 'text-emerald-100'});
       if (hasJobMetric('defense_status')) tiles.push({label: '防御状态', value: analysisJobMetric('defense_status'), tone: 'text-emerald-100'});
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
             <ShieldCheck className="h-5 w-5 text-emerald-100" />
             <h3 className="text-xl font-bold text-white">防御效果指标</h3>
           </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="grid gap-3 md:grid-cols-4">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
@@ -3682,15 +3835,18 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('trim_ratio')) tiles.push({label: '截尾比例', value: String(analysisJobMetricRaw('trim_ratio'))});
       if (hasJobMetric('outlier_strategy')) tiles.push({label: '异常值策略', value: analysisJobMetric('outlier_strategy')});
       if (hasJobMetric('distance_metric')) tiles.push({label: '距离度量', value: analysisJobMetric('distance_metric')});
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">防御参数摘要</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };
@@ -3705,15 +3861,18 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('kept_client_count')) tiles.push({label: '保留客户端数量', value: String(analysisJobMetricRaw('kept_client_count'))});
       const rejected = hasJobMetric('rejected_client_count') ? analysisJobMetricRaw('rejected_client_count') : hasJobMetric('filtered_client_count') ? analysisJobMetricRaw('filtered_client_count') : null;
       if (rejected !== null) tiles.push({label: '异常更新数量', value: formatPlainValue(rejected), tone: 'text-emerald-100'});
-      if (!tiles.length) return null;
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">客户端审计明细</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-            {tiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-            ))}
-          </div>
+          {tiles.length ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+              {tiles.map((tile) => (
+                <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
+              ))}
+            </div>
+          ) : (
+            <EmptyModuleBlock />
+          )}
         </section>
       );
     };

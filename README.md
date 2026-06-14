@@ -103,14 +103,16 @@
 
 - 分析对象选择优先级：当前 workbench job result > 历史实验选中 job > `/workbench/jobs` 中 `started_at` 最近且 status in {completed, partial} 的 job（按 `started_at` 降序，不是 job_id 字符串）；无任何可分析 job 时只显示一个简洁空状态。
 - 不跨 job 拼接字段：当前 job 未导出的方向、模块或字段一律隐藏，不回退到本地演示数据、V3 artifact 或其他 job 的指标补造。
+- **目标商品来源**：当前 workbench job result 中的 `target_item_id` / `target_item_title` / `target_item_info`（以及同名 image 字段）**优先于** V3 showcase artifact；workbench job 不存在或 job 未导出目标字段时才回退 V3 / `targetRankSummary`。当 job 只导出 `itemId` 时显示 `商品 {itemId}` + 占位图，**禁止**回退到 V3 固定目标商品。三个 image 字段全空时同样走 `/api/showcase/images/{datasetId}/{itemId}?size=thumb` 兜底，失败显示占位图。
+- **推荐列表商品图片兜底**：当推荐项只有 `itemId`、没有 `thumbnailUrl` / `localImageUrl` / `imageUrl` 时，前端用 `/api/showcase/images/{datasetId}/{itemId}?size=thumb` 兜底拼缩略图，由 vite 代理转发到 `FedVLR-API`；后端 404 时落到通用占位图。
+- **每方向固定模块保留**：成员推断 / 更新泄露 / 聚合防御 即使没有方向专用字段也整块保留固定模块（隐私风险指标 / 审计配置 / 样本与分数证据；命中指标 / 泄露配置 / 候选还原；防御配置 / 异常客户端 / 前后性能与恢复）。某模块无真实字段时，模块内显示一次 `本次实验未导出该项分析证据。`，不再为每个指标分别显示"暂无 / 不适用"。`recommendation_manipulation` 的"本次推荐列表规模"模块在后端 metrics 未导出 `baseline_top50` / `attack_top50`、且 V3 `recommendationComparison` 也不含真实条目时改为单条占位 `本次实验未导出推荐列表规模统计。`，不再显示三个 0。
 - 顶部紧凑"本次实验摘要"只显示真实存在字段：实验方向、数据集、模型、开始时间、完成状态、结果来源；`Loss` / `Recall@50` / `NDCG@50` / 训练轮数等训练质量指标只在当前 job result 实际导出这些字段时显示，缺失时隐藏（不写"暂无 / 不适用"占位卡片）。
 - 各 direction 只渲染该方向应展示的模块；旧 direction 切换时通过 `key={direction}` 强制重挂以彻底卸载旧数据。
   - `recommendation_manipulation` 推荐操纵：目标商品轨迹、攻击前后目标排序、rank gain、最终 Top50 是否命中、推荐列表规模、正常/攻击后/防御后三列、Jaccard/变化用户/目标操纵指数；防御摘要仅在当前 job 实际启用并导出防御结果时显示；隐藏成员推断、客户端更新泄露模块。
   - `membership_inference` 成员推断：MIA AUC/Accuracy/Precision/Recall/F1、成员与非成员得分差、证据来源、标签来源、MIA 模型、阈值策略、样本数量/比例、判别分数分布/ROC；隐藏目标商品轨迹、推荐列表规模、三列推荐对比、客户端更新泄露。
   - `update_leakage` 更新泄露：Hit@10/Hit@20/Hit@50、候选还原商品列表（仅真实图片 URL）、候选排名及相似度/距离、输入来源、泄露目标模态、相似度方法、审计客户端数量；隐藏目标商品轨迹、推荐列表规模、三列、成员推断。
   - `aggregation_defense` 聚合防御：基础攻击类型、鲁棒聚合算法、恶意客户端比例、异常更新数量、选中/拒绝/保留客户端数量、防御前后 Recall@50/NDCG@50、防御恢复率、过滤结果/客户端审计明细、防御参数摘要；隐藏目标商品轨迹、推荐列表规模、三列、成员推断、客户端更新泄露；`base_attack=none` 时不显示恶意客户端或攻击效果相关卡片。
-- 缺失模块整块隐藏：模块或字段无真实数据时直接隐藏对应 section，不使用 mock / V3 / 其他 job 数据补造。
-- 任务已完成但未导出任何方向证据：仅显示一次"该实验未导出可用于单次分析的方向证据"。
+- 缺失模块整块保留并以单条占位提示（见"每方向固定模块保留"）；任务已完成但完全无任何方向证据时，仅显示一次"该实验未导出可用于单次分析的方向证据"。
 - 失败任务单独走"未完成，无法进入单次分析"分支，展示失败阶段与真实错误摘要，不渲染为分析结果。
 
 横向对比默认先显示“选择对比问题”的空状态，选择后提供四种模式：
@@ -163,7 +165,7 @@
 
 `/v3/report` 优先于旧版 `/report`。单个 V3 panel 缺失时只显示“未导出 / 暂无证据”，不要回退到 mock 补造该 panel。`/showcase/scenarios` 返回 `has_v3` 或相关 panel flags 时，当前场景摘要用中文标签显示“V3 证据”等状态。
 
-推荐图片优先使用 `thumbnail_url`，其次 `local_image_url`，再使用 `image_url`，失败显示占位图。不要渲染 D 盘路径、UNC 路径或其他本地绝对路径。
+推荐图片优先使用 `thumbnail_url`，其次 `local_image_url`，再使用 `image_url`；当三者都为空但有 `dataset` + `itemId` 时，用 `/api/showcase/images/{datasetId}/{itemId}?size=thumb` 兜底拼缩略图（vite 代理转发到 `FedVLR-API`，404 落到通用占位图）。`{datasetId}` 必须是后端注册过的数据集 ID（`AMAZON_BEAUTY_POC` / `KU` 等），不接受 `Amazon Beauty` / `KU 多模态数据集` 等展示名；前端在 `normalizeShowcaseDataset` 内部做最小映射。workbench 目标商品走相同规则。失败显示占位图。不要渲染 D 盘路径、UNC 路径或其他本地绝对路径。
 
 ## 边界与指标口径
 

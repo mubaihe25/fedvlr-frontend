@@ -122,14 +122,18 @@
   3. 自动读取 `/workbench/jobs` 中 `started_at` 最新（按 `started_at` 降序，**不是 job_id 字符串**）、`status` 为 `completed` 或 `partial` 且存在 result 的最近可分析 job；
   4. 若没有任何可分析 job，只显示一个简洁空状态。
 - **不跨 job 拼接证据**：当前 job 未导出的方向、模块或字段一律隐藏，不回退到本地演示数据、showcase V3 artifact 或其他 job 的指标补造。禁止把当前 job result 与 showcase 旧 artifact 字段拼成一份结果。历史列表的选择也按 `started_at` 降序排序，不是 job_id 字符串。
+- **目标商品来源**：workbench job result 中的 `target_item_id` / `target_item_title` / `target_item_info`（以及同名 image 字段）**优先于** V3 showcase artifact。workbench job 不存在或 job 未导出目标字段时才回退 V3 / `targetRankSummary`。job 只导出 `itemId` 时显示 `商品 {itemId}` + 占位图，**禁止**回退 V3 旧 fixture（例如"Empty Amber Glass Spray Bottles"棕色玻璃瓶）。getTargetProduct 签名变更为 `(report, workbenchTarget?)`，调用方决定是否传 workbench 上下文。当 `thumbnailUrl` / `localImageUrl` / `imageUrl` 全空但 `datasetId` + `itemId` 都存在时，目标商品图片同样走 `/api/showcase/images/{datasetId}/{itemId}?size=thumb` 兜底；404 显示占位图。
+- **推荐列表图片兜底**：推荐项的 `thumbnailUrl` / `localImageUrl` / `imageUrl` 全为空但有 `dataset` + `itemId` 时，前端用 `/api/showcase/images/{datasetId}/{itemId}?size=thumb` 兜底拼缩略图，vite 代理转发到 `FedVLR-API`；后端 404 时落到通用占位图，不影响列表渲染。`RecommendationComparisonBoard` 新增 `dataset` prop，由 `AttackDefenseRange.renderRecommendationComparison` 从 `activeJobMetrics.dataset ?? workbenchJob?.dataset ?? config.dataset` 透传，并在 `normalizeShowcaseDataset` 内归一化为后端 ID。
+- **数据集 ID 形态**：`/api/showcase/images/...` 路径的 `{datasetId}` 必须是后端注册过的 ID（`AMAZON_BEAUTY_POC` / `KU` 等），不接受 `Amazon Beauty` / `KU 多模态数据集` 等展示名。`scenarioNarratives.normalizeShowcaseDataset` 做最小映射（Amazon 展示名 → `AMAZON_BEAUTY_POC`、KU 展示名 → `KU`、已是 ID 的原样返回）。所有调用图片兜底的位置（推荐列表、workbench 目标商品）都必须经过这个 helper。
+- **每方向固定模块保留**：成员推断 / 更新泄露 / 聚合防御 即使没有方向专用字段也整块保留固定模块（隐私风险指标 / 审计配置 / 样本与分数证据；命中指标 / 泄露配置 / 候选还原；防御配置 / 异常客户端 / 前后性能与恢复）。某模块无真实字段时，模块内显示一次 `本次实验未导出该项分析证据。`，不再为每个指标分别显示"暂无 / 不适用"。推荐操纵方向各模块同样按该规则处理。`recommendation_manipulation` 的"本次推荐列表规模"模块在 metrics 未导出 `baseline_top50` / `attack_top50`、且 V3 `recommendationComparison` 也不含真实条目时改为单条占位 `本次实验未导出推荐列表规模统计。`，**不再**显示三个 0。
 - **顶部"本次实验摘要"**：紧凑显示真实存在字段：实验方向、数据集、模型、开始时间、完成状态、结果来源；`Loss` / `Recall@50` / `NDCG@50` / 训练轮数等训练质量指标只在当前 job result 实际导出这些字段时显示，缺失时隐藏（不写"暂无 / 不适用"占位卡片）。
 - **方向模块映射**（仅渲染当前 direction 应当出现的模块；旧 direction 切换时通过 `key={direction}` 强制重挂以彻底卸载旧数据）：
   - `recommendation_manipulation` 推荐操纵：目标商品轨迹、攻击前后目标排序、rank gain、最终 Top50 是否命中、推荐列表规模、正常/攻击后/防御后三列、Jaccard/变化用户/目标操纵指数；**防御摘要**仅在当前 job 实际启用防御并导出防御结果时显示；**隐藏**成员推断、客户端更新泄露模块。
   - `membership_inference` 成员推断：MIA AUC/Accuracy/Precision/Recall/F1、成员与非成员得分差、证据来源、标签来源、MIA 模型、阈值策略、样本数量/比例、判别分数分布/ROC；**隐藏**目标商品轨迹、推荐列表规模、三列推荐对比、客户端更新泄露。
   - `update_leakage` 更新泄露：Hit@10/Hit@20/Hit@50、候选还原商品列表（仅真实图片 URL）、候选排名及相似度/距离、输入来源、泄露目标模态、相似度方法、审计客户端数量；**隐藏**目标商品轨迹、推荐列表规模、三列、成员推断。
   - `aggregation_defense` 聚合防御：基础攻击类型、鲁棒聚合算法、恶意客户端比例、异常更新数量、选中/拒绝/保留客户端数量、防御前后 Recall@50/NDCG@50、防御恢复率、过滤结果/客户端审计明细、防御参数摘要；**隐藏**目标商品轨迹、推荐列表规模、三列、成员推断、客户端更新泄露；`base_attack=none` 时不显示恶意客户端或攻击效果相关卡片。
-- **缺失数据处理**：模块或字段无真实数据时直接隐藏对应 section，**不用 mock / V3 / 其他 job 数据补造**。任务已完成但未导出任何方向证据时，仅显示一次"该实验未导出可用于单次分析的方向证据"。失败任务单独走"未完成，无法进入单次分析"分支，展示失败阶段与真实错误摘要，不渲染为分析结果。
-- **实现约束**：构建清晰的 direction 分支或 config mapping（例如 `analysisSectionsByDirection`）；不要继续依赖散落的跨条件 if/else。保留现有的真实字段归一化逻辑（如 `displayRankBefore` 等），不要对页面进行广泛重写。
+- **缺失数据处理**：方向下的固定模块必须整块保留；模块或字段无真实数据时显示一次"本次实验未导出该项分析证据。"，**不用 mock / V3 / 其他 job 数据补造**。任务已完成但完全无任何方向证据时，仅显示一次"该实验未导出可用于单次分析的方向证据"。失败任务单独走"未完成，无法进入单次分析"分支，展示失败阶段与真实错误摘要，不渲染为分析结果。
+- **实现约束**：构建清晰的 direction 分支或 config mapping（例如 `analysisSectionsByDirection`）；不要继续依赖散落的跨条件 if/else。保留现有的真实字段归一化逻辑（如 `displayRankBefore` 等），不要对页面进行广泛重写。`EmptyModuleBlock` 等占位 UI 放在 file-local 组件里，不引入新的跨页组件。
 
 推荐三列默认请求 5 条，支持展开 15 条、展开 50 条和收起；展开动作应按需请求 recommendations endpoint，不要一次渲染全量推荐。推荐项应显示图片、标题、类目、rank、变化状态和是否目标商品。目标商品不在 Top50 时不要插入列表，只在目标轨迹中说明。
 
@@ -172,7 +176,7 @@
 
 `/showcase/scenarios` 返回 `has_v3`、`available_panels`、`supported_directions`、`has_runtime`、`has_curves`、`has_target_manipulation`、`has_membership`、`has_update_leakage`、`has_aggregation_defense`、`has_privacy_defense`、`has_model_support`、`has_images` 时，主 UI 必须转成中文标签，例如“V3 证据”“有运行时间线”“有曲线”“有推荐操纵”“有成员推断”“有更新泄露”“有聚合防御”“有图片”，不要直接显示字段名。
 
-推荐图片优先使用 `thumbnail_url`，其次 `local_image_url`，再 fallback 到 `image_url`，再失败显示占位图。不要渲染 D 盘路径、UNC 路径或其他本地绝对路径。
+推荐图片优先使用 `thumbnail_url`，其次 `local_image_url`，再 fallback 到 `image_url`；当三者都为空但有 `dataset` + `itemId` 时，调用 `/api/showcase/images/{datasetId}/{itemId}?size=thumb` 兜底（vite 代理转发 `FedVLR-API`，404 落到占位图），最后再失败显示占位图。`{datasetId}` 必须是后端 ID（`AMAZON_BEAUTY_POC` / `KU` 等），不要传展示名。workbench 目标商品图片走相同规则。不要渲染 D 盘路径、UNC 路径或其他本地绝对路径。
 
 ## 口径和边界
 

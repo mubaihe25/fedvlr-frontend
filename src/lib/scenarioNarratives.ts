@@ -47,6 +47,28 @@ export const datasetLabel = (value?: string | null) => {
   return value;
 };
 
+// 规范化数据集名为 FedVLR 后端 /showcase/images/{dataset}/... 路径使用的 ID。
+// 后端 image 路由不接受展示名称（"Amazon Beauty" / "KU 多模态数据集"），
+// 必须落到注册过的数据集 ID（AMAZON_BEAUTY_POC / KU 等）；不在已知集合内则原样返回。
+const DATASET_ID_NORMALIZATION: Record<string, string> = {
+  'AMAZON BEAUTY': 'AMAZON_BEAUTY_POC',
+  'KU 多模态数据集': 'KU',
+  'KU': 'KU',
+  'AMAZON_BEAUTY_POC': 'AMAZON_BEAUTY_POC',
+};
+
+export const normalizeShowcaseDataset = (value?: string | null): string | null => {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const upper = trimmed.toUpperCase();
+  if (DATASET_ID_NORMALIZATION[upper]) return DATASET_ID_NORMALIZATION[upper];
+  if (DATASET_ID_NORMALIZATION[trimmed]) return DATASET_ID_NORMALIZATION[trimmed];
+  if (upper.includes('AMAZON')) return 'AMAZON_BEAUTY_POC';
+  if (upper === 'KU') return 'KU';
+  return trimmed;
+};
+
 export const sourceLabel = (source: ShowcaseBundle['dataSource']) => {
   if (source === 'api') return '真实数据';
   if (source === 'mixed') return '真实数据 / 部分缺失';
@@ -163,7 +185,39 @@ export const normalizeEvidenceType = (value?: string | null) => {
   return translateSecurityKey(value);
 };
 
-export const getTargetProduct = (report: ShowcaseReport) => {
+export interface WorkbenchTargetContext {
+  itemId?: string | number | null;
+  title?: string | null;
+  category?: string | null;
+  thumbnailUrl?: string | null;
+  localImageUrl?: string | null;
+  imageUrl?: string | null;
+}
+
+const hasAnyTargetField = (target: WorkbenchTargetContext | null | undefined): target is WorkbenchTargetContext => {
+  if (!target) return false;
+  return (
+    target.itemId !== undefined && target.itemId !== null && String(target.itemId).trim() !== ''
+  ) || Boolean(target.title) || Boolean(target.thumbnailUrl) || Boolean(target.localImageUrl) || Boolean(target.imageUrl);
+};
+
+export const getTargetProduct = (report: ShowcaseReport, workbenchTarget?: WorkbenchTargetContext | null) => {
+  // Workbench job result takes priority over V3 / legacy summaries. The single-analysis
+  // Tab must reflect the current job's target, not the V3 showcase fixture (e.g. amber
+  // glass bottle). When only an itemId is present, show "商品 {itemId}" with a placeholder
+  // image; never fall back to a stale V3 default.
+  if (hasAnyTargetField(workbenchTarget)) {
+    const ctx = workbenchTarget as WorkbenchTargetContext;
+    const itemId = ctx.itemId !== undefined && ctx.itemId !== null ? String(ctx.itemId) : null;
+    return {
+      itemId,
+      title: ctx.title ?? (itemId ? `商品 ${itemId}` : null),
+      category: ctx.category ?? null,
+      thumbnailUrl: ctx.thumbnailUrl ?? null,
+      localImageUrl: ctx.localImageUrl ?? null,
+      imageUrl: ctx.imageUrl ?? null,
+    };
+  }
   if (report.v3?.targetManipulation?.targetItem) {
     const item = report.v3.targetManipulation.targetItem;
     return {
