@@ -3976,7 +3976,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
         {renderActiveTab()}
 
-        {activeTab !== 'history' ? (
+        {activeTab === 'orchestration' ? (
           <section className="grid gap-4 md:grid-cols-4">
             {[
               {title: '攻击', icon: Swords, value: selectedPlay.attackModules.map((id) => getSecurityModule(id)?.shortTitle).filter(Boolean).join(' / ')},
