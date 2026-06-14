@@ -112,6 +112,7 @@
   - `membership_inference` 成员推断：MIA AUC/Accuracy/Precision/Recall/F1、成员与非成员得分差、证据来源、标签来源、MIA 模型、阈值策略、样本数量/比例、判别分数分布/ROC；隐藏目标商品轨迹、推荐列表规模、三列推荐对比、客户端更新泄露。
   - `update_leakage` 更新泄露：Hit@10/Hit@20/Hit@50、候选还原商品列表（仅真实图片 URL）、候选排名及相似度/距离、输入来源、泄露目标模态、相似度方法、审计客户端数量；隐藏目标商品轨迹、推荐列表规模、三列、成员推断。
   - `aggregation_defense` 聚合防御：基础攻击类型、鲁棒聚合算法、恶意客户端比例、异常更新数量、选中/拒绝/保留客户端数量、防御前后 Recall@50/NDCG@50、防御恢复率、过滤结果/客户端审计明细、防御参数摘要；隐藏目标商品轨迹、推荐列表规模、三列、成员推断、客户端更新泄露；`base_attack=none` 时不显示恶意客户端或攻击效果相关卡片。
+- 新 job 读取 `workbench-result-v2`：通用训练指标来自 `training`，方向证据来自 `direction_result`。成员推断绘制当前 job ROC 与分数分布；更新泄露展示真实候选排名/分数和匿名客户端证据；聚合防御展示 baseline/attacked/defended 三阶段指标、三组逐轮曲线和拒绝客户端曲线/表格。
 - 缺失模块整块保留并以单条占位提示（见"每方向固定模块保留"）；任务已完成但完全无任何方向证据时，仅显示一次"该实验未导出可用于单次分析的方向证据"。
 - 失败任务单独走"未完成，无法进入单次分析"分支，展示失败阶段与真实错误摘要，不渲染为分析结果。
 
@@ -124,7 +125,7 @@
 
 运行监控有 `job_id` 时每 1-2 秒轮询 job 状态和持续增长的 `run.log`，展示 job_id、direction、dataset、model、source、status、stage、progress、时间戳、PID、return code 和方向专属指标；新任务的 `source` 为 `full_train`。失败时显示失败阶段、中文摘要和可展开的完整后端错误，不重复渲染同一错误。completed/failed 后停止轮询。没有 job 时才读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
 
-单次分析优先级是当前 workbench job result、当前 showcase V3 artifact、未导出。推荐操纵 job result 的真实 target rank、masked Top50 hit 和 baseline/attack Top50 必须覆盖 showcase 摘要；当前 job 未执行的其他方向显示“未导出”，不使用本地演示数据补齐。
+单次分析优先级是当前 workbench job result、历史选中 job、最近可分析 job、空状态。当前 job 存在时，方向指标、推荐列表、MIA、更新泄露和聚合防御证据都不得回退 showcase V3、mock 或其他 job。
 
 横向对比只展示指标矩阵和摘要条形图，不展示推荐商品列表。模型/数据集能力模式优先读取 V3 `model_support_panel`，并按“攻防强验证底座”“多模态主展示模型”“已通过 smoke 验证”“部分支持”“仅配置校验”“待适配”分组展示模型扩充成果。该区域只显示模型名、数据集、中文状态、TopK / metrics 是否验证和结果是否已导出，不展示本地结果路径。
 
@@ -212,4 +213,6 @@ npm run preview
 - 新建任务固定使用 `metrics_summary.source=full_train`。旧 job 的历史 source 只做兼容读取，不再作为新任务执行选项。`partial` 仍表示训练或结果导出只完成部分，不要补写成功效果。
 - 工作台模型选择只展示可进入配置的 8 个模型；MGCN 系列继续作为需要适配器的边界说明，不放进启动 select。模型不在下拉里按数据集硬禁用，是否支持当前方向的全量训练由 `/workbench/validate` 返回。
 - 运行监控如果有 `job_id`，优先轮询 workbench job 日志；没有 job 时继续使用 V3 运行时间线或摘要曲线。
+- 当前 job 的监控曲线只使用 v2 `training.rounds` 或聚合防御 `direction_result.rounds`；日志为空时显示等待 `run.log`，不显示固定示例日志。terminal 后停止轮询并读取 result，`partial` 展示缺失证据。
+- 商品 metadata 由当前 job result 提供 item ID/title/category，并把 `/showcase/images/{datasetId}/{itemId}?size=thumb` 改写为前端 `/api/showcase/...` 请求；404 只降级到占位图。
 - showcase 加载只在场景声明 V3 或 `available_panels` 时探测 V3 panel，旧版 metrics/privacy/recommendations 等端点也按 scenarios 摘要字段按需读取；缺失证据显示未导出，不用演示数据补齐。

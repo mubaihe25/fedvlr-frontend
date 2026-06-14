@@ -196,9 +196,15 @@ const workbenchStatusLabel = (value?: string | null) => WORKBENCH_STATUS_LABELS[
 const shortWorkbenchJobId = (value?: string | null) => (value ? value.replace(/^workbench_/, '').slice(-8) : EMPTY_VALUE);
 const WORKBENCH_STAGE_LABELS: Record<string, string> = {
   queued: '排队',
+  prepare: '准备配置',
   preparing_config: '准备配置',
   baseline_training: '基线训练',
   attack_training: '攻击训练',
+  privacy_audit: '成员推断审计',
+  leakage_audit: '更新泄露审计',
+  defense_training: '防御训练',
+  evaluation: '方向评估',
+  export: '结果导出',
   running: '训练执行',
   exporting_artifacts: '结果导出',
   launcher_failed: '训练启动器',
@@ -439,6 +445,99 @@ const buildSummaryCurve = (values: Array<number | null | undefined>, fallbackSta
   return interpolate(fallbackStart, fallbackEnd);
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null => (
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+);
+
+const workbenchDirectionResult = (summary: Record<string, unknown> | null | undefined) => asRecord(summary?.direction_result);
+
+const workbenchFlatMetrics = (summary: Record<string, unknown> | null | undefined): Record<string, unknown> | null => {
+  if (!summary) return null;
+  const metrics = asRecord(summary.metrics) ?? {};
+  const training = asRecord(summary.training) ?? {};
+  const directionResult = workbenchDirectionResult(summary) ?? {};
+  return {
+    ...training,
+    ...metrics,
+    ...directionResult,
+  };
+};
+
+const workbenchImageUrl = (value: unknown): string | undefined => {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const url = value.trim();
+  return url.startsWith('/showcase/') ? `/api${url}` : url;
+};
+
+const workbenchRecommendationItems = (value: unknown): ShowcaseRecommendationItem[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return {itemId: String(entry), rank: index + 1, title: `商品 ${String(entry)}`};
+    }
+    const row = entry as Record<string, unknown>;
+    const itemId = row.item_id ?? row.itemId ?? row.id;
+    return {
+      itemId: itemId == null ? undefined : String(itemId),
+      rank: typeof row.rank === 'number' ? row.rank : index + 1,
+      title: typeof row.title === 'string' ? row.title : itemId == null ? '候选商品' : `商品 ${String(itemId)}`,
+      category: typeof row.category === 'string' ? row.category : undefined,
+      thumbnailUrl: workbenchImageUrl(row.thumbnail_url ?? row.thumbnailUrl),
+      localImageUrl: workbenchImageUrl(row.local_image_url ?? row.localImageUrl),
+      imageUrl: workbenchImageUrl(row.image_url ?? row.imageUrl),
+    };
+  });
+};
+
+interface ChartSeries {
+  label: string;
+  color: string;
+  values: Array<number | null | undefined>;
+}
+
+const MultiSeriesChart: React.FC<{series: ChartSeries[]; height?: number}> = ({series, height = 180}) => {
+  const width = 720;
+  const padding = 24;
+  const numericValues = series.flatMap((item) => item.values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value)));
+  if (!numericValues.length) return null;
+  const min = Math.min(...numericValues);
+  const max = Math.max(...numericValues);
+  const range = max - min || 1;
+  const maxLength = Math.max(...series.map((item) => item.values.length), 2);
+  const chartPoints = (values: ChartSeries['values']) => values.map((value, index) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    const x = padding + index * ((width - padding * 2) / (maxLength - 1));
+    const y = height - padding - ((value - min) / range) * (height - padding * 2);
+    return {x, y};
+  }).filter((point): point is {x: number; y: number} => point !== null);
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full rounded-2xl border border-white/10 bg-slate-950/45">
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="rgba(148,163,184,0.25)" />
+        <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="rgba(148,163,184,0.25)" />
+        {series.map((item) => {
+          const coordinates = chartPoints(item.values);
+          return (
+            <g key={item.label}>
+              <polyline points={coordinates.map(({x, y}) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')} fill="none" stroke={item.color} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+              {coordinates.map(({x, y}, index) => <circle key={index} cx={x} cy={y} r="4" fill={item.color} />)}
+            </g>
+          );
+        })}
+      </svg>
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-300">
+        {series.map((item) => <span key={item.label} className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{backgroundColor: item.color}} />{item.label}</span>)}
+      </div>
+    </div>
+  );
+};
+
+const EmptyModuleBlock: React.FC<{message?: string}> = ({message = '本次实验未导出该项分析证据。'}) => (
+  <div className="mt-2 rounded-2xl border border-dashed border-white/15 bg-slate-900/40 px-3 py-2 text-xs leading-5 text-slate-400">
+    {message}
+  </div>
+);
+
 const sameItem = (left?: string | number | null, right?: string | number | null) =>
   left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 
@@ -502,13 +601,12 @@ const Sparkline: React.FC<{label: string; values: number[]; tone: string; valueT
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
-  const points = values
+  const chartPoints = values
     .map((value, index) => {
       const x = (index / Math.max(1, values.length - 1)) * 180;
       const y = 58 - ((value - min) / range) * 48;
-      return `${x},${y}`;
-    })
-    .join(' ');
+      return {x, y};
+    });
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
@@ -517,7 +615,8 @@ const Sparkline: React.FC<{label: string; values: number[]; tone: string; valueT
         <p className={cn('font-mono text-sm font-bold', tone)}>{valueText}</p>
       </div>
       <svg viewBox="0 0 180 64" className="h-16 w-full overflow-visible">
-        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="3" className={tone} strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={chartPoints.map(({x, y}) => `${x},${y}`).join(' ')} fill="none" stroke="currentColor" strokeWidth="3" className={tone} strokeLinecap="round" strokeLinejoin="round" />
+        {chartPoints.map(({x, y}, index) => <circle key={index} cx={x} cy={y} r="3" fill="currentColor" className={tone} />)}
       </svg>
       {note ? <p className="mt-2 text-[11px] text-slate-500">{note}</p> : null}
     </div>
@@ -673,32 +772,40 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     scenarioKeywords: selectedPlay.scenarioKeywords,
     analysisOrder: selectedPlay.analysisOrder,
   };
-  const activeJobMetricsSummary = workbenchResult?.metrics_summary;
-  const activeJobMetrics = activeJobMetricsSummary?.metrics && typeof activeJobMetricsSummary.metrics === 'object' && !Array.isArray(activeJobMetricsSummary.metrics)
-    ? (activeJobMetricsSummary.metrics as Record<string, unknown>)
-    : null;
-  // workbench 任务目标商品派生：runner 写出的扁平 key 优先；仅 itemId 时显示"商品 {id}"。
-  // 不再依赖 V3 fixture（"Empty Amber Glass Spray Bottles" 棕色玻璃瓶就是从这里漏出来的）。
-  // 嵌套对象形态（target_item_info）本版本暂不解析；如后端后续改用嵌套结构，再追加 fallback。
+  const activeJobMetricsSummary = asRecord(workbenchResult?.metrics_summary);
+  const activeJobDirectionResult = workbenchDirectionResult(activeJobMetricsSummary);
+  const activeJobMetrics = workbenchFlatMetrics(activeJobMetricsSummary);
+  // 当前 job 的目标商品字段优先；仅 itemId 时显示“商品 {id}”。
   const workbenchTargetInfo = useMemo<WorkbenchTargetContext | null>(() => {
     if (!activeJobMetrics) return null;
-    const itemId = firstStringLike(activeJobMetrics, ['target_item_id', 'targetItemId']);
+    const nested = asRecord(activeJobMetrics.target_item_info);
+    const itemId = firstStringLike(activeJobMetrics, ['target_item_id', 'targetItemId'])
+      ?? firstStringLike(nested, ['item_id', 'itemId']);
     if (itemId == null || itemId === '') return null;
-    const title = firstStringLike(activeJobMetrics, ['target_item_title', 'targetItemTitle']);
-    const category = firstStringLike(activeJobMetrics, ['target_item_category', 'targetItemCategory']);
+    const title = firstStringLike(activeJobMetrics, ['target_item_title', 'targetItemTitle'])
+      ?? firstStringLike(nested, ['title']);
+    const category = firstStringLike(activeJobMetrics, ['target_item_category', 'targetItemCategory'])
+      ?? firstStringLike(nested, ['category']);
     const thumbnailUrl = firstHttpUrl(activeJobMetrics, [
       'target_item_thumbnail_url', 'targetItemThumbnailUrl',
       'target_item_thumbnail', 'target_thumbnail_url',
-    ]);
+    ]) ?? firstHttpUrl(nested, ['thumbnail_url', 'thumbnailUrl']);
     const localImageUrl = firstHttpUrl(activeJobMetrics, [
       'target_item_local_image_url', 'targetItemLocalImageUrl',
       'target_item_local_image', 'target_local_image_url',
-    ]);
+    ]) ?? firstHttpUrl(nested, ['local_image_url', 'localImageUrl']);
     const imageUrl = firstHttpUrl(activeJobMetrics, [
       'target_item_image_url', 'targetItemImageUrl',
       'target_item_image', 'target_image_url',
-    ]);
-    return {itemId, title, category, thumbnailUrl, localImageUrl, imageUrl};
+    ]) ?? firstHttpUrl(nested, ['image_url', 'imageUrl']);
+    return {
+      itemId,
+      title,
+      category,
+      thumbnailUrl: workbenchImageUrl(thumbnailUrl),
+      localImageUrl: workbenchImageUrl(localImageUrl),
+      imageUrl: workbenchImageUrl(imageUrl),
+    };
   }, [activeJobMetrics]);
   const jobMetricNumber = (key: string) => {
     const value = activeJobMetrics?.[key];
@@ -711,34 +818,37 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const activeJobDefenses = Array.isArray(activeJobMetrics?.active_defenses)
     ? activeJobMetrics.active_defenses
     : [];
-  const jobRecommendationItems = (key: 'baseline_top50' | 'attack_top50'): ShowcaseRecommendationItem[] => {
+  const jobRecommendationItems = (key: 'baseline_top50' | 'attack_top50' | 'defense_top50'): ShowcaseRecommendationItem[] => {
+    const directionKey = key === 'baseline_top50'
+      ? 'baseline_recommendations'
+      : key === 'attack_top50'
+        ? 'attack_recommendations'
+        : 'defense_recommendations';
+    const currentItems = workbenchRecommendationItems(activeJobDirectionResult?.[directionKey]);
+    if (currentItems.length) return currentItems;
     const value = activeJobMetrics?.[key];
     if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
     const items = (value as Record<string, unknown>).items;
-    if (!Array.isArray(items)) return [];
-    return items.map((item, index) => ({
-      itemId: String(item),
-      rank: index + 1,
-      title: `商品 ${String(item)}`,
-    }));
+    return workbenchRecommendationItems(items);
   };
   const jobBaselineTop50 = jobRecommendationItems('baseline_top50');
   const jobAttackTop50 = jobRecommendationItems('attack_top50');
-  const jobRecommendationComparison: ShowcaseRecommendationComparison | null = activeJobMetrics && (jobBaselineTop50.length || jobAttackTop50.length)
+  const jobDefenseTop50 = jobRecommendationItems('defense_top50');
+  const jobRecommendationComparison: ShowcaseRecommendationComparison | null = activeJobMetrics && (jobBaselineTop50.length || jobAttackTop50.length || jobDefenseTop50.length)
     ? {
         baseline: jobBaselineTop50,
         attack: jobAttackTop50,
-        defense: [],
-        totalCounts: {baseline: jobBaselineTop50.length, attack: jobAttackTop50.length, defense: 0},
+        defense: jobDefenseTop50,
+        totalCounts: {baseline: jobBaselineTop50.length, attack: jobAttackTop50.length, defense: jobDefenseTop50.length},
         limit: 50,
       }
     : null;
-  const activeRecommendationComparison = jobRecommendationComparison ?? report.recommendationComparison;
+  const activeRecommendationComparison = workbenchResult ? jobRecommendationComparison : report.recommendationComparison;
   const rankStats = getTargetRanks(report);
   const fallbackBefore = selectedPlay.id === 'target_poisoning_play' ? 170 : null;
   const fallbackAfter = selectedPlay.id === 'target_poisoning_play' ? 3 : null;
-  const displayRankBefore = jobMetricNumber('target_rank_before') ?? rankStats.before ?? fallbackBefore;
-  const displayRankAfter = jobMetricNumber('target_rank_after') ?? rankStats.after ?? fallbackAfter;
+  const displayRankBefore = activeJobMetrics ? jobMetricNumber('target_rank_before') : rankStats.before ?? fallbackBefore;
+  const displayRankAfter = activeJobMetrics ? jobMetricNumber('target_rank_after') : rankStats.after ?? fallbackAfter;
   const computedRankLift = typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number'
     ? displayRankBefore - displayRankAfter
     : null;
@@ -758,12 +868,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     : rankStats.reciprocalGain ?? computedReciprocalGain;
   const jobMaskedTop50Hit = jobMetricBoolean('masked_top50_hit');
   const displayFinalExposure = jobMaskedTop50Hit === null
-    ? getFinalExposureText(report)
+    ? activeJobMetrics ? '未导出' : getFinalExposureText(report)
     : jobMaskedTop50Hit ? '最终曝光命中' : '最终曝光未命中';
   const privacyMetrics = getPrivacyMetrics(report);
   const v3TargetPanel = report.v3?.targetManipulation ?? null;
   const v3MembershipPanel = report.v3?.membership ?? null;
-  const v3LeakagePanel = report.v3?.updateLeakage ?? null;
   const v3AggregationPanel = report.v3?.aggregationDefense ?? null;
   const v3CurvesPanel = report.v3?.curves ?? null;
   const v3RuntimePanel = report.v3?.runtime ?? null;
@@ -2937,19 +3046,48 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   const renderMonitoring = () => {
     const metrics = report.metricsSummary;
-    const recallValues = v3CurvesPanel?.recallAt50?.length
-      ? v3CurvesPanel.recallAt50
-      : buildSummaryCurve([metrics?.baseline?.recall50, metrics?.attack?.recall50, metrics?.defense?.recall50], 0.31, 0.35);
-    const ndcgValues = v3CurvesPanel?.ndcgAt50?.length
-      ? v3CurvesPanel.ndcgAt50
-      : buildSummaryCurve([metrics?.baseline?.ndcg50, metrics?.attack?.ndcg50, metrics?.defense?.ndcg50], 0.18, 0.2);
-    const lossValues = v3CurvesPanel?.loss?.length ? v3CurvesPanel.loss : interpolate(0.72, 0.31);
-    const riskValues = v3CurvesPanel?.attackRisk?.length ? v3CurvesPanel.attackRisk : buildSummaryCurve([0.18, displayNormalizedLift, privacyMetrics.miaAuc], 0.15, 0.56);
-    const recoveryValues = v3CurvesPanel?.defenseRecovery?.length ? v3CurvesPanel.defenseRecovery : buildSummaryCurve([0.22, metrics?.recoveryRate], 0.2, 0.72);
+    const jobMetricsSummary = asRecord(workbenchResult?.metrics_summary);
+    const jobDirectionResult = workbenchDirectionResult(jobMetricsSummary);
+    const jobTraining = asRecord(jobMetricsSummary?.training);
+    const jobMetrics = workbenchFlatMetrics(jobMetricsSummary);
+    const trainingRounds = Array.isArray(jobTraining?.rounds)
+      ? jobTraining.rounds.map(asRecord).filter((item): item is Record<string, unknown> => item !== null)
+      : [];
+    const aggregationRounds = Array.isArray(jobDirectionResult?.rounds)
+      ? jobDirectionResult.rounds.map(asRecord).filter((item): item is Record<string, unknown> => item !== null)
+      : [];
+    const currentJobRounds = aggregationRounds.length ? aggregationRounds : trainingRounds;
+    const jobRoundMetric = (row: Record<string, unknown>, key: string): number | null => {
+      if (aggregationRounds.length) {
+        const phase = asRecord(row.defended) ?? asRecord(row.attacked) ?? asRecord(row.baseline);
+        return typeof phase?.[key] === 'number' ? phase[key] as number : null;
+      }
+      return typeof row[key] === 'number' ? row[key] as number : null;
+    };
+    const jobMetricNumberValue = (key: string): number | null => typeof jobMetrics?.[key] === 'number' ? jobMetrics[key] as number : null;
+    const hasCurrentJob = Boolean(workbenchJobId);
+    const currentRecall = currentJobRounds.map((row) => jobRoundMetric(row, 'recall_at_50')).filter((value): value is number => value !== null);
+    const currentNdcg = currentJobRounds.map((row) => jobRoundMetric(row, 'ndcg_at_50')).filter((value): value is number => value !== null);
+    const currentLoss = currentJobRounds.map((row) => jobRoundMetric(row, 'loss')).filter((value): value is number => value !== null);
+    const recallValues = hasCurrentJob
+      ? currentRecall
+      : v3CurvesPanel?.recallAt50?.length ? v3CurvesPanel.recallAt50 : buildSummaryCurve([metrics?.baseline?.recall50, metrics?.attack?.recall50, metrics?.defense?.recall50], 0.31, 0.35);
+    const ndcgValues = hasCurrentJob
+      ? currentNdcg
+      : v3CurvesPanel?.ndcgAt50?.length ? v3CurvesPanel.ndcgAt50 : buildSummaryCurve([metrics?.baseline?.ndcg50, metrics?.attack?.ndcg50, metrics?.defense?.ndcg50], 0.18, 0.2);
+    const lossValues = hasCurrentJob
+      ? currentLoss
+      : v3CurvesPanel?.loss?.length ? v3CurvesPanel.loss : interpolate(0.72, 0.31);
+    const riskValues = hasCurrentJob
+      ? [jobMetricNumberValue('target_manipulation_index'), jobMetricNumberValue('auc'), jobMetricNumberValue('hit_at_50')].filter((value): value is number => value !== null)
+      : v3CurvesPanel?.attackRisk?.length ? v3CurvesPanel.attackRisk : buildSummaryCurve([0.18, displayNormalizedLift, privacyMetrics.miaAuc], 0.15, 0.56);
+    const recoveryValues = hasCurrentJob
+      ? [jobMetricNumberValue('recovery_rate_recall'), jobMetricNumberValue('recovery_rate_ndcg')].filter((value): value is number => value !== null)
+      : v3CurvesPanel?.defenseRecovery?.length ? v3CurvesPanel.defenseRecovery : buildSummaryCurve([0.22, metrics?.recoveryRate], 0.2, 0.72);
     const maliciousRatio = v3RuntimePanel?.maliciousClientRatio ?? config.poisoningRatio ?? config.maliciousClientConfig?.ratio ?? 0;
-    const roundNow = v3RuntimePanel?.currentRound ?? Math.max(1, Math.round((config.totalRounds || 10) * 0.7));
-    const totalRounds = v3RuntimePanel?.totalRounds ?? config.totalRounds ?? 10;
-    const curveBadge = curveSourceLabel(v3CurvesPanel?.curveSource);
+    const roundNow = hasCurrentJob ? currentJobRounds.length : v3RuntimePanel?.currentRound ?? Math.max(1, Math.round((config.totalRounds || 10) * 0.7));
+    const totalRounds = hasCurrentJob ? Number(jobTraining?.epochs ?? config.totalRounds ?? currentJobRounds.length) : v3RuntimePanel?.totalRounds ?? config.totalRounds ?? 10;
+    const curveBadge = hasCurrentJob ? '真实记录点' : curveSourceLabel(v3CurvesPanel?.curveSource);
     const topologyDefenseActive = selectedPlay.id === 'robust_defense_play' ? true : selectedPlay.id === 'target_poisoning_play' ? false : defenseActive;
     const logLinesByPlay: Record<ExperimentPlayId, string[]> = {
       target_poisoning_play: [
@@ -2985,18 +3123,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       const prefix = event.round ? `[Round ${event.round}]` : event.type ? `[${toChineseLabel(event.type)}]` : '[V3]';
       return `${prefix} ${event.message}`;
     }) ?? [];
-    const logLines = workbenchJobId && workbenchLogs.length ? workbenchLogs : v3LogLines.length ? v3LogLines : logLinesByPlay[selectedPlay.id];
-    const jobMetricsSummary = workbenchResult?.metrics_summary;
+    const logLines = workbenchJobId
+      ? workbenchLogs.length ? workbenchLogs : ['[Workbench] 等待当前任务 run.log 输出。']
+      : v3LogLines.length ? v3LogLines : logLinesByPlay[selectedPlay.id];
     const jobMetricsSource = typeof jobMetricsSummary?.source === 'string' ? jobMetricsSummary.source : workbenchResult?.source;
-    const jobMetrics = jobMetricsSummary?.metrics && typeof jobMetricsSummary.metrics === 'object' && !Array.isArray(jobMetricsSummary.metrics)
-      ? (jobMetricsSummary.metrics as Record<string, unknown>)
-      : null;
     const jobMetric = (key: string, fallback: string = EMPTY_VALUE) => {
       const value = jobMetrics?.[key];
       if (['string', 'number', 'boolean'].includes(typeof value) || value === null) {
         return workbenchMetricValue(key, value as string | number | boolean | null);
       }
-      return fallback;
+      return hasCurrentJob ? EMPTY_VALUE : fallback;
     };
     const hasJobMetric = (key: string) => (jobMetrics ? Object.prototype.hasOwnProperty.call(jobMetrics, key) : false);
     const jobMetricEntries = Object.entries(jobMetrics ?? {})
@@ -3204,13 +3340,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             </div>
             <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-3 py-1 text-xs font-bold text-cyan-100">{curveBadge}</span>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <Sparkline label="Loss" values={lossValues} tone="text-slate-200" valueText={lossValues.at(-1)?.toFixed(3) ?? EMPTY_VALUE} />
-            <Sparkline label="Recall@50" values={recallValues} tone="text-cyan-100" valueText={formatMetricValue(metrics?.defense?.recall50 ?? metrics?.baseline?.recall50)} />
-            <Sparkline label="NDCG@50" values={ndcgValues} tone="text-violet-100" valueText={formatMetricValue(metrics?.defense?.ndcg50 ?? metrics?.baseline?.ndcg50)} />
-            <Sparkline label="攻击风险" values={riskValues} tone="text-rose-100" valueText={formatRatio(displayNormalizedLift ?? privacyMetrics.miaAuc)} />
-            <Sparkline label="防御恢复" values={recoveryValues} tone="text-emerald-100" valueText={formatPercentValue(metrics?.recoveryRate)} />
-          </div>
+          {lossValues.length || recallValues.length || ndcgValues.length || riskValues.length || recoveryValues.length ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              {lossValues.length ? <Sparkline label="Loss" values={lossValues} tone="text-slate-200" valueText={lossValues.at(-1)?.toFixed(3) ?? EMPTY_VALUE} /> : null}
+              {recallValues.length ? <Sparkline label="Recall@50" values={recallValues} tone="text-cyan-100" valueText={formatMetricValue(recallValues.at(-1))} /> : null}
+              {ndcgValues.length ? <Sparkline label="NDCG@50" values={ndcgValues} tone="text-violet-100" valueText={formatMetricValue(ndcgValues.at(-1))} /> : null}
+              {riskValues.length ? <Sparkline label="攻击风险" values={riskValues} tone="text-rose-100" valueText={formatMetricValue(riskValues.at(-1))} /> : null}
+              {recoveryValues.length ? <Sparkline label="防御恢复" values={recoveryValues} tone="text-emerald-100" valueText={formatPercentValue(recoveryValues.at(-1) ?? null)} /> : null}
+            </div>
+          ) : <EmptyModuleBlock message="当前任务尚未导出逐轮曲线。" />}
         </section>
       </div>
     );
@@ -3261,10 +3399,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         : '未选择分析对象';
 
     // 3) 当前 workbench job 的真实字段访问
-    const jobMetricsSummary = workbenchResult?.metrics_summary;
-    const jobMetrics = jobMetricsSummary?.metrics && typeof jobMetricsSummary.metrics === 'object' && !Array.isArray(jobMetricsSummary.metrics)
-      ? (jobMetricsSummary.metrics as Record<string, unknown>)
-      : null;
+    const jobMetricsSummary = asRecord(workbenchResult?.metrics_summary);
+    const jobDirectionResult = workbenchDirectionResult(jobMetricsSummary);
+    const jobMetrics = workbenchFlatMetrics(jobMetricsSummary);
     const hasJobMetric = (key: string) => jobMetrics
       ? Object.prototype.hasOwnProperty.call(jobMetrics, key) && jobMetrics[key] !== undefined && jobMetrics[key] !== null
       : false;
@@ -3292,14 +3429,19 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
 
     // 4) 防御是否在当前 job 真正启用：基于 job 自身配置/导出，不引入 V3 fallback
-    const jobConfigSummary = (workbenchJob?.config_summary ?? null) as Record<string, unknown> | null;
+    const jobConfigSummary = asRecord(jobMetricsSummary?.config_summary) ?? asRecord(workbenchJob?.config_summary);
+    const jobDefenseConfig = asRecord(jobConfigSummary?.defense);
+    const jobRobustAggregators = Array.isArray(jobConfigSummary?.robust_aggregators)
+      ? jobConfigSummary.robust_aggregators
+      : [];
     const defenseActiveForJob = Boolean(
       activeJobDefenses.length ||
-        (jobConfigSummary && Array.isArray(jobConfigSummary.robust_aggregators) && (jobConfigSummary.robust_aggregators as unknown[]).length > 0) ||
-        (jobConfigSummary && jobConfigSummary.defense_algorithm && typeof jobConfigSummary.defense_algorithm === 'string'),
+        jobRobustAggregators.length > 0 ||
+        jobConfigSummary?.dp_noise_enabled ||
+        activeJobDirectionResult?.defended,
     );
     const baseAttackForJob: string | null = (() => {
-      if (jobConfigSummary && typeof jobConfigSummary.base_attack === 'string') return String(jobConfigSummary.base_attack);
+      if (jobDefenseConfig && typeof jobDefenseConfig.base_attack === 'string') return jobDefenseConfig.base_attack;
       if (hasJobMetric('base_attack')) {
         const v = analysisJobMetricScalar('base_attack');
         if (typeof v === 'string') return v;
@@ -3390,13 +3532,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
     // 9) section 渲染器：每个 section 固定模块保留；空时整块显示一次统一占位，
     //    不再为每个指标分别显示"暂无 / 不适用"。
-    const EmptyModuleBlock = () => (
-      <div className="mt-2 rounded-2xl border border-dashed border-white/15 bg-slate-900/40 px-3 py-2 text-xs leading-5 text-slate-400">
-        本次实验未导出该项分析证据。
-      </div>
-    );
-
-
     const renderHeader = () => (
       <section className="sandbox-panel rounded-[28px] p-5">
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
@@ -3677,11 +3812,15 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (labelSource !== null) tiles.push({label: '标签来源', value: labelSource});
       if (hasJobMetric('mia_model')) tiles.push({label: 'MIA 模型', value: analysisJobMetric('mia_model')});
       if (hasJobMetric('threshold_strategy')) tiles.push({label: '阈值策略', value: analysisJobMetric('threshold_strategy')});
-      const sampleCount = hasJobMetric('membership_sample_count') ? analysisJobMetricRaw('membership_sample_count') : hasJobMetric('mia_sample_count') ? analysisJobMetricRaw('mia_sample_count') : null;
-      if (sampleCount !== null) tiles.push({label: '成员/非成员样本数', value: String(sampleCount)});
+      const sampleCount = hasJobMetric('sample_count') ? analysisJobMetricRaw('sample_count') : null;
+      if (sampleCount !== null) tiles.push({label: '样本总数', value: String(sampleCount)});
+      if (hasJobMetric('member_count') || hasJobMetric('non_member_count')) {
+        tiles.push({label: '成员 / 非成员', value: `${analysisJobMetricRaw('member_count') ?? 0} / ${analysisJobMetricRaw('non_member_count') ?? 0}`});
+      }
       if (hasJobMetric('member_nonmember_ratio')) tiles.push({label: '成员/非成员采样比例', value: String(analysisJobMetricRaw('member_nonmember_ratio'))});
-      if (hasJobMetric('export_pair_scores')) {
-        tiles.push({label: '导出判别分数明细', value: analysisJobMetricScalar('export_pair_scores') ? '已导出' : '未导出'});
+      const pairScores = asRecord(jobDirectionResult?.pair_scores);
+      if (pairScores) {
+        tiles.push({label: '匿名判别分数', value: `${String(pairScores.returned ?? 0)} 条`});
       }
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
@@ -3700,17 +3839,33 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
 
     const renderMiaScoreDistribution = () => {
-      const hasAny =
-        hasJobMetric('mia_score_distribution') || hasJobMetric('roc_curve') || Boolean(privacyMetrics.anonymizedExamples?.length);
+      const rocRows = Array.isArray(jobDirectionResult?.roc_curve)
+        ? jobDirectionResult.roc_curve.map(asRecord).filter((item): item is Record<string, unknown> => item !== null)
+        : [];
+      const scoreDistribution = asRecord(jobDirectionResult?.score_distribution);
+      const memberDistribution = asRecord(scoreDistribution?.member);
+      const nonMemberDistribution = asRecord(scoreDistribution?.non_member);
+      const pairScores = asRecord(jobDirectionResult?.pair_scores);
+      const rocValues = rocRows.map((row) => typeof row.tpr === 'number' ? row.tpr : null);
+      const hasAny = rocValues.some((value) => value !== null) || Boolean(memberDistribution || nonMemberDistribution || pairScores);
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">判别分数分布</h3>
           {hasAny ? (
-            privacyMetrics.anonymizedExamples?.length ? (
-              <p className="mt-3 rounded-2xl border border-white/10 bg-slate-950/35 px-3 py-2 text-sm text-slate-300">
-                匿名样例：{privacyMetrics.anonymizedExamples.slice(0, 2).map((item) => (typeof item === 'string' ? item : 'user-*** / item-***')).join(' / ')}
-              </p>
-            ) : null
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {memberDistribution ? <MetricTile label="成员分数均值" value={formatMetricValue(memberDistribution.mean as number | null)} tone="text-violet-100" /> : null}
+                {nonMemberDistribution ? <MetricTile label="非成员分数均值" value={formatMetricValue(nonMemberDistribution.mean as number | null)} tone="text-cyan-100" /> : null}
+                {memberDistribution ? <MetricTile label="成员样本" value={String(memberDistribution.count ?? 0)} /> : null}
+                {pairScores ? <MetricTile label="匿名明细" value={`${String(pairScores.returned ?? 0)} / ${String(pairScores.total ?? 0)}`} /> : null}
+              </div>
+              {rocValues.length ? (
+                <div>
+                  <p className="mb-2 text-xs font-bold tracking-[0.16em] text-slate-400">ROC 曲线 · 当前 job 判别分数</p>
+                  <MultiSeriesChart series={[{label: 'TPR', color: '#a78bfa', values: rocValues}]} />
+                </div>
+              ) : null}
+            </div>
           ) : (
             <EmptyModuleBlock />
           )}
@@ -3748,12 +3903,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
     const renderLeakageConfig = () => {
       const tiles: Array<{label: string; value: string}> = [];
-      if (hasJobMetric('update_input_source')) tiles.push({label: '输入来源', value: analysisJobMetric('update_input_source')});
-      if (hasJobMetric('risk_modality')) tiles.push({label: '泄露目标模态', value: analysisJobMetric('risk_modality')});
+      if (hasJobMetric('input_source')) tiles.push({label: '输入来源', value: analysisJobMetric('input_source')});
+      if (hasJobMetric('target_modality')) tiles.push({label: '泄露目标模态', value: analysisJobMetric('target_modality')});
       if (hasJobMetric('similarity_method')) tiles.push({label: '相似度方法', value: analysisJobMetric('similarity_method')});
-      if (hasJobMetric('client_count')) tiles.push({label: '审计客户端数量', value: String(analysisJobMetricRaw('client_count'))});
+      if (hasJobMetric('audit_client_count')) tiles.push({label: '审计客户端数量', value: String(analysisJobMetricRaw('audit_client_count'))});
       if (hasJobMetric('candidate_pool_size')) tiles.push({label: '候选商品池大小', value: String(analysisJobMetricRaw('candidate_pool_size'))});
-      if (hasJobMetric('candidate_k')) tiles.push({label: '返回候选数量', value: String(analysisJobMetricRaw('candidate_k'))});
+      if (hasJobMetric('returned_candidate_count')) tiles.push({label: '返回候选数量', value: String(analysisJobMetricRaw('returned_candidate_count'))});
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">更新泄露参数</h3>
@@ -3771,21 +3926,39 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
 
     const renderLeakageCandidates = () => {
-      // 候选还原模块：job 未导出时显示空态；不主动用 V3 候选去填补 job metrics。
-      // 同样按"不跨 job 拼接证据"原则，模块整体保留、无候选时统一占位。
-      const itemsFromV3 = v3LeakagePanel?.candidateItems ?? [];
-      const items = itemsFromV3.length ? itemsFromV3.slice(0, 6) : [];
+      const candidateRows = Array.isArray(jobDirectionResult?.candidates)
+        ? jobDirectionResult.candidates.map(asRecord).filter((item): item is Record<string, unknown> => item !== null)
+        : [];
+      const items = workbenchRecommendationItems(candidateRows).slice(0, 10);
+      const perClient = asRecord(jobDirectionResult?.per_client_evidence);
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">候选还原商品</h3>
           {items.length ? (
-            <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
-              {items.map((item, index) => (
-                <div key={`${item.itemId ?? index}-candidate`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
-                  <ProductImage item={item} className="h-16 w-full rounded-xl" />
-                  <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-300">{getProductTitle(item)}</p>
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                {items.map((item, index) => {
+                  const row = candidateRows[index] ?? {};
+                  return (
+                    <div key={`${item.itemId ?? index}-candidate`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
+                      <ProductImage item={item} className="h-20 w-full rounded-xl" />
+                      <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-300">{getProductTitle(item)}</p>
+                      <p className="mt-1 text-[10px] text-cyan-100">rank {String(row.rank ?? index + 1)} · score {formatMetricValue(row.score as number | null)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              {perClient && Object.keys(perClient).length ? (
+                <div className="overflow-x-auto rounded-2xl border border-white/10">
+                  <table className="min-w-full text-left text-xs text-slate-300">
+                    <thead className="bg-white/[0.05] text-slate-400"><tr><th className="px-3 py-2">匿名客户端</th><th className="px-3 py-2">真实交互</th><th className="px-3 py-2">候选数量</th><th className="px-3 py-2">Hit@50</th></tr></thead>
+                    <tbody>{Object.entries(perClient).slice(0, 8).map(([clientId, value]) => {
+                      const evidence = asRecord(value);
+                      return <tr key={clientId} className="border-t border-white/10"><td className="px-3 py-2 font-mono">{clientId}</td><td className="px-3 py-2">{Array.isArray(evidence?.true_item_ids) ? evidence.true_item_ids.length : 0}</td><td className="px-3 py-2">{Array.isArray(evidence?.candidates) ? evidence.candidates.length : 0}</td><td className="px-3 py-2">{formatMetricValue(evidence?.hit_at_50 as number | null)}</td></tr>;
+                    })}</tbody>
+                  </table>
                 </div>
-              ))}
+              ) : null}
             </div>
           ) : (
             <EmptyModuleBlock />
@@ -3795,24 +3968,54 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
 
     const renderDefenseMetrics = () => {
-      const tiles: Array<{label: string; value: string; tone?: string}> = [];
-      if (hasJobMetric('recall_at_50')) tiles.push({label: 'Recall@50', value: formatMetricValue(analysisJobMetricRaw('recall_at_50')), tone: 'text-cyan-100'});
-      if (hasJobMetric('ndcg_at_50')) tiles.push({label: 'NDCG@50', value: formatMetricValue(analysisJobMetricRaw('ndcg_at_50')), tone: 'text-violet-100'});
-      if (hasJobMetric('recall_at_50_before')) tiles.push({label: '防御前 Recall@50', value: formatMetricValue(analysisJobMetricRaw('recall_at_50_before'))});
-      if (hasJobMetric('ndcg_at_50_before')) tiles.push({label: '防御前 NDCG@50', value: formatMetricValue(analysisJobMetricRaw('ndcg_at_50_before'))});
-      if (hasJobMetric('recovery_rate_recall')) tiles.push({label: '防御恢复率', value: formatPercentValue(analysisJobMetricRaw('recovery_rate_recall') as number | null), tone: 'text-emerald-100'});
-      if (hasJobMetric('defense_status')) tiles.push({label: '防御状态', value: analysisJobMetric('defense_status'), tone: 'text-emerald-100'});
+      const baseline = asRecord(jobDirectionResult?.baseline);
+      const attacked = asRecord(jobDirectionResult?.attacked);
+      const defended = asRecord(jobDirectionResult?.defended);
+      const rounds = Array.isArray(jobDirectionResult?.rounds)
+        ? jobDirectionResult.rounds.map(asRecord).filter((item): item is Record<string, unknown> => item !== null)
+        : [];
+      const phases = [
+        {label: '无攻击 / 无防御基线', value: baseline, tone: 'border-cyan-200/20'},
+        ...(baseAttackForJob === 'malicious_update' ? [{label: '有攻击 / 无防御', value: attacked, tone: 'border-rose-200/20'}] : []),
+        ...(defenseActiveForJob ? [{label: '同攻击条件 / 有防御', value: defended, tone: 'border-emerald-200/20'}] : []),
+      ].filter((phase) => phase.value);
+      const phaseSeries = (metric: 'loss' | 'recall_at_50' | 'ndcg_at_50'): ChartSeries[] => [
+        {label: '基线', color: '#22d3ee', values: rounds.map((row) => asRecord(row.baseline)?.[metric] as number | null)},
+        ...(baseAttackForJob === 'malicious_update' ? [{label: '攻击后', color: '#fb7185', values: rounds.map((row) => asRecord(row.attacked)?.[metric] as number | null)}] : []),
+        ...(defenseActiveForJob ? [{label: '防御后', color: '#34d399', values: rounds.map((row) => asRecord(row.defended)?.[metric] as number | null)}] : []),
+      ];
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
             <ShieldCheck className="h-5 w-5 text-emerald-100" />
             <h3 className="text-xl font-bold text-white">防御效果指标</h3>
           </div>
-          {tiles.length ? (
-            <div className="grid gap-3 md:grid-cols-4">
-              {tiles.map((tile) => (
-                <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-              ))}
+          {phases.length ? (
+            <div className="space-y-5">
+              <div className="grid gap-3 lg:grid-cols-3">
+                {phases.map((phase) => (
+                  <div key={phase.label} className={cn('rounded-2xl border bg-white/[0.035] p-4', phase.tone)}>
+                    <p className="text-sm font-bold text-white">{phase.label}</p>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      <MetricTile label="Loss" value={formatMetricValue(phase.value?.loss as number | null)} />
+                      <MetricTile label="Recall@50" value={formatMetricValue(phase.value?.recall_at_50 as number | null)} tone="text-cyan-100" />
+                      <MetricTile label="NDCG@50" value={formatMetricValue(phase.value?.ndcg_at_50 as number | null)} tone="text-violet-100" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="grid gap-4 xl:grid-cols-3">
+                {(['loss', 'recall_at_50', 'ndcg_at_50'] as const).map((metric) => (
+                  <div key={metric} className="rounded-2xl border border-white/10 bg-slate-950/35 p-3">
+                    <p className="mb-2 text-xs font-bold text-slate-300">{metric === 'loss' ? 'Loss' : metric === 'recall_at_50' ? 'Recall@50' : 'NDCG@50'} 逐轮曲线</p>
+                    <MultiSeriesChart series={phaseSeries(metric)} height={150} />
+                  </div>
+                ))}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <MetricTile label="Recall@50 防御恢复率" value={formatPercentValue(analysisJobMetricRaw('recovery_rate_recall'))} tone="text-emerald-100" />
+                <MetricTile label="NDCG@50 防御恢复率" value={formatPercentValue(analysisJobMetricRaw('recovery_rate_ndcg'))} tone="text-emerald-100" />
+              </div>
             </div>
           ) : (
             <EmptyModuleBlock />
@@ -3823,18 +4026,43 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
     const renderDefenseConfig = () => {
       const tiles: Array<{label: string; value: string}> = [];
-      // base_attack=none 时不显示恶意相关参数
-      if (baseAttackForJob && baseAttackForJob !== 'none') tiles.push({label: '基础攻击', value: baseAttackForJob});
+      const defenseParameters = asRecord(jobDirectionResult?.defense_parameters);
+      const perturbationParameters = asRecord(jobDirectionResult?.update_perturbation);
+      if (baseAttackForJob) tiles.push({label: '基础攻击', value: baseAttackForJob === 'none' ? '无攻击' : '恶意模型更新'});
       if (hasJobMetric('defense_algorithm')) tiles.push({label: '鲁棒聚合算法', value: analysisJobMetric('defense_algorithm')});
-      if (hasJobMetric('anomaly_client_ratio')) tiles.push({label: '恶意客户端比例', value: String(analysisJobMetricRaw('anomaly_client_ratio'))});
-      if (hasJobMetric('rejected_client_count') || hasJobMetric('filtered_client_count')) {
-        tiles.push({label: '异常更新数量', value: formatPlainValue(analysisJobMetricRaw('rejected_client_count') ?? analysisJobMetricRaw('filtered_client_count'))});
+      if (baseAttackForJob === 'malicious_update' && hasJobMetric('malicious_client_ratio')) tiles.push({label: '恶意客户端比例', value: formatPercentValue(analysisJobMetricRaw('malicious_client_ratio'))});
+      if (baseAttackForJob === 'malicious_update' && hasJobMetric('perturbation_type')) tiles.push({label: '扰动类型', value: analysisJobMetric('perturbation_type')});
+      if (baseAttackForJob === 'malicious_update' && hasJobMetric('perturbation_strength')) tiles.push({label: '扰动强度', value: analysisJobMetric('perturbation_strength')});
+      if (hasJobMetric('dp_noise_enabled')) tiles.push({label: '更新扰动层', value: analysisJobMetricScalar('dp_noise_enabled') ? '差分隐私风格加噪' : '未启用'});
+      const parameterLabels: Record<string, string> = {
+        krum_f: 'Krum 容错数',
+        multi_krum_enabled: 'Multi-Krum',
+        distance_metric: '距离度量',
+        gradient_clip_norm: '防御预处理裁剪',
+        outlier_strategy: '异常值策略',
+        trim_ratio: '截尾比例',
+        trim_min_keep: '最少保留客户端',
+        bulyan_f: 'Bulyan 容错数',
+        bulyan_selection_ratio: 'Bulyan 选择比例',
+      };
+      Object.entries(parameterLabels).forEach(([key, label]) => {
+        const value = defenseParameters?.[key];
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          tiles.push({label, value: typeof value === 'boolean' ? value ? '启用' : '关闭' : String(value)});
+        }
+      });
+      if (analysisJobMetricScalar('dp_noise_enabled')) {
+        const perturbationLabels: Record<string, string> = {
+          noise_multiplier: '噪声乘数',
+          max_grad_norm: '更新扰动裁剪',
+          target_delta: '目标 delta',
+          dp_seed: '扰动随机种子',
+        };
+        Object.entries(perturbationLabels).forEach(([key, label]) => {
+          const value = perturbationParameters?.[key];
+          if (typeof value === 'number' || typeof value === 'string') tiles.push({label, value: String(value)});
+        });
       }
-      if (hasJobMetric('krum_f')) tiles.push({label: 'Krum 容错数', value: String(analysisJobMetricRaw('krum_f'))});
-      if (hasJobMetric('bulyan_f')) tiles.push({label: 'Bulyan 容错数', value: String(analysisJobMetricRaw('bulyan_f'))});
-      if (hasJobMetric('trim_ratio')) tiles.push({label: '截尾比例', value: String(analysisJobMetricRaw('trim_ratio'))});
-      if (hasJobMetric('outlier_strategy')) tiles.push({label: '异常值策略', value: analysisJobMetric('outlier_strategy')});
-      if (hasJobMetric('distance_metric')) tiles.push({label: '距离度量', value: analysisJobMetric('distance_metric')});
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">防御参数摘要</h3>
@@ -3852,23 +4080,22 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
 
     const renderDefenseFilter = () => {
-      const tiles: Array<{label: string; value: string; tone?: string}> = [];
-      if (hasJobMetric('selected_client_count') || hasJobMetric('rejected_client_count')) {
-        const selected = hasJobMetric('selected_client_count') ? Number(analysisJobMetricRaw('selected_client_count')) : 0;
-        const rejected = hasJobMetric('rejected_client_count') ? Number(analysisJobMetricRaw('rejected_client_count')) : 0;
-        tiles.push({label: '选中 / 拒绝客户端', value: `${selected} / ${rejected}`, tone: 'text-emerald-100'});
-      }
-      if (hasJobMetric('kept_client_count')) tiles.push({label: '保留客户端数量', value: String(analysisJobMetricRaw('kept_client_count'))});
-      const rejected = hasJobMetric('rejected_client_count') ? analysisJobMetricRaw('rejected_client_count') : hasJobMetric('filtered_client_count') ? analysisJobMetricRaw('filtered_client_count') : null;
-      if (rejected !== null) tiles.push({label: '异常更新数量', value: formatPlainValue(rejected), tone: 'text-emerald-100'});
+      const rounds = Array.isArray(jobDirectionResult?.rounds)
+        ? jobDirectionResult.rounds.map(asRecord).filter((item): item is Record<string, unknown> => item !== null)
+        : [];
+      const rejectedSeries = rounds.map((row) => typeof row.rejected_client_count === 'number' ? row.rejected_client_count : null);
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">客户端审计明细</h3>
-          {tiles.length ? (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-              {tiles.map((tile) => (
-                <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-              ))}
+          {rounds.length ? (
+            <div className="mt-4 space-y-4">
+              {rejectedSeries.some((value) => value !== null) ? <MultiSeriesChart series={[{label: '拒绝客户端数', color: '#34d399', values: rejectedSeries}]} height={140} /> : null}
+              <div className="overflow-x-auto rounded-2xl border border-white/10">
+                <table className="min-w-full text-left text-xs text-slate-300">
+                  <thead className="bg-white/[0.05] text-slate-400"><tr><th className="px-3 py-2">轮次</th><th className="px-3 py-2">参与</th>{baseAttackForJob === 'malicious_update' ? <th className="px-3 py-2">恶意</th> : null}<th className="px-3 py-2">保留</th><th className="px-3 py-2">拒绝</th><th className="px-3 py-2">匿名拒绝客户端</th></tr></thead>
+                  <tbody>{rounds.map((row, index) => <tr key={String(row.round ?? index)} className="border-t border-white/10"><td className="px-3 py-2">{String(row.round ?? index + 1)}</td><td className="px-3 py-2">{String(row.participant_count ?? 0)}</td>{baseAttackForJob === 'malicious_update' ? <td className="px-3 py-2 text-rose-100">{String(row.malicious_client_count ?? 0)}</td> : null}<td className="px-3 py-2 text-emerald-100">{String(row.accepted_client_count ?? 0)}</td><td className="px-3 py-2">{String(row.rejected_client_count ?? 0)}</td><td className="max-w-xs px-3 py-2 font-mono text-[10px]">{Array.isArray(row.rejected_client_ids) ? row.rejected_client_ids.join(', ') : EMPTY_VALUE}</td></tr>)}</tbody>
+                </table>
+              </div>
             </div>
           ) : (
             <EmptyModuleBlock />
@@ -3897,8 +4124,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
     // 10) 任务完成但未导出任何方向证据 → 单一空状态
     const sectionList = analysisDirection ? sectionsForDirection[analysisDirection] : [];
-    const hasAnyExportedMetric = jobMetrics !== null && Object.keys(jobMetrics).length > 0;
-    if (analysisDirection && !hasAnyExportedMetric && !activeJobDefenses.length && !workbenchResult) {
+    const hasAnyDirectionEvidence = jobDirectionResult !== null && Object.keys(jobDirectionResult).length > 0;
+    if (analysisDirection && workbenchResult && !hasAnyDirectionEvidence) {
       return (
         <div className="space-y-5">
           {renderHeader()}

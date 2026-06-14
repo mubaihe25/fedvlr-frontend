@@ -238,6 +238,12 @@ export interface WorkbenchResultResponse {
   source?: string | null;
   result_pointer?: Record<string, unknown>;
   metrics_summary?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  warnings?: string[];
+  missing_evidence?: string[];
+  failure_stage?: string | null;
+  error_summary?: string | null;
+  error_detail?: string | null;
   message?: string | null;
 }
 

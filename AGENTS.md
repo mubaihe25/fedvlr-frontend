@@ -238,3 +238,7 @@ npm run build
 - 高级参数提交给 workbench 时必须保留用户填写的训练轮数、本地轮数、采样比例、学习率和防御参数；前端固定提交 `execution_mode=full_train`。
 - 鲁棒聚合算法在前端是可空单选；单次实验最多选择一个，没有选中算法表示普通 FedAvg 聚合，不要恢复“无防御”按钮。聚合防御方向提交用户选择的 `base_attack=none|malicious_update`，默认 `none`。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。
 - Showcase 加载应按 scenarios 摘要字段请求 V3 panels 和旧版 endpoints；场景未声明 V3/旧证据时不要主动探测一堆 404。缺失证据显示“未导出 / 暂无证据”，不要用 mock 补单个缺口。
+- 新 job 的稳定协议是 `workbench-result-v2`。通用训练字段读 `metrics_summary.training`，方向模板只读同一 job 的 `metrics_summary.direction_result`；旧 job 才使用兼容扁平字段。
+- 成员推断必须展示当前 job 的 AUC/Accuracy/Precision/Recall/F1、ROC、分数分布和匿名 pair-score 元数据；更新泄露必须展示当前 job 的候选排名/分数、匿名客户端真实交互和 Hit@10/20/50，不得读取 V3 候选补齐。
+- 聚合防御必须按 baseline / attacked / defended 三阶段展示 Loss、Recall@50、NDCG@50，并读取逐轮拒绝数和匿名客户端表格。`base_attack=none` 时隐藏攻击阶段、恶意客户端和过滤成功率。
+- 有 `job_id` 时运行监控的曲线和日志只能来自当前 job；无真实 round 时显示缺失/等待，不得生成假曲线或固定日志。`partial` 必须展示 `missing_evidence`，failed 必须展示真实 `failure_stage`。
