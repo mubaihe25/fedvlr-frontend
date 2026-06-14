@@ -88,14 +88,16 @@
 
 方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。高级参数不再提供执行模式选择；“校验配置”和“开始实验”固定提交 `execution_mode=full_train`。不支持的方向、模型和数据集组合必须由 `/workbench/validate` 或 invalid `/workbench/jobs` 返回失败原因，不允许降级到其他执行路径。只有拿到真实 `job_id` 才切换到运行监控。
 
-高级参数抽屉使用 `/workbench/options` 的 canonical 数据：数据集只显示 Amazon Beauty 和 KU，模型只显示 8 个可启动模型。8 个模型都可进入配置，不再因当前场景被下拉禁用；真实 smoke、仅复用证据、probe 或配置校验边界由 `model_dataset_execution` 和 `/workbench/validate` 返回。推荐操纵的目标商品使用暗色可搜索 combobox，优先展示 `short_name_zh`，英文 `raw_title` 作为小字，不显示本地路径。
+高级参数抽屉使用 `/workbench/options` 的 canonical 数据：数据集只显示 Amazon Beauty 和 KU，模型只显示 8 个可启动模型。`parameter_descriptors` 统一提供中文标签、范围、步长、默认值和选项文案；四个方向复用同一套训练参数、鲁棒聚合和更新扰动控件。推荐操纵的目标商品使用暗色可搜索 combobox，优先展示 `short_name_zh`，英文 `raw_title` 作为小字，不显示本地路径。
+
+推荐操纵不再展示 TopK 选择，payload 固定 `top_k=50`，只保留“导出 Top50 推荐列表”和“导出审计结果”。推荐专属的恶意比例、注入比例、每客户端注入上限、目标损失权重、攻击强度、目标排名统计口径和目标商品不会出现在其他方向。通用批大小、随机种子、客户端采样比例和梯度裁剪范围由 descriptor 驱动。
 
 聚合可见性有互斥逻辑：
 
 - 明文更新聚合：服务端可观察单客户端更新，单次实验可从 Krum / Median / TrimmedMean / Bulyan 中选择一种。
 - 安全聚合模拟：服务端只看到聚合结果，不适合同时做逐客户端鲁棒筛选。
 
-选择安全聚合模拟时，鲁棒聚合算法置灰；选择鲁棒聚合算法时，安全聚合模拟置灰。聚合防御方向的基础攻击可选“无攻击”或“恶意模型更新”，默认“无攻击”；无攻击时不注入恶意客户端更新。差分隐私风格加噪作为更新扰动层单独展示。
+选择安全聚合模拟时，鲁棒聚合算法置灰；选择鲁棒聚合算法时，安全聚合模拟置灰。Krum 显示容错数、多候选开关、距离度量和防御预处理裁剪上限；坐标中位数显示启用状态、防御预处理裁剪上限和异常值策略；截尾均值与 Bulyan 各保持两项专属参数。动态客户端数量约束继续由共享 descriptor 驱动。防御预处理裁剪与更新扰动层的扰动前梯度裁剪是独立字段。差分隐私风格加噪关闭时隐藏参数，开启后显示噪声乘数、扰动前梯度裁剪、记录用 δ 和独立扰动随机种子，不展示 ε。
 
 单次分析固定故事线：
 
@@ -119,9 +121,9 @@
 
 横向对比只展示指标矩阵和摘要条形图，不展示推荐商品列表。模型/数据集能力模式优先读取 V3 `model_support_panel`，并按“攻防强验证底座”“多模态主展示模型”“已通过 smoke 验证”“部分支持”“仅配置校验”“待适配”分组展示模型扩充成果。该区域只显示模型名、数据集、中文状态、TopK / metrics 是否验证和结果是否已导出，不展示本地结果路径。
 
-历史实验顶部展示 `/workbench/jobs` 真实 job 档案，一行一个 job，12 条/页，支持方向、数据集、模型、日期、source 和 status 筛选；点击 job 后进入单次分析并优先读取该 job result。showcase scenarios 仍保留为下方 artifact 档案参考。
+历史实验只展示 `/workbench/jobs` 真实 job 档案，不再混入 showcase scenarios。一行一个 job，12 条/页，支持方向、数据集、模型、开始日期、source 和 status 筛选；点击 job 后进入单次分析并优先读取该 job result。
 
-点击历史实验卡片会切换当前场景并进入单次分析，顶部显示当前切换提示。
+点击“开始实验”时立即记录 `started_at` 和 `experiment_name`。名称固定为 `{实验方向中文名} · YYYY-MM-DD HH:mm:ss`，历史卡片第一行显示该名称，开始时间精确到秒；旧 job 缺少新字段时回退现有 job 标识和 `created_at`，不使用完成时间冒充开始时间。
 
 ## Showcase API
 
@@ -154,7 +156,7 @@
 3. `mmfedrap_ku_attack_defense_demo`
 4. `security_matrix_krum_demo`
 
-`/v3/report` 优先于旧版 `/report`。单个 V3 panel 缺失时只显示“未导出 / 暂无证据”，不要回退到 mock 补造该 panel。`/showcase/scenarios` 返回 `has_v3` 或相关 panel flags 时，历史实验和当前场景摘要用中文标签显示“V3 证据”等状态。
+`/v3/report` 优先于旧版 `/report`。单个 V3 panel 缺失时只显示“未导出 / 暂无证据”，不要回退到 mock 补造该 panel。`/showcase/scenarios` 返回 `has_v3` 或相关 panel flags 时，当前场景摘要用中文标签显示“V3 证据”等状态。
 
 推荐图片优先使用 `thumbnail_url`，其次 `local_image_url`，再使用 `image_url`，失败显示占位图。不要渲染 D 盘路径、UNC 路径或其他本地绝对路径。
 
@@ -197,6 +199,7 @@ npm run preview
 
 - `src/services/workbench.ts` 通过统一 API helper 走 `/api/workbench/...`，负责调用 `/workbench/options`、`/workbench/validate`、`/workbench/jobs`、`/workbench/jobs?limit=12&page=...`、`/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=100` 和 `/workbench/jobs/{job_id}/result`。
 - 攻防工作台的“校验配置”调用 `/workbench/validate`；“开始实验”调用 `/workbench/jobs` 并切换到运行监控。
+- 创建 job 时前端提交点击瞬间的 `started_at` 和中文 `experiment_name`；API 列表和状态响应回传这两个字段，刷新页面后名称和开始时间保持不变。
 - 当前 API 会创建并启动真实全量训练 job，状态可能为 `queued`、`running`、`completed`、`partial` 或 `failed`。前端在有 `job_id` 时优先轮询 job 状态、日志和 result；没有 job 时继续读取已完成 showcase/V3 证据。
 - `/workbench/validate` 和 invalid `/workbench/jobs` 的 `field_errors` 会展示为中文字段错误；网络不可达时显示“后端服务未连接”，不要直接暴露 `Failed to fetch`。
 - 新建任务固定使用 `metrics_summary.source=full_train`。旧 job 的历史 source 只做兼容读取，不再作为新任务执行选项。`partial` 仍表示训练或结果导出只完成部分，不要补写成功效果。

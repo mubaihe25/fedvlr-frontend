@@ -64,7 +64,7 @@ export const EXPERIMENT_PLAYBOOKS: ExperimentPlaybook[] = [
       {label: '客户端采样比例', value: '0.25'},
       {label: '恶意客户端比例', value: '20%'},
       {label: '攻击强度', value: '强'},
-      {label: '保存 TopK', value: '开启'},
+      {label: '导出 Top50 推荐列表', value: '开启'},
       {label: '导出审计结果', value: '开启'},
     ],
     routeNodes: [
@@ -212,7 +212,7 @@ export const EXPERIMENT_PLAYBOOKS: ExperimentPlaybook[] = [
     targetLabel: '异常更新集合',
     maliciousRatio: 0.2,
     aggregationMode: 'plain_updates',
-    robustAlgorithm: 'Krum',
+    robustAlgorithm: 'none',
     dpLayer: false,
     analysisOrder: ['defense', 'recommendation', 'target', 'membership', 'leakage'],
   },

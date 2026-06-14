@@ -36,6 +36,10 @@ export interface WorkbenchParameterDescriptor {
   default?: number | string | boolean | Array<string | number>;
   unit?: string;
   options?: Array<string | number>;
+  option_labels?: Record<string, string>;
+  value_map?: Record<string, number>;
+  dynamic_max?: string;
+  max_items?: number;
   depends_on?: string[];
   visible_when?: Record<string, unknown>;
   disabled_when?: Record<string, unknown>;
@@ -73,6 +77,8 @@ export interface WorkbenchOptionsResponse {
   adapter_required_models?: WorkbenchModelOption[];
   aggregation_visibility_modes?: Array<Record<string, unknown>>;
   robust_aggregators: string[];
+  common_parameters?: string[];
+  fixed_parameters?: Record<string, number | string | boolean>;
   direction_parameters?: Record<string, string[]>;
   defense_parameters?: Record<string, string[]>;
   compatibility_matrix?: Record<string, string[]>;
@@ -87,18 +93,21 @@ export interface WorkbenchOptionsResponse {
 export interface WorkbenchPayload {
   direction: string;
   execution_mode: 'full_train';
+  experiment_name?: string;
+  started_at?: string;
   scenario_id?: string;
   dataset: string;
   model: string;
   total_rounds: number;
   local_epochs: number;
   client_sampling_ratio: number;
-  malicious_client_ratio: number;
+  malicious_client_ratio?: number;
   learning_rate: number;
   weight_decay: number;
   gradient_clip: number;
   seed?: number;
-  top_k?: number;
+  top_k: 50;
+  total_client_count?: number;
   aggregation_mode: 'plain_updates' | 'secure_aggregation';
   robust_aggregators: string[];
   dp_noise_enabled: boolean;
@@ -113,13 +122,11 @@ export interface WorkbenchPayload {
   perturbation_type?: string;
   perturbation_strength?: number;
   gradient_clip_norm?: number;
+  outlier_strategy?: string;
   trim_ratio?: number;
   trim_min_keep?: number;
   krum_f?: number;
   multi_krum_enabled?: boolean;
-  median_clip_norm?: number;
-  coordinate_median?: boolean;
-  outlier_strategy?: string;
   distance_metric?: string;
   bulyan_f?: number;
   bulyan_selection_ratio?: number;
@@ -130,7 +137,6 @@ export interface WorkbenchPayload {
   max_injections_per_client?: number;
   target_loss_weight?: number;
   target_rank_selector?: string;
-  preserve_topk?: boolean;
   candidate_k?: number;
   candidate_pool_size?: number;
   risk_modality?: string;
@@ -166,6 +172,8 @@ export interface WorkbenchValidationResponse {
 
 export interface WorkbenchJobResponse extends WorkbenchValidationResponse {
   job_id?: string;
+  experiment_name?: string;
+  started_at?: string;
   job_status?: string;
   stage?: string;
   progress?: number;
@@ -178,6 +186,7 @@ export interface WorkbenchJobResponse extends WorkbenchValidationResponse {
 
 export interface WorkbenchJobStatusResponse {
   job_id: string;
+  experiment_name?: string | null;
   status?: string | null;
   stage?: string | null;
   progress?: number | null;
@@ -222,6 +231,7 @@ export interface WorkbenchResultResponse {
 
 export interface WorkbenchJobListItem {
   job_id: string;
+  experiment_name?: string | null;
   direction?: string | null;
   dataset?: string | null;
   model?: string | null;
