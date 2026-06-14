@@ -115,9 +115,9 @@
 - 隐私风险对比
 - 模型/数据集能力对比
 
-运行监控有 `job_id` 时每 1-2 秒轮询 job 状态和 `run.log`，展示 job_id、direction、dataset、model、source、status、stage、progress、时间戳、result/artifact 目录和方向专属指标；新任务的 `source` 为 `full_train`。completed/failed 后停止轮询。没有 job 时才读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
+运行监控有 `job_id` 时每 1-2 秒轮询 job 状态和持续增长的 `run.log`，展示 job_id、direction、dataset、model、source、status、stage、progress、时间戳、PID、return code 和方向专属指标；新任务的 `source` 为 `full_train`。失败时显示失败阶段、中文摘要和可展开的完整后端错误，不重复渲染同一错误。completed/failed 后停止轮询。没有 job 时才读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
 
-单次分析优先级是当前 workbench job result、当前 showcase V3 artifact、未导出。缺失 job result 或 V3 panel 时显示“未导出”，不使用本地演示数据补齐。
+单次分析优先级是当前 workbench job result、当前 showcase V3 artifact、未导出。推荐操纵 job result 的真实 target rank、masked Top50 hit 和 baseline/attack Top50 必须覆盖 showcase 摘要；当前 job 未执行的其他方向显示“未导出”，不使用本地演示数据补齐。
 
 横向对比只展示指标矩阵和摘要条形图，不展示推荐商品列表。模型/数据集能力模式优先读取 V3 `model_support_panel`，并按“攻防强验证底座”“多模态主展示模型”“已通过 smoke 验证”“部分支持”“仅配置校验”“待适配”分组展示模型扩充成果。该区域只显示模型名、数据集、中文状态、TopK / metrics 是否验证和结果是否已导出，不展示本地结果路径。
 

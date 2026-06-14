@@ -49,6 +49,9 @@ export interface WorkbenchParameterDescriptor {
 export interface WorkbenchExecutionCapability {
   status?: string;
   allowed_execution_modes?: string[];
+  supported_directions?: string[];
+  verification_status?: string;
+  verified_directions?: string[];
   message?: string;
 }
 
@@ -204,6 +207,15 @@ export interface WorkbenchJobStatusResponse {
   message?: string | null;
   disabled_reason?: string | null;
   error_message?: string | null;
+  error_summary?: string | null;
+  error_detail?: string | null;
+  failure_stage?: string | null;
+  runner_pid?: number | null;
+  pid?: number | null;
+  return_code?: number | null;
+  subprocess_command?: string | string[] | null;
+  python_path?: string | null;
+  cwd?: string | null;
   result_dir?: string | null;
   artifact_dir?: string | null;
   source?: string | null;
@@ -242,6 +254,10 @@ export interface WorkbenchJobListItem {
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  failure_stage?: string | null;
+  error_summary?: string | null;
+  error_detail?: string | null;
+  return_code?: number | null;
   key_metrics?: Record<string, unknown>;
   result_dir?: string | null;
   artifact_dir?: string | null;

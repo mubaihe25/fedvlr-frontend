@@ -64,7 +64,7 @@ import type {ExperimentConfigurationSource} from '../services/experiment';
 import type {StartTrainResponse} from '../services/train';
 import type {ConsoleSessionState} from '../types/common';
 import type {DefenseType, LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../types/train';
-import type {ShowcaseBundle, ShowcaseModelCapabilityMatrix, ShowcaseModelSmokeEvidence, ShowcaseRecommendationItem} from '../types/showcase';
+import type {ShowcaseBundle, ShowcaseModelCapabilityMatrix, ShowcaseModelSmokeEvidence, ShowcaseRecommendationComparison, ShowcaseRecommendationItem} from '../types/showcase';
 import type {WorkbenchJobListItem, WorkbenchJobListResponse, WorkbenchJobStatusResponse, WorkbenchLogsResponse, WorkbenchOptionsResponse, WorkbenchParameterDescriptor, WorkbenchPayload, WorkbenchResultResponse, WorkbenchValidationResponse} from '../types/workbench';
 
 export type WorkbenchTabId = 'orchestration' | 'monitoring' | 'analysis' | 'comparison' | 'history';
@@ -172,6 +172,34 @@ const WORKBENCH_STATUS_LABELS: Record<string, string> = {
 
 const workbenchStatusLabel = (value?: string | null) => WORKBENCH_STATUS_LABELS[value ?? ''] ?? '读取中';
 const shortWorkbenchJobId = (value?: string | null) => (value ? value.replace(/^workbench_/, '').slice(-8) : EMPTY_VALUE);
+const WORKBENCH_STAGE_LABELS: Record<string, string> = {
+  queued: '排队',
+  preparing_config: '准备配置',
+  baseline_training: '基线训练',
+  attack_training: '攻击训练',
+  running: '训练执行',
+  exporting_artifacts: '结果导出',
+  launcher_failed: '训练启动器',
+  runner_failed: '任务运行器',
+  completed: '完成',
+  failed: '失败',
+};
+const workbenchStageLabel = (value?: string | null) => (
+  value ? WORKBENCH_STAGE_LABELS[value] ?? toChineseLabel(value) : EMPTY_VALUE
+);
+type WorkbenchFailureInfo = Pick<
+  WorkbenchJobStatusResponse,
+  'error_summary' | 'error_detail' | 'error_message' | 'failure_stage' | 'return_code'
+>;
+const workbenchFailureSummary = (job?: WorkbenchFailureInfo | null) => (
+  job?.error_summary
+  ?? (job?.return_code != null ? `训练子进程异常退出（return code ${job.return_code}）` : null)
+  ?? job?.error_message
+  ?? '后端未返回错误摘要。'
+);
+const workbenchFailureDetail = (job?: WorkbenchFailureInfo | null) => (
+  job?.error_detail ?? job?.error_message ?? workbenchFailureSummary(job)
+);
 const workbenchSourceLabel = (value?: string | null) => {
   if (value === 'full_train') return '真实全量训练';
   if (value === 'existing_artifact' || value === 'real_smoke' || value === 'probe_smoke') return '历史任务';
@@ -183,10 +211,13 @@ const workbenchMetricLabel = (value: string) => {
     requested_execution_mode: '请求执行模式',
     baseline_unmasked_rank: '原始未屏蔽排序',
     attack_unmasked_rank: '攻击后未屏蔽排序',
+    target_rank_before: '基线目标排名',
+    target_rank_after: '攻击后目标排名',
     rank_gain: '排名提升',
     normalized_rank_gain: '归一化提升',
     reciprocal_rank_gain: '倒数排名增益',
     attack_topk_hit: '最终 TopK 命中',
+    masked_top50_hit: '最终 Top50 曝光',
     recall_at_50: 'Recall@50',
     ndcg_at_50: 'NDCG@50',
     direction: '实验方向',
@@ -577,21 +608,70 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     scenarioKeywords: selectedPlay.scenarioKeywords,
     analysisOrder: selectedPlay.analysisOrder,
   };
+  const activeJobMetricsSummary = workbenchResult?.metrics_summary;
+  const activeJobMetrics = activeJobMetricsSummary?.metrics && typeof activeJobMetricsSummary.metrics === 'object' && !Array.isArray(activeJobMetricsSummary.metrics)
+    ? (activeJobMetricsSummary.metrics as Record<string, unknown>)
+    : null;
+  const jobMetricNumber = (key: string) => {
+    const value = activeJobMetrics?.[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  };
+  const jobMetricBoolean = (key: string) => {
+    const value = activeJobMetrics?.[key];
+    return typeof value === 'boolean' ? value : null;
+  };
+  const activeJobDefenses = Array.isArray(activeJobMetrics?.active_defenses)
+    ? activeJobMetrics.active_defenses
+    : [];
+  const jobRecommendationItems = (key: 'baseline_top50' | 'attack_top50'): ShowcaseRecommendationItem[] => {
+    const value = activeJobMetrics?.[key];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const items = (value as Record<string, unknown>).items;
+    if (!Array.isArray(items)) return [];
+    return items.map((item, index) => ({
+      itemId: String(item),
+      rank: index + 1,
+      title: `商品 ${String(item)}`,
+    }));
+  };
+  const jobBaselineTop50 = jobRecommendationItems('baseline_top50');
+  const jobAttackTop50 = jobRecommendationItems('attack_top50');
+  const jobRecommendationComparison: ShowcaseRecommendationComparison | null = activeJobMetrics && (jobBaselineTop50.length || jobAttackTop50.length)
+    ? {
+        baseline: jobBaselineTop50,
+        attack: jobAttackTop50,
+        defense: [],
+        totalCounts: {baseline: jobBaselineTop50.length, attack: jobAttackTop50.length, defense: 0},
+        limit: 50,
+      }
+    : null;
+  const activeRecommendationComparison = jobRecommendationComparison ?? report.recommendationComparison;
   const rankStats = getTargetRanks(report);
   const fallbackBefore = selectedPlay.id === 'target_poisoning_play' ? 170 : null;
   const fallbackAfter = selectedPlay.id === 'target_poisoning_play' ? 3 : null;
-  const displayRankBefore = rankStats.before ?? fallbackBefore;
-  const displayRankAfter = rankStats.after ?? fallbackAfter;
-  const displayRankLift =
-    rankStats.rankLift ?? (typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number' ? displayRankBefore - displayRankAfter : null);
-  const displayNormalizedLift =
-    rankStats.normalizedLift ??
-    (displayRankLift !== null && typeof displayRankBefore === 'number' && displayRankBefore > 1 ? displayRankLift / (displayRankBefore - 1) : null);
-  const displayReciprocalGain =
-    rankStats.reciprocalGain ??
-    (typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number' && displayRankBefore > 0 && displayRankAfter > 0
-      ? 1 / displayRankAfter - 1 / displayRankBefore
-      : null);
+  const displayRankBefore = jobMetricNumber('target_rank_before') ?? rankStats.before ?? fallbackBefore;
+  const displayRankAfter = jobMetricNumber('target_rank_after') ?? rankStats.after ?? fallbackAfter;
+  const computedRankLift = typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number'
+    ? displayRankBefore - displayRankAfter
+    : null;
+  const displayRankLift = jobMetricNumber('rank_gain')
+    ?? (activeJobMetrics ? computedRankLift : rankStats.rankLift ?? computedRankLift);
+  const computedNormalizedLift = displayRankLift !== null && typeof displayRankBefore === 'number' && displayRankBefore > 1
+    ? displayRankLift / (displayRankBefore - 1)
+    : null;
+  const displayNormalizedLift = activeJobMetrics
+    ? computedNormalizedLift
+    : rankStats.normalizedLift ?? computedNormalizedLift;
+  const computedReciprocalGain = typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number' && displayRankBefore > 0 && displayRankAfter > 0
+    ? 1 / displayRankAfter - 1 / displayRankBefore
+    : null;
+  const displayReciprocalGain = activeJobMetrics
+    ? computedReciprocalGain
+    : rankStats.reciprocalGain ?? computedReciprocalGain;
+  const jobMaskedTop50Hit = jobMetricBoolean('masked_top50_hit');
+  const displayFinalExposure = jobMaskedTop50Hit === null
+    ? getFinalExposureText(report)
+    : jobMaskedTop50Hit ? '最终曝光命中' : '最终曝光未命中';
   const privacyMetrics = getPrivacyMetrics(report);
   const v3TargetPanel = report.v3?.targetManipulation ?? null;
   const v3MembershipPanel = report.v3?.membership ?? null;
@@ -608,11 +688,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         imageUrl: targetProduct.imageUrl,
       }
     : null;
-  const recommendationCounts = getRecommendationCounts(report.recommendationComparison);
+  const recommendationCounts = getRecommendationCounts(activeRecommendationComparison);
   const targetAppearsInLoadedList = [
-    ...(report.recommendationComparison?.baseline ?? []),
-    ...(report.recommendationComparison?.attack ?? []),
-    ...(report.recommendationComparison?.defense ?? []),
+    ...(activeRecommendationComparison?.baseline ?? []),
+    ...(activeRecommendationComparison?.attack ?? []),
+    ...(activeRecommendationComparison?.defense ?? []),
   ].some((item) => sameItem(item.itemId, targetProduct?.itemId));
 
   useEffect(() => {
@@ -1294,6 +1374,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         created_at: job.created_at,
         started_at: job.started_at,
         finished_at: job.finished_at,
+        failure_stage: job.failure_stage,
+        error_summary: job.error_summary,
+        error_detail: job.error_detail,
+        return_code: job.return_code,
         warnings: [],
         errors: [],
         error_message: error instanceof Error ? error.message : String(error),
@@ -2911,12 +2995,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 实验完成，可进入单次分析
               </div>
             ) : null}
-            {workbenchJob?.status === 'failed' ? (
-              <div className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 p-3 text-sm font-bold text-rose-100">
-                实验失败：{workbenchJob.error_message || '后端未返回 error_message。'}
-              </div>
-            ) : null}
-
             <div className="mt-5 rounded-2xl border border-emerald-200/15 bg-slate-950/70 p-4">
               <div className="mb-3 flex items-center gap-2 text-emerald-100">
                 <SquareTerminal className="h-4 w-4" />
@@ -2946,13 +3024,20 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               ) : null}
               {workbenchJob?.status === 'failed' ? (
                 <div className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 p-3">
-                  <p className="text-xs font-black text-rose-100">失败原因</p>
-                  <p className="mt-2 text-sm leading-6 text-rose-50">{workbenchJob.error_message || '后端未返回 error_message。'}</p>
-                  <div className="mt-3 max-h-48 overflow-y-auto rounded-xl bg-slate-950/60 p-3 font-mono text-[11px] leading-5 text-slate-300">
-                    {(workbenchLogs.length ? workbenchLogs.slice(-30) : ['暂无日志']).map((line, index) => (
-                      <p key={`${index}-${line}`}>{line}</p>
-                    ))}
+                  <p className="text-xs font-black text-rose-100">实验失败</p>
+                  <p className="mt-2 text-sm leading-6 text-rose-50">{workbenchFailureSummary(workbenchJob)}</p>
+                  <div className="mt-3 grid gap-2 text-xs text-rose-50/85 sm:grid-cols-2 lg:grid-cols-3">
+                    <p>失败阶段：{workbenchStageLabel(workbenchJob.failure_stage ?? workbenchJob.stage)}</p>
+                    <p>return code：{workbenchJob.return_code ?? EMPTY_VALUE}</p>
+                    <p>job_id：{workbenchJob.job_id}</p>
+                    <p>方向：{workbenchDirectionLabel(workbenchJob.direction)}</p>
+                    <p>数据集：{datasetLabel(workbenchJob.dataset ?? '')}</p>
+                    <p>模型：{workbenchJob.model ?? EMPTY_VALUE}</p>
                   </div>
+                  <details className="mt-3 rounded-xl bg-slate-950/60 p-3 text-xs text-slate-300">
+                    <summary className="cursor-pointer font-bold text-rose-100">展开完整后端错误</summary>
+                    <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5">{workbenchFailureDetail(workbenchJob)}</pre>
+                  </details>
                 </div>
               ) : null}
             </div>
@@ -3048,7 +3133,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       return null;
     };
     const analysisHeadlineByPlay: Record<ExperimentPlayId, string> = {
-      target_poisoning_play: `目标商品在未屏蔽排序中从第 ${displayRankBefore ?? 170} 位提升到第 ${displayRankAfter ?? 3} 位，但最终 Top50 推荐列表未曝光。`,
+      target_poisoning_play: activeJobMetrics
+        ? (displayRankLift ?? 0) > 0
+          ? `目标商品在本轮真实训练中从第 ${displayRankBefore} 位提升到第 ${displayRankAfter} 位，${displayFinalExposure}。`
+          : `目标商品在本轮真实训练前后均为第 ${displayRankAfter} 位，未观察到排名提升，${displayFinalExposure}。`
+        : `目标商品在未屏蔽排序中从第 ${displayRankBefore ?? 170} 位提升到第 ${displayRankAfter ?? 3} 位，但最终 Top50 推荐列表未曝光。`,
       membership_privacy_play: `成员推断审计显示 AUC 为 ${formatMetricValue(privacyMetrics.miaAuc)}，攻击者尝试判断匿名 user-item 记录是否参与训练。`,
       update_leakage_play: `客户端更新泄露审计显示 hit@50 为 ${formatMetricValue(privacyMetrics.hit50)}，这是候选交互还原，不是完整用户历史恢复。`,
       robust_defense_play: `鲁棒聚合防御重点观察 Recall@50 / NDCG@50 恢复和异常更新过滤，当前恢复率为 ${formatPercentValue(report.metricsSummary?.recoveryRate)}。`,
@@ -3057,7 +3146,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       target_poisoning_play: [
         {label: '目标排序', value: `${displayRankBefore ?? 170} -> ${displayRankAfter ?? 3}`, tone: 'text-rose-100'},
         {label: '排名提升', value: formatSigned(displayRankLift, 0), tone: 'text-rose-100'},
-        {label: '最终 Top50 曝光', value: getFinalExposureText(report), tone: 'text-emerald-100'},
+        {label: '最终 Top50 曝光', value: displayFinalExposure, tone: 'text-emerald-100'},
         {label: '目标操纵指数', value: formatMetricValue(v3TargetPanel?.targetManipulationIndex ?? null), note: '展示指标，不作为标准学术指标。', tone: 'text-rose-100'},
       ],
       membership_privacy_play: [
@@ -3097,9 +3186,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const analysisFocusCardsFromJob: Record<ExperimentPlayId, Array<{label: string; value: string; note?: string; tone?: string}>> = {
       target_poisoning_play: [
         {label: '目标商品', value: targetTitle, tone: 'text-rose-100'},
-        {label: 'rank 变化', value: `${analysisJobMetric('baseline_unmasked_rank')} -> ${analysisJobMetric('attack_unmasked_rank')}`, tone: 'text-rose-100'},
-        {label: 'Top50 是否命中', value: analysisJobMetric('attack_topk_hit'), tone: 'text-emerald-100'},
-        {label: '目标操纵指数', value: analysisJobMetric('target_manipulation_index'), tone: 'text-rose-100'},
+        {label: 'rank 变化', value: `${analysisJobMetric('target_rank_before')} -> ${analysisJobMetric('target_rank_after')}`, tone: 'text-rose-100'},
+        {label: 'Top50 是否命中', value: analysisJobMetric('masked_top50_hit'), tone: 'text-emerald-100'},
+        {label: '排名提升', value: analysisJobMetric('rank_gain'), tone: 'text-rose-100'},
       ],
       membership_privacy_play: [
         {label: 'AUC', value: analysisJobMetric('auc'), tone: 'text-violet-100'},
@@ -3197,9 +3286,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   </span>
                 </div>
                 <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
-                  内部排序已推进，但最终曝光未命中。
+                  {activeJobMetrics
+                    ? (displayRankLift ?? 0) > 0
+                      ? `本轮真实训练中目标排名提升 ${formatPlainValue(displayRankLift)} 位，${displayFinalExposure}。`
+                      : `本轮真实训练未观察到目标排名提升，${displayFinalExposure}。`
+                    : '内部排序已推进，但最终曝光未命中。'}
                 </p>
-                {!targetAppearsInLoadedList && getFinalExposureText(report) === '最终曝光未命中' ? (
+                {!targetAppearsInLoadedList && displayFinalExposure === '最终曝光未命中' ? (
                   <p className="mt-4 rounded-2xl border border-emerald-200/20 bg-emerald-300/10 px-3 py-2 text-sm font-semibold text-emerald-100">
                     目标商品未进入最终推荐列表，不插入推荐对照。
                   </p>
@@ -3211,11 +3304,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" />
               <MetricTile label="归一化提升" value={formatRatio(displayNormalizedLift)} tone="text-rose-100" />
               <MetricTile label="倒数排名增益" value={formatSmallNumber(displayReciprocalGain)} tone="text-amber-100" />
-              <MetricTile label="目标操纵指数" value={formatMetricValue(v3TargetPanel?.targetManipulationIndex ?? null)} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
-              <MetricTile label="最终 Top50 曝光" value={getFinalExposureText(report)} tone="text-emerald-100" />
-              <MetricTile label="推荐 Jaccard" value={formatMetricValue(v3TargetPanel?.recommendationJaccard ?? null)} />
-              <MetricTile label="变化用户" value={formatPlainValue(v3TargetPanel?.changedUserCount)} />
-              <MetricTile label="变化商品" value={formatPlainValue(v3TargetPanel?.changedItemCount)} />
+              <MetricTile label="目标操纵指数" value={activeJobMetrics ? EMPTY_VALUE : formatMetricValue(v3TargetPanel?.targetManipulationIndex ?? null)} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
+              <MetricTile label="最终 Top50 曝光" value={displayFinalExposure} tone="text-emerald-100" />
+              <MetricTile label="推荐 Jaccard" value={activeJobMetrics ? EMPTY_VALUE : formatMetricValue(v3TargetPanel?.recommendationJaccard ?? null)} />
+              <MetricTile label="变化用户" value={activeJobMetrics ? EMPTY_VALUE : formatPlainValue(v3TargetPanel?.changedUserCount)} />
+              <MetricTile label="变化商品" value={activeJobMetrics ? EMPTY_VALUE : formatPlainValue(v3TargetPanel?.changedItemCount)} />
             </div>
           </div>
 
@@ -3235,7 +3328,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           </div>
         </section>
 
-        <RecommendationComparisonBoard comparison={report.recommendationComparison} scenarioId={selectedScenario.scenarioId} targetItemId={targetProduct?.itemId} />
+        <RecommendationComparisonBoard
+          comparison={activeRecommendationComparison}
+          scenarioId={jobRecommendationComparison ? null : selectedScenario.scenarioId}
+          targetItemId={(activeJobMetrics?.target_item_id as string | number | null | undefined) ?? targetProduct?.itemId}
+        />
 
         <section className="grid gap-5 xl:grid-cols-2">
           <div className="sandbox-panel rounded-[28px] p-5">
@@ -3244,7 +3341,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <h3 className="text-xl font-bold text-white">成员推断攻击</h3>
             </div>
             <p className="text-sm leading-6 text-slate-400">攻击者尝试判断某条 user-item 记录是否参与训练。当前展示依赖结果文件中的摘要证据。</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {activeJobMetrics ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400">当前 job 未执行成员推断评估，未导出该方向证据。</div>
+            ) : <><div className="mt-4 grid gap-3 sm:grid-cols-3">
               <MetricTile label="AUC" value={formatMetricValue(privacyMetrics.miaAuc)} tone="text-violet-100" />
               <MetricTile label="准确率" value={formatMetricValue(privacyMetrics.miaAccuracy)} tone="text-violet-100" />
               <MetricTile label="证据类型" value={privacyMetrics.miaEvidence} tone="text-slate-100" />
@@ -3267,7 +3366,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   </div>
                 </div>
               ))}
-            </div>
+            </div></>}
           </div>
 
           <div className="sandbox-panel rounded-[28px] p-5">
@@ -3276,7 +3375,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               <h3 className="text-xl font-bold text-white">客户端更新泄露</h3>
             </div>
             <p className="text-sm leading-6 text-slate-400">这是候选交互还原，不是完整用户历史恢复，也不是图像反演。</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+            {activeJobMetrics ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400">当前 job 未执行客户端更新泄露评估，未导出候选还原证据。</div>
+            ) : <><div className="mt-4 grid gap-3 sm:grid-cols-4">
               <MetricTile label="hit@10" value={formatMetricValue(privacyMetrics.hit10)} />
               <MetricTile label="hit@20" value={formatMetricValue(privacyMetrics.hit20)} />
               <MetricTile label="hit@50" value={formatMetricValue(privacyMetrics.hit50)} />
@@ -3293,7 +3394,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
               ) : (
                 <div className="col-span-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400">暂无候选商品 metadata。</div>
               )}
-            </div>
+            </div></>}
           </div>
         </section>
 
@@ -3302,12 +3403,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <ShieldCheck className="h-5 w-5 text-emerald-100" />
             <h3 className="text-xl font-bold text-white">防御摘要</h3>
           </div>
-          <div className="grid gap-3 md:grid-cols-4">
+          {activeJobMetrics && !activeJobDefenses.length ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400">当前 job 未启用聚合防御或更新扰动，未导出防御结果。</div>
+          ) : <div className="grid gap-3 md:grid-cols-4">
             <MetricTile label="聚合规则" value={report.defenseTrace?.aggregationRule ?? inferDefenseType(selectedScenario, report)} tone="text-emerald-100" />
             <MetricTile label="选中/拒绝客户端" value={`${v3AggregationPanel?.selectedClients?.length ?? report.defenseTrace?.krumSelected?.length ?? 0} / ${v3AggregationPanel?.rejectedClients?.length ?? report.defenseTrace?.krumRejected?.length ?? report.defenseTrace?.filteredClients ?? 0}`} />
             <MetricTile label="安全聚合残差" value={formatSmallNumber(report.v25Summary?.secAggResidual)} tone="text-emerald-100" />
             <MetricTile label="防御状态" value={defenseStatusLabel(v3AggregationPanel?.status)} tone="text-emerald-100" />
-          </div>
+          </div>}
           <p className="mt-4 text-sm leading-6 text-slate-400">安全聚合为模拟展示；差分隐私风格加噪没有正式隐私会计；鲁棒聚合需要可观察逐客户端更新。</p>
         </section>
       </div>
@@ -3736,38 +3839,53 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             .map(([key, value]) => `${workbenchMetricLabel(key)} ${workbenchMetricValue(key, value as string | number | boolean | null)}`)
             .join(' / ');
           return (
-            <button
-              key={job.job_id}
-              type="button"
-              onClick={() => openWorkbenchJob(job)}
-              className="grid w-full gap-3 rounded-3xl border border-white/10 bg-white/[0.045] p-4 text-left transition hover:-translate-y-0.5 hover:border-cyan-200/30 hover:bg-cyan-300/10 xl:grid-cols-[minmax(260px,1fr)_130px_150px_135px_130px_minmax(220px,1fr)] xl:items-center"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-base font-black text-white">{job.experiment_name ?? shortWorkbenchJobId(job.job_id)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500">方向</p>
-                <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchDirectionLabel(job.direction)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500">数据集 / 模型</p>
-                <p className="mt-1 text-sm font-semibold text-slate-200">{datasetLabel(job.dataset ?? '')}</p>
-                <p className="text-xs text-slate-500">{job.model ?? EMPTY_VALUE}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500">任务来源</p>
-                <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchSourceLabel(job.source)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500">状态 / 开始时间</p>
-                <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchStatusLabel(job.status)}</p>
-                <p className="text-xs text-slate-500">{formatDateTimeToSeconds(job.started_at ?? job.created_at) ?? EMPTY_VALUE}</p>
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-bold text-slate-500">关键指标预览</p>
-                <p className="mt-1 truncate text-sm font-semibold text-slate-200">{metricsPreview || '暂无指标预览'}</p>
-              </div>
-            </button>
+            <article key={job.job_id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.045] transition hover:border-cyan-200/30">
+              <button
+                type="button"
+                onClick={() => openWorkbenchJob(job)}
+                className="grid w-full gap-3 p-4 text-left transition hover:bg-cyan-300/10 xl:grid-cols-[minmax(260px,1fr)_130px_150px_135px_130px_minmax(220px,1fr)] xl:items-center"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-base font-black text-white">{job.experiment_name ?? shortWorkbenchJobId(job.job_id)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-500">方向</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchDirectionLabel(job.direction)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-500">数据集 / 模型</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-200">{datasetLabel(job.dataset ?? '')}</p>
+                  <p className="text-xs text-slate-500">{job.model ?? EMPTY_VALUE}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-500">任务来源</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchSourceLabel(job.source)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-500">状态 / 开始时间</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-200">{workbenchStatusLabel(job.status)}</p>
+                  <p className="text-xs text-slate-500">{formatDateTimeToSeconds(job.started_at ?? job.created_at) ?? EMPTY_VALUE}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold text-slate-500">关键指标预览</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-200">{metricsPreview || '暂无指标预览'}</p>
+                </div>
+              </button>
+              {job.status === 'failed' ? (
+                <details className="border-t border-rose-200/15 bg-rose-300/[0.07] px-4 py-3 text-xs text-rose-50/85">
+                  <summary className="cursor-pointer font-bold text-rose-100">
+                    {workbenchFailureSummary(job)}
+                  </summary>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <p>失败阶段：{workbenchStageLabel(job.failure_stage)}</p>
+                    <p>return code：{job.return_code ?? EMPTY_VALUE}</p>
+                    <p>job_id：{job.job_id}</p>
+                    <p>{workbenchDirectionLabel(job.direction)} · {datasetLabel(job.dataset ?? '')} · {job.model ?? EMPTY_VALUE}</p>
+                  </div>
+                  <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950/65 p-3 font-mono text-[11px] leading-5 text-slate-300">{workbenchFailureDetail(job)}</pre>
+                </details>
+              ) : null}
+            </article>
           );
         })}
         {workbenchJobsError ? (
