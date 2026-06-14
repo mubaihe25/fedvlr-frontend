@@ -1786,7 +1786,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       robust_defense_play: [
         {label: '客户端更新', note: '多端上传', tone: 'data', Icon: Database},
         {label: aggregationMode === 'secure_aggregation' ? '安全聚合' : '明文聚合', note: aggregationMode === 'secure_aggregation' ? '隐藏单端' : '可见更新', tone: 'aggregation', Icon: Layers3},
-        {label: robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通 FedAvg 聚合', note: '鲁棒筛选', tone: 'defense', Icon: ShieldCheck, active: true},
+        {label: robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通聚合', note: '鲁棒筛选', tone: 'defense', Icon: ShieldCheck, active: true},
         {label: '过滤异常', note: '拦截红点', tone: 'defense', Icon: Filter},
         {label: '性能恢复', note: 'Recall/NDCG', tone: 'audit', Icon: LineChart},
       ],
@@ -1796,7 +1796,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '数据集', value: datasetLabel(config.dataset || 'AMAZON_BEAUTY_POC')},
         {label: '模型', value: config.model || 'FedAvg'},
         {label: '攻击方向', value: '目标商品投毒'},
-        {label: '防御策略', value: robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通 FedAvg 聚合'},
+        {label: '防御策略', value: robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通聚合'},
         {label: '目标商品', value: selectedTargetOption?.title ?? targetItemTitle},
         {label: '输出证据', value: `${saveTopKEnabled ? '排序 / Top50' : '排序'}${exportAuditEnabled ? ' / 推荐列表' : ''}`},
       ],
@@ -1820,7 +1820,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {label: '数据集', value: datasetLabel(config.dataset || selectedPlayDefaults.dataset)},
         {label: '模型', value: config.model || selectedPlayDefaults.model},
         {label: '攻击方向', value: '异常客户端更新'},
-        {label: '防御策略', value: secureModeActive ? '安全聚合模拟' : robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : dpLayerEnabled ? '差分隐私风格加噪' : '普通 FedAvg 聚合'},
+        {label: '防御策略', value: secureModeActive ? '安全聚合模拟' : robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : dpLayerEnabled ? '差分隐私风格加噪' : '普通聚合'},
         {label: '观测对象', value: '异常过滤 / 性能恢复'},
         {label: '输出证据', value: defenseMetrics.join(' / ')},
       ],
@@ -2652,7 +2652,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <p className="mb-2 text-xs font-bold text-slate-500">防御算法</p>
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full border border-slate-700/70 bg-slate-950/35 px-4 py-2 text-xs font-bold text-slate-500">
-                      {robustAlgorithm !== 'none' ? `已选：${robustAggregatorLabel(robustAlgorithm)}` : '未选择：普通 FedAvg 聚合'}
+                      {robustAlgorithm !== 'none' ? `已选：${robustAggregatorLabel(robustAlgorithm)}` : '未选择：普通聚合'}
                     </span>
                     {ROBUST_AGGREGATORS.map((algorithm) => (
                       <button
@@ -2755,7 +2755,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 {[
                   `方向：${selectedPlay.title}`,
                   `${datasetLabel(config.dataset || selectedPlayDefaults.dataset)} / ${config.model || selectedPlayDefaults.model}`,
-                  aggregationMode === 'secure_aggregation' ? '安全聚合模拟' : robustAlgorithm !== 'none' ? `鲁棒：${robustAggregatorLabel(robustAlgorithm)}` : '普通 FedAvg 聚合',
+                  aggregationMode === 'secure_aggregation' ? '安全聚合模拟' : robustAlgorithm !== 'none' ? `鲁棒：${robustAggregatorLabel(robustAlgorithm)}` : '普通聚合',
                 ].map((item) => (
                   <span key={item} className="rounded-full border border-white/10 bg-white/[0.045] px-2.5 py-1 text-slate-300">
                     {item}
@@ -3011,7 +3011,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                     </div>,
                   )}
                   {renderExpertControl('攻击强度', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{formatPercentValue(config.poisoningRatio || selectedPlayDefaults.maliciousRatio)}</div>)}
-                  {renderExpertControl('防御算法', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{secureModeActive ? '安全聚合模拟' : robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : dpLayerEnabled ? '差分隐私风格加噪' : '普通 FedAvg 聚合'}</div>)}
+                  {renderExpertControl('防御算法', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">{secureModeActive ? '安全聚合模拟' : robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : dpLayerEnabled ? '差分隐私风格加噪' : '普通聚合'}</div>)}
                   {renderExpertControl('固定 Top50', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">推荐列表固定导出 50 条</div>)}
                 </div>
                 {renderExpertControl('导出审计结果', <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-sm text-slate-200">推荐对照、隐私观测、防御摘要、场景档案</div>)}
@@ -3118,7 +3118,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       ],
       robust_defense_play: [
         '[Round 1] 客户端完成本地训练',
-        `[Defense] ${robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通 FedAvg 聚合'} 正在处理客户端更新`,
+        `[Defense] ${robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通聚合'} 正在处理客户端更新`,
         `[Defense] 当前聚合可见性：${aggregationMode === 'secure_aggregation' ? '安全聚合模拟' : '明文更新聚合'}`,
         `[Audit] 防御恢复率：${formatPercentValue(metrics?.recoveryRate)}`,
         '[Export] 鲁棒防御摘要已生成',
@@ -3158,7 +3158,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       ],
       robust_defense_play: [
         {label: '恢复率', value: formatPercentValue(metrics?.recoveryRate), tone: 'text-emerald-100'},
-        {label: '过滤算法', value: robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通 FedAvg 聚合', tone: 'text-emerald-100'},
+        {label: '过滤算法', value: robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通聚合', tone: 'text-emerald-100'},
       ],
     };
     const monitoringFocusCards: Record<ExperimentPlayId, Array<{label: string; value: string; tone?: string}>> = {
@@ -3189,7 +3189,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       robust_defense_play: [
         {label: 'Recall@50', value: jobMetric('recall_at_50', formatMetricValue(v3AggregationPanel?.recallAfter ?? metrics?.defense?.recall50 ?? null)), tone: 'text-cyan-100'},
         {label: 'NDCG@50', value: jobMetric('ndcg_at_50', formatMetricValue(v3AggregationPanel?.ndcgAfter ?? metrics?.defense?.ndcg50 ?? null)), tone: 'text-violet-100'},
-        {label: '防御算法', value: jobMetric('defense_algorithm', robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通 FedAvg 聚合'), tone: 'text-emerald-100'},
+        {label: '防御算法', value: jobMetric('defense_algorithm', robustAlgorithm !== 'none' ? robustAggregatorLabel(robustAlgorithm) : '普通聚合'), tone: 'text-emerald-100'},
         {label: '恢复率', value: jobMetric('recovery_rate_recall', formatPercentValue(metrics?.recoveryRate)), tone: 'text-emerald-100'},
         {label: '异常过滤数量', value: jobMetric('rejected_client_count', formatPlainValue(report.defenseTrace?.filteredClients ?? null)), tone: 'text-emerald-100'},
       ],

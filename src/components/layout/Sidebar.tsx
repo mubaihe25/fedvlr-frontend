@@ -44,7 +44,6 @@ export const Sidebar: React.FC<SidebarProps> = ({currentPage, onPageChange}) => 
         <Shield className="h-5 w-5 text-cyan-100" />
       </div>
       <h1 className="text-base font-bold leading-6 text-slate-50">安全推荐演示平台</h1>
-      <p className="mt-2 text-xs leading-5 text-slate-300">按演示理解顺序组织：导览、机制、攻防工作台。</p>
     </div>
 
     <nav className="flex-1 space-y-2 px-4">
@@ -84,9 +83,5 @@ export const Sidebar: React.FC<SidebarProps> = ({currentPage, onPageChange}) => 
         );
       })}
     </nav>
-
-    <div className="px-5 pb-5 text-[11px] leading-5 text-slate-400">
-      攻防工作台内已合并实验编排、运行监控、单次分析、横向对比和历史实验。
-    </div>
   </aside>
 );
