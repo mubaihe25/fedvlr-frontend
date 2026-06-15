@@ -3587,7 +3587,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     // 7) 失败 job 单独分支
     if (workbenchJob && workbenchJob.status === 'failed') {
       return (
-        <div className="space-y-5">
+        <div className="workbench-analysis-surfaces space-y-5">
           <section className="sandbox-panel rounded-[28px] p-5">
             <p className="text-xs font-bold tracking-[0.2em] text-rose-100/75">单次分析</p>
             <h2 className="mt-2 text-2xl font-black text-white">该实验未完成，无法进入单次分析</h2>
@@ -3611,7 +3611,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     // 8) 无分析对象：简洁空状态
     if (!analysisDirection && !workbenchJobId) {
       return (
-        <div className="space-y-5">
+        <div className="workbench-analysis-surfaces space-y-5">
           <section className="sandbox-panel rounded-[28px] p-6">
             <p className="text-xs font-bold tracking-[0.2em] text-rose-100/75">单次分析</p>
             <h2 className="mt-2 text-2xl font-black text-white">暂无可分析实验</h2>
@@ -4220,7 +4220,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const hasAnyDirectionEvidence = jobDirectionResult !== null && Object.keys(jobDirectionResult).length > 0;
     if (analysisDirection && workbenchResult && !hasAnyDirectionEvidence) {
       return (
-        <div className="space-y-5">
+        <div className="workbench-analysis-surfaces space-y-5">
           {renderHeader()}
           <section className="sandbox-panel rounded-[28px] p-6">
             <p className="text-base font-bold text-white">该实验未导出可用于单次分析的方向证据。</p>
@@ -4233,7 +4233,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     // 11) 正常渲染：按 direction 顺序展示 section；key 强制重挂以彻底卸载旧方向
     const sectionKey = `${analysisDirection ?? 'unknown'}-${workbenchJobId ?? 'none'}`;
     return (
-      <div key={sectionKey} className="space-y-5">
+      <div key={sectionKey} className="workbench-analysis-surfaces space-y-5">
         {sectionList.map((sectionId) => {
           const renderer = sectionRenderers[sectionId];
           if (!renderer) return null;
