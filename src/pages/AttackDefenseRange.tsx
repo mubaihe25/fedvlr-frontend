@@ -3382,8 +3382,58 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     };
     return (
       <div className="space-y-5">
-        <section className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
-          <FederatedTopology mode="exercise" defenseActive={topologyDefenseActive} className="min-h-[520px]" />
+        <section className="grid items-start gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="space-y-5">
+            <FederatedTopology mode="exercise" defenseActive={topologyDefenseActive} className="min-h-[520px]" />
+            <div className="rounded-[28px] border border-emerald-200/15 bg-slate-950/70 p-5">
+              <div className="mb-3 flex items-center gap-2 text-emerald-100">
+                <SquareTerminal className="h-4 w-4" />
+                <span className="text-xs font-bold tracking-[0.18em]">终端日志</span>
+              </div>
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-2 font-mono text-xs leading-5 text-slate-300">
+                {logLines.map((line, index) => (
+                  <p key={`${index}-${line}`}>{line}</p>
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] text-slate-500">
+                {workbenchJobId
+                  ? `日志来自 workbench job：${workbenchJob?.status ?? '读取中'}；当前不伪造真实训练进度。`
+                  : v3LogLines.length
+                    ? '运行时间线来自 V3 证据；不额外补写训练全过程。'
+                    : '日志用于串联已完成结果摘要，不伪造完整训练全过程。'}
+              </p>
+              {workbenchJob?.status && ['completed', 'partial'].includes(workbenchJob.status) ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('analysis')}
+                  className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-200/30 bg-emerald-300/10 px-3 py-2 text-xs font-bold text-emerald-50 hover:bg-emerald-300/15"
+                >
+                  <Search className="h-4 w-4" />
+                  查看单次分析
+                </button>
+              ) : null}
+              {workbenchJob?.status === 'failed' ? (
+                <div className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 p-3">
+                  <p className="text-xs font-black text-rose-100">实验失败</p>
+                  <p className="mt-2 text-sm leading-6 text-rose-50">{workbenchFailureSummary(workbenchJob)}</p>
+                  <div className="mt-3 grid gap-2 text-xs text-rose-50/85 sm:grid-cols-2 lg:grid-cols-3">
+                    <p>失败阶段：{workbenchStageLabel(workbenchJob.failure_stage ?? workbenchJob.stage)}</p>
+                    <p>return code：{workbenchJob.return_code ?? EMPTY_VALUE}</p>
+                    <p>实际 tensor shape：{formatShapeEvidence(workbenchJob.actual_tensor_shapes)}</p>
+                    <p>模型期望 shape：{formatShapeEvidence(workbenchJob.model_expected_shapes)}</p>
+                    <p>job_id：{workbenchJob.job_id}</p>
+                    <p>方向：{workbenchDirectionLabel(workbenchJob.direction)}</p>
+                    <p>数据集：{datasetLabel(workbenchJob.dataset ?? '')}</p>
+                    <p>模型：{workbenchJob.model ?? EMPTY_VALUE}</p>
+                  </div>
+                  <details className="mt-3 rounded-xl bg-slate-950/60 p-3 text-xs text-slate-300">
+                    <summary className="cursor-pointer font-bold text-rose-100">展开完整后端错误</summary>
+                    <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5">{workbenchFailureDetail(workbenchJob)}</pre>
+                  </details>
+                </div>
+              ) : null}
+            </div>
+          </div>
           <div className="sandbox-panel rounded-[28px] p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
@@ -3491,54 +3541,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 实验完成，可进入单次分析
               </div>
             ) : null}
-            <div className="mt-5 rounded-2xl border border-emerald-200/15 bg-slate-950/70 p-4">
-              <div className="mb-3 flex items-center gap-2 text-emerald-100">
-                <SquareTerminal className="h-4 w-4" />
-                <span className="text-xs font-bold tracking-[0.18em]">终端日志</span>
-              </div>
-              <div className="max-h-80 space-y-2 overflow-y-auto pr-2 font-mono text-xs leading-5 text-slate-300">
-                {logLines.map((line, index) => (
-                  <p key={`${index}-${line}`}>{line}</p>
-                ))}
-              </div>
-              <p className="mt-3 text-[11px] text-slate-500">
-                {workbenchJobId
-                  ? `日志来自 workbench job：${workbenchJob?.status ?? '读取中'}；当前不伪造真实训练进度。`
-                  : v3LogLines.length
-                    ? '运行时间线来自 V3 证据；不额外补写训练全过程。'
-                    : '日志用于串联已完成结果摘要，不伪造完整训练全过程。'}
-              </p>
-              {workbenchJob?.status && ['completed', 'partial'].includes(workbenchJob.status) ? (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('analysis')}
-                  className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-200/30 bg-emerald-300/10 px-3 py-2 text-xs font-bold text-emerald-50 hover:bg-emerald-300/15"
-                >
-                  <Search className="h-4 w-4" />
-                  查看单次分析
-                </button>
-              ) : null}
-              {workbenchJob?.status === 'failed' ? (
-                <div className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 p-3">
-                  <p className="text-xs font-black text-rose-100">实验失败</p>
-                  <p className="mt-2 text-sm leading-6 text-rose-50">{workbenchFailureSummary(workbenchJob)}</p>
-                  <div className="mt-3 grid gap-2 text-xs text-rose-50/85 sm:grid-cols-2 lg:grid-cols-3">
-                    <p>失败阶段：{workbenchStageLabel(workbenchJob.failure_stage ?? workbenchJob.stage)}</p>
-                    <p>return code：{workbenchJob.return_code ?? EMPTY_VALUE}</p>
-                    <p>实际 tensor shape：{formatShapeEvidence(workbenchJob.actual_tensor_shapes)}</p>
-                    <p>模型期望 shape：{formatShapeEvidence(workbenchJob.model_expected_shapes)}</p>
-                    <p>job_id：{workbenchJob.job_id}</p>
-                    <p>方向：{workbenchDirectionLabel(workbenchJob.direction)}</p>
-                    <p>数据集：{datasetLabel(workbenchJob.dataset ?? '')}</p>
-                    <p>模型：{workbenchJob.model ?? EMPTY_VALUE}</p>
-                  </div>
-                  <details className="mt-3 rounded-xl bg-slate-950/60 p-3 text-xs text-slate-300">
-                    <summary className="cursor-pointer font-bold text-rose-100">展开完整后端错误</summary>
-                    <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5">{workbenchFailureDetail(workbenchJob)}</pre>
-                  </details>
-                </div>
-              ) : null}
-            </div>
           </div>
         </section>
 

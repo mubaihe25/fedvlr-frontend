@@ -181,29 +181,17 @@ export const SystemMechanism: React.FC = () => {
         </div>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="sandbox-panel rounded-[28px] p-6">
-          <p className="text-xs font-bold tracking-[0.2em] text-violet-100/75">双层融合机制</p>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div className="rounded-3xl border border-violet-200/20 bg-violet-200/10 p-5">
-              <p className="text-lg font-bold text-violet-50">服务端多视图融合</p>
-              <p className="mt-3 text-sm leading-6 text-slate-300">服务端聚合来自多客户端的图像、文本和协同信号更新，形成稳定的全局推荐能力。</p>
-            </div>
-            <div className="rounded-3xl border border-emerald-200/20 bg-emerald-200/10 p-5">
-              <p className="text-lg font-bold text-emerald-50">客户端个性化路由</p>
-              <p className="mt-3 text-sm leading-6 text-slate-300">客户端根据本地用户偏好调整不同视图权重，让全局模型适配本地兴趣差异。</p>
-            </div>
+      <section className="sandbox-panel rounded-[28px] p-6">
+        <p className="text-xs font-bold tracking-[0.2em] text-violet-100/75">双层融合机制</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="rounded-3xl border border-violet-200/20 bg-violet-200/10 p-5">
+            <p className="text-lg font-bold text-violet-50">服务端多视图融合</p>
+            <p className="mt-3 text-sm leading-6 text-slate-300">服务端聚合来自多客户端的图像、文本和协同信号更新，形成稳定的全局推荐能力。</p>
           </div>
-        </div>
-
-        <div className="sandbox-panel rounded-[28px] p-6">
-          <p className="text-xs font-bold tracking-[0.2em] text-amber-100/75">特征边界</p>
-          <h3 className="mt-2 text-xl font-bold text-white">Amazon 图像特征说明</h3>
-          <p className="mt-4 text-sm leading-7 text-slate-300">
-            {isAmazonPlaceholder
-              ? '当前 Amazon image_features 标注为 URL-hash placeholder。它用于端到端展示和商品卡图片映射，不是实际视觉 embedding。'
-              : '如果后续场景出现 Amazon URL-hash image_features，仍需标注为占位特征，不能写成实际视觉 embedding。'}
-          </p>
+          <div className="rounded-3xl border border-emerald-200/20 bg-emerald-200/10 p-5">
+            <p className="text-lg font-bold text-emerald-50">客户端个性化路由</p>
+            <p className="mt-3 text-sm leading-6 text-slate-300">客户端根据本地用户偏好调整不同视图权重，让全局模型适配本地兴趣差异。</p>
+          </div>
         </div>
       </section>
     </div>

@@ -40,7 +40,7 @@ export const Home: React.FC<HomeProps> = ({onPageChange}) => (
             animate={{opacity: 1, y: 0}}
             transition={{delay: 0.08}}
           >
-            基于联邦学习的隐私安全推荐系统及攻防验证平台
+            面向多模态推荐的联邦隐私攻防一体化靶场系统
           </motion.h1>
           <motion.p
             className="mt-5 text-base leading-8 text-slate-300 md:text-lg"
