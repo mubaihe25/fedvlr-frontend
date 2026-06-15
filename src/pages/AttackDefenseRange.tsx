@@ -69,6 +69,7 @@ import type {ExperimentPlaybook, PlaybookRouteTone} from '../lib/experimentPlayb
 import {
   resolveTargetItemZhName,
   resolveTargetItemThumbnailUrl,
+  formatTargetItemDisplayName,
 } from '../lib/targetItemZhNames';
 import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPercentRank, formatPlainValue, formatRankGain, formatSignedRankGain, getRecommendationCounts, toChineseLabel} from '../lib/showcaseFormat';
 import {cn} from '../lib/utils';
@@ -1143,11 +1144,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         const defaultTarget = options.target_items?.[0];
         if (defaultTarget?.item_id) {
           setTargetItemId(String(defaultTarget.item_id));
-          const zhTitle = resolveTargetItemZhName(defaultTarget.item_id, {
+          const zhName = resolveTargetItemZhName(defaultTarget.item_id, {
             short_name_zh: defaultTarget.short_name_zh,
             display_name_zh: defaultTarget.display_name_zh,
           });
-          setTargetItemTitle(`${zhTitle} · ${defaultTarget.item_id}`);
+          setTargetItemTitle(formatTargetItemDisplayName(zhName, defaultTarget.item_id));
         }
       })
       .catch((error) => {
@@ -1282,14 +1283,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const targetOptions = useMemo(() => {
     if (workbenchOptions?.target_items?.length) {
       return workbenchOptions.target_items.map((item) => {
-        const zhTitle = resolveTargetItemZhName(item.item_id, {
+        const zhName = resolveTargetItemZhName(item.item_id, {
           short_name_zh: item.short_name_zh,
           display_name_zh: item.display_name_zh,
         });
         return {
           id: item.item_id,
-          title: `${zhTitle} · ${item.item_id}`,
-          rawTitle: item.raw_title ?? item.title ?? zhTitle,
+          title: formatTargetItemDisplayName(zhName, item.item_id),
+          rawTitle: item.raw_title ?? item.title ?? zhName,
           category: item.category_zh ?? item.category ?? '',
           thumbnailUrl: resolveTargetItemThumbnailUrl({
             datasetId: targetBoardDataset,
