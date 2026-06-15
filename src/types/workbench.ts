@@ -120,6 +120,14 @@ export interface WorkbenchPayload {
   target_delta?: number;
   dp_seed?: number;
   batch_size?: number;
+  num_workers?: number;
+  pin_memory?: boolean;
+  persistent_workers?: boolean;
+  prefetch_factor?: number;
+  amp_enabled?: boolean;
+  cache_item_features_on_device?: boolean;
+  non_blocking_transfer?: boolean;
+  reuse_client_model_workspace?: boolean;
   base_attack?: string;
   anomaly_client_ratio?: number;
   perturbation_type?: string;
@@ -200,6 +208,7 @@ export interface WorkbenchJobStatusResponse {
   status?: string | null;
   stage?: string | null;
   progress?: number | null;
+  progress_detail?: WorkbenchProgressDetail | null;
   valid?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
@@ -232,6 +241,48 @@ export interface WorkbenchJobStatusResponse {
   actual_tensor_shapes?: Record<string, unknown> | string | null;
   model_expected_shapes?: Record<string, unknown> | string | null;
   forward_preflight?: Record<string, unknown> | null;
+  epoch_metrics?: Record<string, WorkbenchEpochMetric[]>;
+  gpu_stats?: WorkbenchGpuStats;
+  performance_summary?: Record<string, unknown> | null;
+}
+
+export interface WorkbenchProgressDetail {
+  phase: string;
+  phase_label: string;
+  current_epoch: number;
+  total_epochs: number;
+  current_client: number;
+  total_clients: number;
+  completed_clients: number;
+  percent: number;
+  updated_at?: string | null;
+  elapsed_seconds?: number | null;
+  estimated_remaining_seconds?: number | null;
+  failure_phase?: string | null;
+}
+
+export interface WorkbenchEpochMetric {
+  epoch?: number;
+  total_epochs?: number;
+  loss?: number | null;
+  valid?: Record<string, number> | null;
+  test?: Record<string, number> | null;
+  recorded_at?: number;
+}
+
+export interface WorkbenchGpuSample {
+  timestamp?: string | null;
+  utilization_gpu: number;
+  memory_used: number;
+  memory_total: number;
+  power_draw: number;
+  temperature: number;
+}
+
+export interface WorkbenchGpuStats {
+  available: boolean;
+  samples: WorkbenchGpuSample[];
+  latest?: WorkbenchGpuSample | null;
 }
 
 export interface WorkbenchLogsResponse {
@@ -248,6 +299,10 @@ export interface WorkbenchResultResponse {
   source?: string | null;
   result_pointer?: Record<string, unknown>;
   metrics_summary?: Record<string, unknown>;
+  progress_detail?: WorkbenchProgressDetail | null;
+  epoch_metrics?: Record<string, WorkbenchEpochMetric[]>;
+  gpu_stats?: WorkbenchGpuStats;
+  performance_summary?: Record<string, unknown> | null;
   result?: Record<string, unknown>;
   warnings?: string[];
   missing_evidence?: string[];

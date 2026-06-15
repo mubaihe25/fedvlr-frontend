@@ -213,6 +213,8 @@ npm run preview
 - 新建任务固定使用 `metrics_summary.source=full_train`。旧 job 的历史 source 只做兼容读取，不再作为新任务执行选项。`partial` 仍表示训练或结果导出只完成部分，不要补写成功效果。
 - 工作台模型选择只展示可进入配置的 8 个模型；MGCN 系列继续作为需要适配器的边界说明，不放进启动 select。模型不在下拉里按数据集硬禁用，是否支持当前方向的全量训练由 `/workbench/validate` 返回。
 - 运行监控如果有 `job_id`，优先轮询 workbench job 日志；失败状态同时展示失败阶段、中文摘要、实际 tensor shape、模型期望 shape 和 return code。没有 job 时继续使用 V3 运行时间线或摘要曲线。
+- 有真实 job 时约每 1.5 秒读取 `progress_detail`，展示阶段、epoch、当前/完成客户端、百分比、elapsed、ETA 和更新时间；`progress.json` 尚未产生时只显示“正在初始化”，不得使用固定轮数或时间推算假进度。terminal 后保留真实最终进度并停止轮询。
+- 运行监控读取 API 返回的真实 epoch metrics、GPU 最新采样和性能摘要。高级参数可提交 batch size、worker/pin/prefetch、AMP、特征常驻和非阻塞传输配置；其中 AMP 默认关闭，当前自定义联邦 loader 的多 worker 由后端明确拒绝。
 - `/workbench/options` 的模型能力记录区分 `construct_verified`、`forward_verified`、`train_verified` 和 `direction_verified`；前端不得把构造成功改写为已训练支持。
 - 当前 job 的监控曲线只使用 v2 `training.rounds` 或聚合防御 `direction_result.rounds`；日志为空时显示等待 `run.log`，不显示固定示例日志。terminal 后停止轮询并读取 result，`partial` 展示缺失证据。
 - 商品 metadata 由当前 job result 提供 item ID/title/category，并把 `/showcase/images/{datasetId}/{itemId}?size=thumb` 改写为前端 `/api/showcase/...` 请求；404 只降级到占位图。

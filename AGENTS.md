@@ -243,3 +243,5 @@ npm run build
 - 成员推断必须展示当前 job 的 AUC/Accuracy/Precision/Recall/F1、ROC、分数分布和匿名 pair-score 元数据；更新泄露必须展示当前 job 的候选排名/分数、匿名客户端真实交互和 Hit@10/20/50，不得读取 V3 候选补齐。
 - 聚合防御必须按 baseline / attacked / defended 三阶段展示 Loss、Recall@50、NDCG@50，并读取逐轮拒绝数和匿名客户端表格。`base_attack=none` 时隐藏攻击阶段、恶意客户端和过滤成功率。
 - 有 `job_id` 时运行监控的曲线和日志只能来自当前 job；无真实 round 时显示缺失/等待，不得生成假曲线或固定日志。`partial` 必须展示 `missing_evidence`，failed 必须展示真实 `failure_stage`。
+- 有 job 时以约 1.5 秒间隔读取 `progress_detail`，展示真实阶段、epoch、当前/完成客户端、百分比、elapsed、ETA 和更新时间。进度文件不存在时显示“正在初始化”；禁止恢复基于总轮数或时间的 70% 等推算进度。
+- 运行监控可展示 API 返回的真实 epoch metrics、GPU 最新采样和性能摘要。性能参数仍以 `/workbench/options.parameter_descriptors` 为唯一来源；AMP 默认关闭，`num_workers > 0` 的拒绝原因必须原样展示，不能在前端静默改回 0。

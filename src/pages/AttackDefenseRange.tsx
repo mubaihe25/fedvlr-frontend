@@ -199,7 +199,13 @@ const WORKBENCH_STAGE_LABELS: Record<string, string> = {
   prepare: '准备配置',
   preparing_config: '准备配置',
   baseline_training: '基线训练',
+  baseline_train: '基线训练',
+  baseline_evaluate: '基线验证与 Top50',
   attack_training: '攻击训练',
+  attack_train: '攻击训练',
+  attack_evaluate: '攻击验证与 Top50',
+  aggregate: '服务端聚合',
+  security_audit: '安全审计',
   privacy_audit: '成员推断审计',
   leakage_audit: '更新泄露审计',
   defense_training: '防御训练',
@@ -343,6 +349,14 @@ const formatRank = (value?: number | null) => (typeof value === 'number' && Numb
 const formatSigned = (value?: number | null, digits = 0) => (typeof value === 'number' && Number.isFinite(value) ? `+${value.toFixed(digits)}` : EMPTY_VALUE);
 const formatRatio = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : EMPTY_VALUE);
 const formatSmallNumber = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : EMPTY_VALUE);
+const formatDurationSeconds = (value?: number | null) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return EMPTY_VALUE;
+  const total = Math.max(0, Math.round(value));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return hours ? `${hours}时 ${minutes}分 ${seconds}秒` : minutes ? `${minutes}分 ${seconds}秒` : `${seconds}秒`;
+};
 const formatExportedValue = (value?: number | string | null) => (value === null || value === undefined || value === '' || value === EMPTY_VALUE ? '未导出' : String(value));
 const formatCellValue = (value?: string | number | null) => {
   if (value === null || value === undefined || value === EMPTY_VALUE || value === '') {
@@ -689,6 +703,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [candidatePoolSize, setCandidatePoolSize] = useState(500);
   const [clientCountForLeakage, setClientCountForLeakage] = useState(5);
   const [batchSize, setBatchSize] = useState(128);
+  const [numWorkers, setNumWorkers] = useState(0);
+  const [pinMemory, setPinMemory] = useState(false);
+  const [persistentWorkers, setPersistentWorkers] = useState(false);
+  const [prefetchFactor, setPrefetchFactor] = useState(2);
+  const [ampEnabled, setAmpEnabled] = useState(false);
+  const [cacheItemFeaturesOnDevice, setCacheItemFeaturesOnDevice] = useState(true);
+  const [nonBlockingTransfer, setNonBlockingTransfer] = useState(true);
+  const [reuseClientModelWorkspace, setReuseClientModelWorkspace] = useState(true);
   const [seed, setSeed] = useState(2026);
   const [riskModality, setRiskModality] = useState<RiskModality>('item embedding');
   const [similarityMethod, setSimilarityMethod] = useState<SimilarityMethod>('cosine');
@@ -991,7 +1013,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         const descriptors = options.parameter_descriptors ?? {};
         const numberDefault = (key: string, fallback: number) => typeof descriptors[key]?.default === 'number' ? descriptors[key].default as number : fallback;
         const stringDefault = <T extends string>(key: string, fallback: T) => typeof descriptors[key]?.default === 'string' ? descriptors[key].default as T : fallback;
+        const booleanDefault = (key: string, fallback: boolean) => typeof descriptors[key]?.default === 'boolean' ? descriptors[key].default as boolean : fallback;
         setBatchSize(numberDefault('batch_size', 128));
+        setNumWorkers(numberDefault('num_workers', 0));
+        setPinMemory(booleanDefault('pin_memory', false));
+        setPersistentWorkers(booleanDefault('persistent_workers', false));
+        setPrefetchFactor(numberDefault('prefetch_factor', 2));
+        setAmpEnabled(booleanDefault('amp_enabled', false));
+        setCacheItemFeaturesOnDevice(booleanDefault('cache_item_features_on_device', true));
+        setNonBlockingTransfer(booleanDefault('non_blocking_transfer', true));
+        setReuseClientModelWorkspace(booleanDefault('reuse_client_model_workspace', true));
         setSeed(numberDefault('seed', 2026));
         setInjectionRatio(numberDefault('injection_ratio', 0.2));
         setMaxInjectionsPerClient(numberDefault('max_injections_per_client', 10));
@@ -1408,6 +1439,14 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       target_delta: dpTargetDelta,
       dp_seed: dpSeed,
       batch_size: batchSize,
+      num_workers: numWorkers,
+      pin_memory: pinMemory,
+      persistent_workers: numWorkers > 0 && persistentWorkers,
+      prefetch_factor: prefetchFactor,
+      amp_enabled: ampEnabled,
+      cache_item_features_on_device: cacheItemFeaturesOnDevice,
+      non_blocking_transfer: nonBlockingTransfer,
+      reuse_client_model_workspace: reuseClientModelWorkspace,
       gradient_clip_norm: defensePreprocessClipNorm,
       outlier_strategy: outlierStrategy,
       trim_ratio: trimRatio,
@@ -2038,6 +2077,27 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           markParamChanged(getParameterDescriptor('gradient_clip').label);
           updateConfig({advanced: {...config.advanced, gradientClip: Number(event.target.value)}});
         }} />)}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {fieldShell(getParameterDescriptor('num_workers').label, <select className={inputClass} value={numWorkers} onChange={(event) => setNumWorkers(Number(event.target.value))}>
+            {descriptorOptions<number>('num_workers', [0]).map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>, getParameterDescriptor('num_workers').help_text)}
+          {fieldShell(getParameterDescriptor('prefetch_factor').label, <input className={inputClass} type="number" min={descriptorNumber('prefetch_factor', 'min', 1)} max={descriptorNumber('prefetch_factor', 'max', 8)} step={1} value={prefetchFactor} onChange={(event) => setPrefetchFactor(Number(event.target.value))} />, getParameterDescriptor('prefetch_factor').help_text)}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[
+            {key: 'pin_memory', value: pinMemory, setValue: setPinMemory},
+            {key: 'persistent_workers', value: persistentWorkers, setValue: setPersistentWorkers, disabled: numWorkers === 0},
+            {key: 'amp_enabled', value: ampEnabled, setValue: setAmpEnabled},
+            {key: 'cache_item_features_on_device', value: cacheItemFeaturesOnDevice, setValue: setCacheItemFeaturesOnDevice},
+            {key: 'non_blocking_transfer', value: nonBlockingTransfer, setValue: setNonBlockingTransfer},
+            {key: 'reuse_client_model_workspace', value: reuseClientModelWorkspace, setValue: setReuseClientModelWorkspace},
+          ].map((item) => (
+            <label key={item.key} className={cn('flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-2.5 text-xs font-semibold text-slate-300', item.disabled && 'cursor-not-allowed opacity-45')}>
+              <span>{getParameterDescriptor(item.key).label}</span>
+              <input type="checkbox" className="accent-cyan-300" checked={item.value} disabled={item.disabled} onChange={(event) => item.setValue(event.target.checked)} />
+            </label>
+          ))}
+        </div>
       </>
     );
     const selectTargetOption = (id: string) => {
@@ -3052,11 +3112,22 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     const aggregationRounds = Array.isArray(jobDirectionResult?.rounds)
       ? jobDirectionResult.rounds.map(asRecord).filter((item): item is Record<string, unknown> => item !== null)
       : [];
-    const currentJobRounds = aggregationRounds.length ? aggregationRounds : trainingRounds;
+    const liveEpochMetrics = (workbenchJob?.epoch_metrics ?? {}) as Record<string, unknown>;
+    const liveEpochRounds = Object.entries(liveEpochMetrics).flatMap(([phase, records]) =>
+      Array.isArray(records)
+        ? records.map((record) => ({...asRecord(record), phase} as Record<string, unknown>))
+        : [],
+    );
+    const currentJobRounds = aggregationRounds.length ? aggregationRounds : trainingRounds.length ? trainingRounds : liveEpochRounds;
     const jobRoundMetric = (row: Record<string, unknown>, key: string): number | null => {
       if (aggregationRounds.length) {
         const phase = asRecord(row.defended) ?? asRecord(row.attacked) ?? asRecord(row.baseline);
         return typeof phase?.[key] === 'number' ? phase[key] as number : null;
+      }
+      const testMetrics = asRecord(row.test);
+      if (testMetrics) {
+        const liveKey = key === 'recall_at_50' ? 'recall@50' : key === 'ndcg_at_50' ? 'ndcg@50' : key;
+        if (typeof testMetrics[liveKey] === 'number') return testMetrics[liveKey] as number;
       }
       return typeof row[key] === 'number' ? row[key] as number : null;
     };
@@ -3081,8 +3152,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       ? [jobMetricNumberValue('recovery_rate_recall'), jobMetricNumberValue('recovery_rate_ndcg')].filter((value): value is number => value !== null)
       : v3CurvesPanel?.defenseRecovery?.length ? v3CurvesPanel.defenseRecovery : buildSummaryCurve([0.22, metrics?.recoveryRate], 0.2, 0.72);
     const maliciousRatio = v3RuntimePanel?.maliciousClientRatio ?? config.poisoningRatio ?? config.maliciousClientConfig?.ratio ?? 0;
-    const roundNow = hasCurrentJob ? currentJobRounds.length : v3RuntimePanel?.currentRound ?? Math.max(1, Math.round((config.totalRounds || 10) * 0.7));
-    const totalRounds = hasCurrentJob ? Number(jobTraining?.epochs ?? config.totalRounds ?? currentJobRounds.length) : v3RuntimePanel?.totalRounds ?? config.totalRounds ?? 10;
+    const progressDetail = workbenchJob?.progress_detail;
+    const roundNow = progressDetail?.current_epoch ?? 0;
+    const totalRounds = progressDetail?.total_epochs ?? (hasCurrentJob ? Number(jobTraining?.epochs ?? config.totalRounds ?? 0) : 0);
+    const roundDisplay = progressDetail ? `${roundNow} / ${totalRounds}` : '正在初始化';
+    const clientDisplay = progressDetail ? `${progressDetail.current_client} / ${progressDetail.total_clients}` : '正在初始化';
+    const gpuLatest = workbenchJob?.gpu_stats?.latest;
     const curveBadge = hasCurrentJob ? '数据记录点' : curveSourceLabel(v3CurvesPanel?.curveSource);
     const topologyDefenseActive = selectedPlay.id === 'robust_defense_play' ? true : selectedPlay.id === 'target_poisoning_play' ? false : defenseActive;
     const logLinesByPlay: Record<ExperimentPlayId, string[]> = {
@@ -3218,8 +3293,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 {[
                   {label: 'Job', value: shortWorkbenchJobId(workbenchJobId)},
                   {label: '状态', value: workbenchStatusLabel(workbenchJob?.status)},
-                  {label: '阶段', value: workbenchStatusLabel(workbenchJob?.stage ?? workbenchJob?.status)},
-                  {label: '进度', value: `${Math.round(workbenchJob?.progress ?? 0)}%`},
+                  {label: '阶段', value: progressDetail?.phase_label ?? '正在初始化'},
+                  {label: '进度', value: progressDetail ? `${Math.round(progressDetail.percent)}%` : '正在初始化'},
                   {label: 'source', value: workbenchSourceLabel(workbenchJob?.source ?? jobMetricsSource)},
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl border border-cyan-200/15 bg-cyan-300/[0.06] p-3">
@@ -3253,14 +3328,31 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
             <div className="grid gap-3">
               {[
-                {label: '当前轮次', value: `${roundNow} / ${totalRounds}`},
-                {label: '客户端数', value: `${v3RuntimePanel?.clientCount ?? config.clientCount ?? report.defenseTrace?.totalClients ?? 8}`},
-                {label: '恶意客户端比例', value: formatRatio(maliciousRatio)},
-                {label: '当前防御策略', value: workbenchJob?.config_summary?.robust_aggregators ? String(workbenchJob.config_summary.robust_aggregators) : v3RuntimePanel?.defenseStrategy ?? (defenseActive ? inferDefenseType(selectedScenario, report) : '无防御观察')},
+                {label: '当前轮次', value: roundDisplay},
+                {label: '当前客户端', value: clientDisplay},
+                {label: '已运行时间', value: progressDetail ? formatDurationSeconds(progressDetail.elapsed_seconds) : '正在初始化'},
+                {label: '预计剩余时间', value: progressDetail ? formatDurationSeconds(progressDetail.estimated_remaining_seconds) : '正在初始化'},
+                {label: '最后更新时间', value: progressDetail?.updated_at ?? '正在初始化'},
+                {label: '本轮已完成客户端', value: progressDetail ? `${progressDetail.completed_clients}` : '正在初始化'},
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
                   <p className="text-xs font-bold text-slate-500">{item.label}</p>
                   <p className="mt-1 font-mono text-lg font-black text-slate-100">{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {[
+                {label: 'GPU 利用率', value: gpuLatest ? `${gpuLatest.utilization_gpu.toFixed(0)}%` : '等待真实采样'},
+                {label: '显存', value: gpuLatest ? `${gpuLatest.memory_used.toFixed(0)} / ${gpuLatest.memory_total.toFixed(0)} MiB` : '等待真实采样'},
+                {label: '温度', value: gpuLatest ? `${gpuLatest.temperature.toFixed(0)}°C` : '等待真实采样'},
+                {label: '功耗', value: gpuLatest ? `${gpuLatest.power_draw.toFixed(1)} W` : '等待真实采样'},
+                {label: 'GPU 样本', value: workbenchJob?.gpu_stats?.available ? `${workbenchJob.gpu_stats.samples.length}` : '0'},
+              ].map((item) => (
+                <div key={item.label} className="rounded-2xl border border-violet-200/15 bg-violet-300/[0.055] p-3">
+                  <p className="text-[11px] font-bold text-violet-100/65">{item.label}</p>
+                  <p className="mt-1 font-mono text-sm font-black text-violet-50">{item.value}</p>
                 </div>
               ))}
             </div>
@@ -3296,7 +3388,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                     ? '运行时间线来自 V3 证据；不额外补写训练全过程。'
                     : '日志用于串联已完成结果摘要，不伪造完整训练全过程。'}
               </p>
-              {workbenchJob?.status && WORKBENCH_TERMINAL_STATUSES.has(workbenchJob.status) ? (
+              {workbenchJob?.status && ['completed', 'partial'].includes(workbenchJob.status) ? (
                 <button
                   type="button"
                   onClick={() => setActiveTab('analysis')}
