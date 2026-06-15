@@ -37,8 +37,11 @@
 - `src/pages/Home.tsx`：项目导览页，用项目定位、三步流程、三个入口按钮和动态联邦拓扑图帮助快速理解项目。
 - `src/pages/SystemMechanism.tsx`：系统机制页，用五层架构图说明数据层、客户端层、服务端层、安全层和展示层。
 - `src/pages/AttackDefenseRange.tsx`：攻防工作台，承载实验编排、运行监控、单次分析、横向对比和实验档案库。
+- `src/components/compare`：历史实验横向对比组件，包含对比篮、对象栏、指标矩阵、参数差异、四方向模板和推荐商品列表。
 - `src/components/sandbox/FederatedTopology.tsx`：联邦拓扑、动态飞线、服务器呼吸光、客户端浮动和 hover 数据浮层。
 - `src/components/sandbox/RecommendationComparisonBoard.tsx`：按真实结果显示两列或三列推荐对照，默认 5 条，支持按需请求 15 / 50 条；展示 rank、变化状态、目标商品标记、鲁棒聚合器和图片兜底。
+- `src/components/sandbox/RecommendationProductCard.tsx`：单次分析与横向推荐列表共用的商品卡片、图片兜底和变化状态展示。
+- `src/lib/workbenchCompare.ts`：把 `/workbench/jobs/{id}` 与 `/workbench/jobs/{id}/result` 的新旧字段归一化为四方向对比类型，并负责选择兼容性和候选集合 Jaccard。
 - `src/lib/securityTaxonomy.ts`：前端攻防语义模型，把模块统一分为攻击、防御、观测、证据。
 - `src/lib/experimentPlaybooks.ts`：实验剧本数据模型，统一驱动实验编排三栏、攻防路径图、当前参数、推荐场景和执行区文案。
 - `src/lib/scenarioNarratives.ts`：场景叙事工具，用真实场景、V3 panels 和 report 推断中文场景名、攻防类型、用途、证据标签和 target rank 口径。
@@ -88,7 +91,7 @@
 
 方向选择是工作台联动源头：选择推荐操纵、成员推断、更新泄露或聚合防御后，会同步更新当前参数、默认场景、聚合可见性、运行监控日志、单次分析重点和横向对比解释。高级参数不再提供执行模式选择；“校验配置”和“开始实验”固定提交 `execution_mode=full_train`。不支持的方向、模型和数据集组合必须由 `/workbench/validate` 或 invalid `/workbench/jobs` 返回失败原因，不允许降级到其他执行路径。只有拿到真实 `job_id` 才切换到运行监控。
 
-高级参数抽屉使用 `/workbench/options` 的 canonical 数据：数据集只显示 Amazon Beauty 和 KU，模型只显示 8 个可启动模型。`parameter_descriptors` 统一提供中文标签、范围、步长、默认值和选项文案；四个方向复用同一套训练参数、鲁棒聚合和更新扰动控件。推荐操纵的目标商品使用暗色可搜索 combobox，优先展示 `short_name_zh`，英文 `raw_title` 作为小字，不显示本地路径。
+高级参数抽屉使用 `/workbench/options` 的 canonical 数据：数据集只显示 Amazon Beauty 和 KU，模型只显示 8 个可启动模型。`parameter_descriptors` 统一提供中文标签、范围、步长、默认值和选项文案；四个方向复用同一套训练参数、鲁棒聚合和更新扰动控件。推荐操纵的目标商品使用暗色可搜索 combobox，主标题统一为 `简洁中文商品名 · item_id`（4–14 个汉字、描述商品类型、不虚构品牌/规格/功效），英文 `raw_title` 仅作为副标题或 tooltip，下拉搜索同时支持中文短名 / 英文原名 / `item_id`。中文短名解析走 `lib/targetItemZhNames.ts` 的 `resolveTargetItemZhName`（`short_name_zh` → `display_name_zh` → 离线映射 → `商品 {item_id}`），不要在 JSX 中散落判断；不显示本地路径。
 
 推荐操纵不再展示 TopK 选择，payload 固定 `top_k=50`，只保留“导出 Top50 推荐列表”和“导出审计结果”。推荐专属的恶意比例、注入比例、每客户端注入上限、目标损失权重、攻击强度、目标排名统计口径和目标商品不会出现在其他方向。通用批大小、随机种子、客户端采样比例和梯度裁剪范围由 descriptor 驱动。
 
@@ -116,20 +119,21 @@
 - 缺失模块整块保留并以单条占位提示（见"每方向固定模块保留"）；任务已完成但完全无任何方向证据时，仅显示一次"该实验未导出可用于单次分析的方向证据"。
 - 失败任务单独走"未完成，无法进入单次分析"分支，展示失败阶段与真实错误摘要，不渲染为分析结果。
 
-横向对比默认先显示“选择对比问题”的空状态，选择后提供四种模式：
+横向对比从历史实验档案选择真实 job，不再展示旧静态矩阵：
 
-- 攻击效果对比
-- 防御效果对比
-- 隐私风险对比
-- 模型/数据集能力对比
+- 只允许 `completed` 或确有 result 的 `partial` job；失败、运行中或结果缺失任务显示具体禁用原因。
+- 第一项锁定 direction 与 dataset，后续必须同方向、同数据集；最少 2 项、最多 4 项。选择保存在工作台 sessionStorage，刷新后恢复。
+- 推荐操纵目标商品不一致时仍允许指标级比较，但隐藏商品列表并说明原因。4 项实验时商品列表最多选择其中 3 项并排查看。
+- 页面顺序固定为对比对象、2–4 条中性结论、方向指标矩阵、最多两个主图、可选推荐列表、参数差异。缺失字段统一显示“未导出”，不补 0，不从 showcase/mock/其他 job 拼接。
+- 推荐操纵读取三阶段 metrics/recommendations/target rank、masked rank、Top50 命中和 Jaccard；成员推断读取 AUC/Accuracy/Precision/Recall/F1、score gap、阈值、样本与真实 ROC；更新泄露读取 Hit@K、候选规模、模态、相似度和候选 IDs；聚合防御读取三阶段推荐质量、恢复率、客户端筛选、耗时、算法参数和真实逐轮数据。
 
 运行监控有 `job_id` 时每 1-2 秒轮询 job 状态和持续增长的 `run.log`，展示 job_id、direction、dataset、model、source、status、stage、progress、时间戳、PID、return code 和方向专属指标；新任务的 `source` 为 `full_train`。失败时显示失败阶段、中文摘要和可展开的完整后端错误，不重复渲染同一错误。completed/failed 后停止轮询。没有 job 时才读取 V3 运行时间线和训练曲线；`curve_source=summary_curve` 显示“摘要曲线”，`curve_source=real_points` 显示“真实记录点”，不要把摘要曲线写成完整训练过程。
 
 单次分析优先级是当前 workbench job result、历史选中 job、最近可分析 job、空状态。当前 job 存在时，方向指标、推荐列表、MIA、更新泄露和聚合防御证据都不得回退 showcase V3、mock 或其他 job。
 
-横向对比只展示指标矩阵和摘要条形图，不展示推荐商品列表。模型/数据集能力模式优先读取 V3 `model_support_panel`，并按“攻防强验证底座”“多模态主展示模型”“已通过 smoke 验证”“部分支持”“仅配置校验”“待适配”分组展示模型扩充成果。该区域只显示模型名、数据集、中文状态、TopK / metrics 是否验证和结果是否已导出，不展示本地结果路径。
+横向对比优先复用现有 `/workbench/jobs`、`/workbench/jobs/{id}` 和 `/workbench/jobs/{id}/result`，当前不需要 `POST /workbench/compare`。前端只做确定性的字段归一化与派生集合运算，不创建 comparison 记录，不返回或展示本地绝对路径。
 
-历史实验只展示 `/workbench/jobs` 真实 job 档案，不再混入 showcase scenarios。一行一个 job，12 条/页，支持方向、数据集、模型、开始日期、source 和 status 筛选；点击 job 后进入单次分析并优先读取该 job result。
+历史实验只展示 `/workbench/jobs` 真实 job 档案，不再混入 showcase scenarios。一行一个 job，12 条/页，支持方向、数据集、模型、开始日期、source 和 status 筛选；点击 job 后进入单次分析并优先读取该 job result，也可加入固定对比篮、清空或进入横向对比。
 
 点击“开始实验”时立即记录 `started_at` 和 `experiment_name`。名称固定为 `{实验方向中文名} · YYYY-MM-DD HH:mm:ss`，历史卡片第一行显示该名称，开始时间精确到秒；旧 job 缺少新字段时回退现有 job 标识和 `created_at`，不使用完成时间冒充开始时间。
 

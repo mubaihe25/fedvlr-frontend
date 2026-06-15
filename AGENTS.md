@@ -101,7 +101,7 @@
 
 方向选择必须驱动完整工作流：自动更新当前参数和推荐场景，运行监控日志随方向变化，单次分析优先展示当前方向证据，横向对比说明当前在比什么，历史实验点击后读取对应 job 并进入单次分析。高级参数不展示执行模式；“校验配置”和“开始实验”固定提交 `execution_mode=full_train`。不支持组合必须显示 `/workbench/validate` 或 invalid `/workbench/jobs` 返回的失败原因，不允许静默降级。底部执行区只允许“校验配置”和“开始实验”两个主按钮；只有拿到真实 `job_id` 才切换到运行监控。
 
-高级参数必须由 `/workbench/options` 的 canonical options 驱动：数据集只显示 Amazon Beauty 和 KU；模型只显示 8 个可启动模型。`parameter_descriptors` 是中文标签、范围、步长、默认值、选项文案和动态上限的唯一来源。四个方向必须复用同一套通用训练、鲁棒聚合和更新扰动组件，不得复制四套参数定义。目标商品选择器应使用 `short_name_zh` / `display_name_zh` 做主显示，英文 `raw_title` 作为辅助文本。
+高级参数必须由 `/workbench/options` 的 canonical options 驱动：数据集只显示 Amazon Beauty 和 KU；模型只显示 8 个可启动模型。`parameter_descriptors` 是中文标签、范围、步长、默认值、选项文案和动态上限的唯一来源。四个方向必须复用同一套通用训练、鲁棒聚合和更新扰动组件，不得复制四套参数定义。目标商品选择器主标题统一为 `简洁中文商品名 · item_id`（4–14 个汉字、描述商品类型、不虚构品牌/规格/功效），英文 `raw_title` 仅作为副标题或 tooltip。中文短名解析必须走 `lib/targetItemZhNames.ts` 的 `resolveTargetItemZhName`（`short_name_zh` → `display_name_zh` → 离线映射 → `商品 {item_id}`），不要在 JSX 中散落判断；下拉搜索同时支持中文短名 / 英文原名 / `item_id`。
 
 聚合可见性必须体现互斥：
 
@@ -137,9 +137,13 @@
 
 推荐对照默认每列请求 5 条，支持展开 15 条、展开 50 条和收起；展开动作应按需请求 recommendations endpoint，不要一次渲染全量推荐。无独立 defended recommendations 时隐藏第三列，禁止渲染长期为空的“防御后推荐”。推荐项应显示图片、标题、类目、rank、变化状态和是否目标商品。目标商品不在 Top50 时不要插入列表，只在目标轨迹中说明。
 
-横向对比只展示指标矩阵和摘要图，不展示推荐商品列表。当前模式包括攻击效果、防御效果、隐私风险、模型/数据集能力。模型/数据集能力模式优先读取 V3 `model_support_panel` 的 `smoke_verified_models`、`partial_smoke_verified_models`、`validate_only_models`、`adapter_required_models`、`failed_smoke_models` 和 `model_smoke_evidence`，展示成中文分组和状态统计，不直接显示后端字段名或本地结果路径。
+横向对比只比较 `/workbench/jobs` 历史实验，不再显示旧静态 showcase 矩阵。历史行可加入固定对比篮，选择保存在工作台持久 session 中：只允许 `completed` 或确有真实 result 的 `partial`，第一项锁定 direction 与 dataset，后续必须同方向、同数据集，最少 2 项、最多 4 项；失败、运行中、结果缺失和不兼容任务必须显示具体禁用原因。推荐操纵目标商品不一致时允许指标比较，但必须隐藏商品列表并提示；4 项实验时商品列表最多同时查看 3 项。
 
-历史实验只展示 `/workbench/jobs?limit=12&page=...` 真实 job 档案库，不再展示或混入 `/showcase/scenarios` artifact 档案。一行一个 job，展示 `experiment_name`、方向、数据集/模型、source、status、秒级 `started_at` 和关键指标预览；支持方向、数据集、模型、开始日期、source、status 筛选和分页。点击 job 后切换到单次分析，并优先读取该 job result。历史卡片不要显示随机 job_id、长标识串或 result/artifact 路径。
+横向对比页面顺序固定为对比对象栏、中性结论、核心指标矩阵、方向专属图表、可选推荐商品列表、参数差异。矩阵缺失值统一写“未导出”，禁止补 0 或跨 job/showcase/mock 拼接；每方向最多同时显示两个主图，无真实 ROC/逐轮点时不得伪造曲线。推荐商品列表只在同目标推荐操纵实验中出现，复用 `RecommendationProductCard`，支持阶段切换和 5/15/50 条展示。参数差异默认只显示不同参数，相同项归入共同参数。
+
+横向对比字段正规化集中在 `src/lib/workbenchCompare.ts`，方向 UI 集中在 `src/components/compare`。优先复用 `/workbench/jobs`、`/workbench/jobs/{id}`、`/workbench/jobs/{id}/result` 与 `src/services/workbench.ts`；只有真实字段差异无法由前端可靠归一化时才考虑 `POST /workbench/compare`。不得创建假 comparison 记录、补不存在的 evidence 或展示本地绝对路径。
+
+历史实验只展示 `/workbench/jobs?limit=12&page=...` 真实 job 档案库，不再展示或混入 `/showcase/scenarios` artifact 档案。一行一个 job，展示 `experiment_name`、方向、数据集/模型、source、status、秒级 `started_at` 和关键指标预览；支持方向、数据集、模型、开始日期、source、status 筛选和分页。点击 job 后切换到单次分析，并优先读取该 job result；“加入对比”只更新前端持久选择，不创建后端记录。历史卡片不要显示随机 job_id、长标识串或 result/artifact 路径。
 
 ## Showcase API 协议
 

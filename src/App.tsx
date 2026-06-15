@@ -349,7 +349,7 @@ const App: React.FC = () => {
       ...prev,
       comparisonSelectionIds: prev.comparisonSelectionIds.includes(taskId)
         ? prev.comparisonSelectionIds.filter((id) => id !== taskId)
-        : prev.comparisonSelectionIds.length >= 3
+        : prev.comparisonSelectionIds.length >= 4
           ? prev.comparisonSelectionIds
           : [...prev.comparisonSelectionIds, taskId],
     }));

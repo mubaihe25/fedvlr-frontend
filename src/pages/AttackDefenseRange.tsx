@@ -29,6 +29,14 @@ import {
 } from 'lucide-react';
 import {FederatedTopology} from '../components/sandbox/FederatedTopology';
 import {RecommendationComparisonBoard} from '../components/sandbox/RecommendationComparisonBoard';
+import {AggregationDefenseCompare} from '../components/compare/AggregationDefenseCompare';
+import {CompareExperimentHeader} from '../components/compare/CompareExperimentHeader';
+import {CompareParameterDiff} from '../components/compare/CompareParameterDiff';
+import {CompareRecommendationLists} from '../components/compare/CompareRecommendationLists';
+import {CompareSelectionBasket} from '../components/compare/CompareSelectionBasket';
+import {MembershipInferenceCompare} from '../components/compare/MembershipInferenceCompare';
+import {RecommendationManipulationCompare} from '../components/compare/RecommendationManipulationCompare';
+import {UpdateLeakageCompare} from '../components/compare/UpdateLeakageCompare';
 import {useShowcaseBundle} from '../hooks/useShowcaseBundle';
 import {
   datasetLabel,
@@ -58,18 +66,62 @@ import {
 } from '../lib/securityTaxonomy';
 import {EXPERIMENT_PLAYBOOKS, getExperimentPlaybook} from '../lib/experimentPlaybooks';
 import type {ExperimentPlaybook, PlaybookRouteTone} from '../lib/experimentPlaybooks';
+import {
+  resolveTargetItemZhName,
+  resolveTargetItemThumbnailUrl,
+} from '../lib/targetItemZhNames';
 import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPercentRank, formatPlainValue, formatRankGain, formatSignedRankGain, getRecommendationCounts, toChineseLabel} from '../lib/showcaseFormat';
 import {cn} from '../lib/utils';
-import {loadShowcaseBundle} from '../services/showcase';
+import {compareCompatibility, compareSelectionDisabledReason, hasRealWorkbenchResult, normalizeCompareExperiment} from '../lib/workbenchCompare';
+import type {CompareExperiment} from '../lib/workbenchCompare';
 import {createWorkbenchJob, fetchWorkbenchJob, fetchWorkbenchJobs, fetchWorkbenchLogs, fetchWorkbenchOptions, fetchWorkbenchResult, validateWorkbenchConfig} from '../services/workbench';
 import type {ExperimentConfigurationSource} from '../services/experiment';
 import type {StartTrainResponse} from '../services/train';
 import type {ConsoleSessionState} from '../types/common';
 import type {DefenseType, LaunchExperimentOptions, LaunchExperimentResponse, TrainConfig} from '../types/train';
-import type {ShowcaseBundle, ShowcaseModelCapabilityMatrix, ShowcaseModelSmokeEvidence, ShowcaseRecommendationComparison, ShowcaseRecommendationItem} from '../types/showcase';
+import type {ShowcaseBundle, ShowcaseRecommendationComparison, ShowcaseRecommendationItem} from '../types/showcase';
 import type {WorkbenchJobListItem, WorkbenchJobListResponse, WorkbenchJobStatusResponse, WorkbenchLogsResponse, WorkbenchOptionsResponse, WorkbenchParameterDescriptor, WorkbenchPayload, WorkbenchResultResponse, WorkbenchValidationResponse} from '../types/workbench';
 
 export type WorkbenchTabId = 'orchestration' | 'monitoring' | 'analysis' | 'comparison' | 'history';
+
+// 目标商品缩略图：固定宽高；加载成功显示图片，加载失败显示占位图标。
+// 失败后不再请求同一 URL（用组件级失败状态 + key 切换 itemId 重置），
+// 不操作 DOM、不预加载；与现有 ProductImage 风格保持一致。
+type TargetItemThumbProps = {
+  src?: string | null;
+  itemId?: string | number | null;
+  size?: 'sm' | 'md';
+};
+
+const TargetItemThumb: React.FC<TargetItemThumbProps> = ({src, itemId, size = 'md'}) => {
+  const [failed, setFailed] = useState(false);
+  // 切换 itemId 时重置失败态，避免换 item 后占位图不消失。
+  const fallbackKey = `${itemId ?? ''}::${failed ? 'failed' : 'ok'}`;
+  const dims = size === 'md'
+    ? 'h-11 w-11'
+    : 'h-9 w-9';
+  const icon = size === 'md' ? 'h-5 w-5' : 'h-4 w-4';
+  if (!src || failed) {
+    return (
+      <span
+        key={fallbackKey}
+        className={cn('flex items-center justify-center rounded-xl border border-white/10 bg-slate-900/80 text-slate-500', dims)}
+      >
+        <ImageOff className={icon} />
+      </span>
+    );
+  }
+  return (
+    <img
+      key={fallbackKey}
+      src={src}
+      alt=""
+      className={cn('rounded-xl object-cover', dims)}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+};
 
 interface AttackDefenseRangeProps {
   initialTab?: WorkbenchTabId;
@@ -88,7 +140,6 @@ interface AttackDefenseRangeProps {
 }
 
 type AggregationMode = keyof typeof AGGREGATION_VISIBILITY_MODES;
-type ComparisonMode = 'none' | 'attack' | 'defense' | 'privacy' | 'capability';
 type ParamPanelId = 'basic' | 'advanced';
 type AttackStrength = 'weak' | 'medium' | 'strong';
 type EvidenceSource = 'rank' | 'unmasked rank' | 'checkpoint score' | 'auto';
@@ -366,12 +417,6 @@ const tabs: Array<{id: WorkbenchTabId; label: string; icon: React.ComponentType<
 ];
 
 
-const comparisonModes: Array<{id: ComparisonMode; title: string; description: string}> = [
-  {id: 'attack', title: '攻击效果对比', description: '比较排序操纵、Top50 命中和隐私攻击信号。'},
-  {id: 'defense', title: '防御效果对比', description: '比较鲁棒聚合、安全聚合模拟和恢复指标。'},
-  {id: 'privacy', title: '隐私风险对比', description: '聚焦成员推断和客户端更新泄露。'},
-  {id: 'capability', title: '模型/数据集能力对比', description: '说明每条实验线适合展示什么、不适合泛化什么。'},
-];
 
 const formatRank = (value?: number | null) => (typeof value === 'number' && Number.isFinite(value) ? `#${Math.round(value)}` : EMPTY_VALUE);
 const formatSigned = (value?: number | null, digits = 0) => (typeof value === 'number' && Number.isFinite(value) ? `+${value.toFixed(digits)}` : EMPTY_VALUE);
@@ -433,51 +478,6 @@ const getPlayRuntimeDefaults = (playId: ExperimentPlayId) => {
   }
   return {totalRounds: 1, localEpochs: 1, clientSamplingRate: 0.25, learningRate: 0.001, weightDecay: 0, gradientClip: 5};
 };
-
-const modelSmokeStatusLabel = (status?: string | null) => {
-  if (status === 'smoke_verified') return '已通过小规模链路验证';
-  if (status === 'partial_smoke_verified') return '部分支持，已通过基础 smoke';
-  if (status === 'validate_only') return '仅完成配置校验';
-  if (status === 'adapter_required') return '需要适配器';
-  if (status === 'failed_smoke') return 'smoke 未通过';
-  return status ? toChineseLabel(status) : '未导出';
-};
-
-const modelSmokeToneClass = (status?: string | null) => {
-  if (status === 'adapter_required' || status === 'failed_smoke') return 'border-amber-200/25 bg-amber-300/10 text-amber-100';
-  if (status === 'partial_smoke_verified') return 'border-violet-200/25 bg-violet-300/10 text-violet-100';
-  if (status === 'validate_only') return 'border-slate-200/20 bg-white/[0.05] text-slate-200';
-  return 'border-emerald-200/25 bg-emerald-300/10 text-emerald-100';
-};
-
-const verifiedLabel = (value?: boolean | null) => {
-  if (value === true) return '已验证';
-  if (value === false) return '未验证';
-  return '未导出';
-};
-
-const getSmokeResultLabel = (evidence?: ShowcaseModelSmokeEvidence) => {
-  if (!evidence) return '未导出';
-  return evidence.smokeResultDir || evidence.securityArtifactReady ? '已导出' : '未导出';
-};
-
-const getModelSmokeEvidence = (matrix: ShowcaseModelCapabilityMatrix | null | undefined, key: string) => matrix?.modelSmokeEvidence?.[key];
-
-const buildModelSmokeCards = (matrix: ShowcaseModelCapabilityMatrix | null | undefined, keys: string[] | undefined, status: string) =>
-  (keys ?? []).map((key) => {
-    const fallback = splitModelDataset(key);
-    const evidence = getModelSmokeEvidence(matrix, key);
-    return {
-      key,
-      model: evidence?.model ?? fallback.model,
-      dataset: evidence?.dataset ?? fallback.dataset,
-      status,
-      topk: verifiedLabel(evidence?.topkExportVerified),
-      metrics: verifiedLabel(evidence?.metricsExportVerified),
-      result: getSmokeResultLabel(evidence),
-      note: evidence?.failureReason ?? evidence?.reason ?? '链路验证结果已纳入 V3 模型支持面板。',
-    };
-  });
 
 const interpolate = (start: number, end: number, steps = 18) =>
   Array.from({length: steps}, (_, index) => {
@@ -698,6 +698,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   initialTab = 'orchestration',
   session,
   onDraftConfigChange,
+  onAddComparisonSelection,
+  onOpenComparison,
 }) => {
   const {bundle, isLoading, setSelectedScenarioId} = useShowcaseBundle();
   const [activeTab, setActiveTab] = useState<WorkbenchTabId>(initialTab);
@@ -764,8 +766,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [defenseActive, setDefenseActive] = useState(true);
   const [submitMessage, setSubmitMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [comparisonBundles, setComparisonBundles] = useState<ShowcaseBundle[]>([]);
-  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('none');
+  const [compareExperiments, setCompareExperiments] = useState<CompareExperiment[]>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareError, setCompareError] = useState('');
+  const [compareResultStates, setCompareResultStates] = useState<Record<string, 'loading' | 'available' | 'missing' | 'error'>>({});
+  const [compareJobCache, setCompareJobCache] = useState<Record<string, WorkbenchJobListItem>>({});
   const [archivePage, setArchivePage] = useState(1);
   const [switchMessage, setSwitchMessage] = useState('');
   const [workbenchOptions, setWorkbenchOptions] = useState<WorkbenchOptionsResponse | null>(null);
@@ -1032,25 +1037,75 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   }, [bundle.scenarios, selectedScenario.scenarioId, setSelectedScenarioId]);
 
   useEffect(() => {
+    const items = workbenchJobs?.items ?? [];
+    if (!items.length) return;
+    setCompareJobCache((current) => ({
+      ...current,
+      ...Object.fromEntries(items.map((item) => [item.job_id, item])),
+    }));
     let active = true;
-    const preferredIds = [
-      selectedScenario.scenarioId,
-      ...bundle.scenarios
-        .filter((scenario) => /ku|amazon|v25|krum|matrix|capability|privacy|security/i.test(`${scenario.scenarioId} ${scenario.name}`))
-        .map((scenario) => scenario.scenarioId),
-    ];
-    const uniqueIds = Array.from(new Set(preferredIds)).slice(0, 8);
-    Promise.all(uniqueIds.map((scenarioId) => loadShowcaseBundle(scenarioId)))
+    const candidates = items.filter((item) => item.status === 'completed' || item.status === 'partial');
+    setCompareResultStates((current) => ({
+      ...current,
+      ...Object.fromEntries(candidates.filter((item) => !current[item.job_id]).map((item) => [item.job_id, 'loading' as const])),
+    }));
+    Promise.all(candidates.map(async (item) => {
+      try {
+        const result = await fetchWorkbenchResult(item.job_id);
+        return [item.job_id, hasRealWorkbenchResult(result) ? 'available' : 'missing'] as const;
+      } catch {
+        return [item.job_id, 'error'] as const;
+      }
+    })).then((entries) => {
+      if (active) setCompareResultStates((current) => ({...current, ...Object.fromEntries(entries)}));
+    });
+    return () => {
+      active = false;
+    };
+  }, [workbenchJobs]);
+
+  useEffect(() => {
+    let active = true;
+    const selectedIds = session.comparisonSelectionIds.slice(0, 4);
+    if (!selectedIds.length) {
+      setCompareExperiments([]);
+      setCompareLoading(false);
+      setCompareError('');
+      return () => {
+        active = false;
+      };
+    }
+    setCompareLoading(true);
+    setCompareError('');
+    Promise.all(selectedIds.map(async (jobId) => {
+      const cached = compareJobCache[jobId];
+      const [job, result] = await Promise.all([
+        cached ? Promise.resolve(cached) : fetchWorkbenchJob(jobId),
+        fetchWorkbenchResult(jobId),
+      ]);
+      if (!cached && active) {
+        setCompareJobCache((current) => ({...current, [jobId]: job as WorkbenchJobListItem}));
+      }
+      return normalizeCompareExperiment(job, result);
+    }))
       .then((items) => {
-        if (active) setComparisonBundles(items);
+        if (!active) return;
+        const normalized = items.filter((item): item is CompareExperiment => Boolean(item));
+        setCompareExperiments(normalized);
+        if (normalized.length !== selectedIds.length) setCompareError('部分所选实验缺少可归一化的 direction 或 dataset 字段。');
       })
-      .catch(() => {
-        if (active) setComparisonBundles([bundle]);
+      .catch((error) => {
+        if (!active) return;
+        setCompareExperiments([]);
+        setCompareError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (active) setCompareLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [bundle.scenarios, selectedScenario.scenarioId]);
+  }, [compareJobCache, session.comparisonSelectionIds]);
 
   useEffect(() => {
     let active = true;
@@ -1088,7 +1143,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         const defaultTarget = options.target_items?.[0];
         if (defaultTarget?.item_id) {
           setTargetItemId(String(defaultTarget.item_id));
-          setTargetItemTitle(`${defaultTarget.short_name_zh ?? defaultTarget.display_name_zh ?? defaultTarget.short_title ?? defaultTarget.title} · ${defaultTarget.item_id}`);
+          const zhTitle = resolveTargetItemZhName(defaultTarget.item_id, {
+            short_name_zh: defaultTarget.short_name_zh,
+            display_name_zh: defaultTarget.display_name_zh,
+          });
+          setTargetItemTitle(`${zhTitle} · ${defaultTarget.item_id}`);
         }
       })
       .catch((error) => {
@@ -1222,14 +1281,26 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
   const targetOptions = useMemo(() => {
     if (workbenchOptions?.target_items?.length) {
-      return workbenchOptions.target_items.map((item) => ({
-        id: item.item_id,
-        title: `${item.short_name_zh ?? item.display_name_zh ?? item.short_title ?? item.title} · ${item.item_id}`,
-        rawTitle: item.raw_title ?? item.title,
-        category: item.category_zh ?? item.category ?? '',
-        thumbnailUrl: item.thumbnail_url ?? null,
-        imageUrl: item.image_url ?? null,
-      }));
+      return workbenchOptions.target_items.map((item) => {
+        const zhTitle = resolveTargetItemZhName(item.item_id, {
+          short_name_zh: item.short_name_zh,
+          display_name_zh: item.display_name_zh,
+        });
+        return {
+          id: item.item_id,
+          title: `${zhTitle} · ${item.item_id}`,
+          rawTitle: item.raw_title ?? item.title ?? zhTitle,
+          category: item.category_zh ?? item.category ?? '',
+          thumbnailUrl: resolveTargetItemThumbnailUrl({
+            datasetId: targetBoardDataset,
+            itemId: item.item_id,
+            thumbnailUrl: item.thumbnail_url,
+            imageUrl: item.image_url,
+            localImageUrl: null,
+          }),
+          imageUrl: item.image_url ?? null,
+        };
+      });
     }
     const items = [
       targetProduct
@@ -1238,7 +1309,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             title: targetProduct.title ?? targetProduct.itemId ?? 'Empty Amber Glass Spray Bottles',
             rawTitle: targetProduct.title ?? '',
             category: targetProduct.category ?? '',
-            thumbnailUrl: targetProduct.thumbnailUrl ?? null,
+            thumbnailUrl: resolveTargetItemThumbnailUrl({
+              datasetId: targetBoardDataset,
+              itemId: targetProduct.itemId,
+              thumbnailUrl: targetProduct.thumbnailUrl,
+              imageUrl: targetProduct.imageUrl,
+              localImageUrl: targetProduct.localImageUrl,
+            }),
             imageUrl: targetProduct.imageUrl ?? null,
           }
         : null,
@@ -1247,7 +1324,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         title: item.title ?? `商品 ${item.itemId}`,
         rawTitle: item.title ?? '',
         category: item.category ?? '',
-        thumbnailUrl: item.thumbnailUrl ?? null,
+        thumbnailUrl: resolveTargetItemThumbnailUrl({
+          datasetId: targetBoardDataset,
+          itemId: item.itemId,
+          thumbnailUrl: item.thumbnailUrl,
+          imageUrl: item.imageUrl,
+          localImageUrl: item.localImageUrl,
+        }),
         imageUrl: item.imageUrl ?? null,
       })),
       ...(report.recommendationComparison?.baseline ?? []).slice(0, 8).map((item) => ({
@@ -1255,7 +1338,13 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         title: item.title ?? `商品 ${item.itemId}`,
         rawTitle: item.title ?? '',
         category: item.category ?? '',
-        thumbnailUrl: item.thumbnailUrl ?? null,
+        thumbnailUrl: resolveTargetItemThumbnailUrl({
+          datasetId: targetBoardDataset,
+          itemId: item.itemId,
+          thumbnailUrl: item.thumbnailUrl,
+          imageUrl: item.imageUrl,
+          localImageUrl: item.localImageUrl,
+        }),
         imageUrl: item.imageUrl ?? null,
       })),
     ].filter((item): item is {id?: string | number | null; title: string; rawTitle: string; category: string; thumbnailUrl?: string | null; imageUrl?: string | null} => Boolean(item?.title));
@@ -1269,7 +1358,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     return unique.length
       ? unique
       : [{id: 'empty-amber-glass-spray-bottles', title: '琥珀喷雾瓶', rawTitle: 'Empty Amber Glass Spray Bottles', category: '美妆工具', thumbnailUrl: null, imageUrl: null}];
-  }, [report.recommendationComparison?.attack, report.recommendationComparison?.baseline, targetProduct, workbenchOptions?.target_items]);
+  }, [report.recommendationComparison?.attack, report.recommendationComparison?.baseline, targetProduct, workbenchOptions?.target_items, targetBoardDataset]);
 
   const selectedTargetOption = targetOptions.find((item) => String(item.id ?? item.title) === targetItemId) ?? targetOptions[0];
   const filteredTargetOptions = useMemo(() => {
@@ -2147,19 +2236,17 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           <button
             type="button"
             onClick={() => setTargetComboboxOpen((value) => !value)}
-            title={selectedTargetOption?.rawTitle ?? targetItemTitle}
+            title={selectedTargetOption?.rawTitle || String(selectedTargetOption?.id ?? targetItemId)}
             className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/70 p-2.5 text-left transition hover:border-cyan-200/30"
           >
-            {selectedTargetOption?.thumbnailUrl || selectedTargetOption?.imageUrl ? (
-              <img src={selectedTargetOption.thumbnailUrl ?? selectedTargetOption.imageUrl ?? ''} alt="" className="h-11 w-11 rounded-xl object-cover" loading="lazy" />
-            ) : (
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-slate-900/80 text-slate-500">
-                <ImageOff className="h-5 w-5" />
-              </span>
-            )}
+            <TargetItemThumb
+              src={selectedTargetOption?.thumbnailUrl ?? selectedTargetOption?.imageUrl ?? null}
+              itemId={selectedTargetOption?.id}
+              size="md"
+            />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-black text-slate-100">{selectedTargetOption?.title ?? targetItemTitle}</span>
-              <span className="block truncate text-[11px] font-semibold text-slate-500">{selectedTargetOption?.rawTitle ?? targetItemId}</span>
+              <span className="block truncate text-[11px] font-semibold text-slate-500">{selectedTargetOption?.rawTitle || String(selectedTargetOption?.id ?? targetItemId)}</span>
             </span>
             <ChevronRight className={cn('h-4 w-4 text-slate-500 transition', targetComboboxOpen ? 'rotate-90' : '')} />
           </button>
@@ -2186,11 +2273,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                         active ? 'bg-cyan-300/12 text-cyan-50' : 'text-slate-300 hover:bg-white/[0.06]',
                       )}
                     >
-                      {item.thumbnailUrl || item.imageUrl ? (
-                        <img src={item.thumbnailUrl ?? item.imageUrl ?? ''} alt="" className="h-9 w-9 rounded-xl object-cover" loading="lazy" />
-                      ) : (
-                        <span className="h-9 w-9 rounded-xl border border-white/10 bg-slate-900/70" />
-                      )}
+                      <TargetItemThumb
+                        src={item.thumbnailUrl ?? item.imageUrl ?? null}
+                        itemId={item.id}
+                        size="sm"
+                      />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-black">{item.title}</span>
                         <span className="block truncate text-[11px] text-slate-500">{item.rawTitle || key}</span>
@@ -4393,349 +4480,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     );
   };
 
-  const comparisonRows = useMemo(() => {
-    const source = comparisonBundles.length ? comparisonBundles : [bundle];
-    return source.map((item) => {
-      const itemReport = item.report;
-      const itemScenario = item.selectedScenario;
-      const itemRanks = getTargetRanks(itemReport);
-      const itemPrivacy = getPrivacyMetrics(itemReport);
-      const itemTarget = itemReport.v3?.targetManipulation;
-      const itemAggregation = itemReport.v3?.aggregationDefense;
-      const supportRows = itemReport.modelCapabilityMatrix?.entries ?? [];
-      const supportedCapability = supportRows.find((row) => row.model === itemReport.model || row.dataset === itemReport.dataset) ?? supportRows[0];
-      return {
-        id: itemScenario.scenarioId,
-        scenario: getScenarioTitle(itemScenario, itemReport),
-        model: itemReport.model ?? itemScenario.model ?? EMPTY_VALUE,
-        dataset: datasetLabel(itemReport.dataset ?? itemScenario.dataset),
-        attack: inferAttackType(itemScenario, itemReport),
-        defense: inferDefenseType(itemScenario, itemReport),
-        rankGain: itemRanks.rankLift,
-        targetManipulationIndex: itemTarget?.targetManipulationIndex ?? null,
-        recommendationJaccard: itemTarget?.recommendationJaccard ?? null,
-        changedUserCount: itemTarget?.changedUserCount ?? null,
-        top50: getFinalExposureText(itemReport),
-        recall: itemAggregation?.recallAfter ?? itemReport.metricsSummary?.defense?.recall50 ?? itemReport.metricsSummary?.baseline?.recall50 ?? null,
-        ndcg: itemAggregation?.ndcgAfter ?? itemReport.metricsSummary?.defense?.ndcg50 ?? itemReport.metricsSummary?.baseline?.ndcg50 ?? null,
-        recallBefore: itemAggregation?.recallBefore ?? itemReport.metricsSummary?.baseline?.recall50 ?? null,
-        ndcgBefore: itemAggregation?.ndcgBefore ?? itemReport.metricsSummary?.baseline?.ndcg50 ?? null,
-        miaAuc: itemPrivacy.miaAuc,
-        miaAccuracy: itemPrivacy.miaAccuracy,
-        hit10: itemPrivacy.hit10,
-        hit20: itemPrivacy.hit20,
-        hit50: itemPrivacy.hit50,
-        evidence: itemPrivacy.miaEvidence,
-        modality: itemPrivacy.riskyModality,
-        recovery: itemAggregation?.recoveryRate ?? itemReport.metricsSummary?.recoveryRate ?? null,
-        residual: itemReport.v25Summary?.secAggResidual ?? null,
-        selectedClients: itemAggregation?.selectedClients?.length ?? itemReport.defenseTrace?.krumSelected?.length ?? null,
-        rejectedClients: itemAggregation?.rejectedClients?.length ?? itemReport.defenseTrace?.krumRejected?.length ?? null,
-        defenseStatus: defenseStatusLabel(itemAggregation?.status),
-        usage: inferScenarioUsage(itemScenario, itemReport),
-        evidenceLabels: inferEvidenceLabels(itemScenario, itemReport).join(' / '),
-        hasV3: Boolean(itemScenario.hasV3 || itemReport.v3),
-        supportEvidence: supportedCapability?.evidence ?? supportedCapability?.recommendedDemoUsage ?? null,
-        supportStatus: supportedCapability?.status ? toChineseLabel(supportedCapability.status) : null,
-      };
-    });
-  }, [bundle, comparisonBundles]);
-
-  const renderComparison = () => {
-    const columnsByMode: Record<Exclude<ComparisonMode, 'none'>, Array<{key: string; label: string; render: (row: (typeof comparisonRows)[number]) => string}>> = {
-      attack: [
-        {key: 'scenario', label: '场景', render: (row) => row.scenario},
-        {key: 'attack', label: '攻击类型', render: (row) => row.attack},
-        {key: 'targetManipulationIndex', label: '目标操纵指数', render: (row) => formatCellValue(formatMetricValue(row.targetManipulationIndex))},
-        {key: 'rankGain', label: '目标排序提升', render: (row) => formatCellValue(formatSignedRankGain(row.rankGain))},
-        {key: 'top50', label: 'Top50 命中', render: (row) => formatCellValue(row.top50)},
-        {key: 'change', label: '推荐 Jaccard', render: (row) => formatCellValue(formatMetricValue(row.recommendationJaccard))},
-        {key: 'changedUserCount', label: '变化用户', render: (row) => formatCellValue(formatExportedValue(row.changedUserCount))},
-        {key: 'miaAuc', label: 'MIA AUC', render: (row) => formatCellValue(formatMetricValue(row.miaAuc))},
-        {key: 'hit50', label: '交互还原 hit@50', render: (row) => formatCellValue(formatMetricValue(row.hit50))},
-      ],
-      defense: [
-        {key: 'scenario', label: '场景', render: (row) => row.scenario},
-        {key: 'defense', label: '防御类型', render: (row) => row.defense},
-        {key: 'status', label: '状态', render: (row) => formatCellValue(row.defenseStatus)},
-        {key: 'recallBefore', label: 'Recall 前', render: (row) => formatCellValue(formatMetricValue(row.recallBefore))},
-        {key: 'recall', label: 'Recall@50', render: (row) => formatCellValue(formatMetricValue(row.recall))},
-        {key: 'ndcgBefore', label: 'NDCG 前', render: (row) => formatCellValue(formatMetricValue(row.ndcgBefore))},
-        {key: 'ndcg', label: 'NDCG@50', render: (row) => formatCellValue(formatMetricValue(row.ndcg))},
-        {key: 'recovery', label: '防御恢复率', render: (row) => formatCellValue(formatPercentValue(row.recovery))},
-        {key: 'filtered', label: '选中/拒绝客户端', render: (row) => formatCellValue(`${formatExportedValue(row.selectedClients)} / ${formatExportedValue(row.rejectedClients)}`)},
-      ],
-      privacy: [
-        {key: 'scenario', label: '场景', render: (row) => row.scenario},
-        {key: 'miaAuc', label: 'MIA AUC', render: (row) => formatCellValue(formatMetricValue(row.miaAuc))},
-        {key: 'miaAccuracy', label: 'Accuracy', render: (row) => formatCellValue(formatMetricValue(row.miaAccuracy))},
-        {key: 'evidence', label: '成员推断证据类型', render: (row) => formatCellValue(row.evidence)},
-        {key: 'hit10', label: 'hit@10', render: (row) => formatCellValue(formatMetricValue(row.hit10))},
-        {key: 'hit20', label: 'hit@20', render: (row) => formatCellValue(formatMetricValue(row.hit20))},
-        {key: 'hit50', label: 'hit@50', render: (row) => formatCellValue(formatMetricValue(row.hit50))},
-        {key: 'modality', label: '最高风险模态', render: (row) => formatCellValue(row.modality)},
-        {key: 'dp', label: 'DP-style noise', render: (row) => (row.defense.includes('差分') ? '使用' : '未标注')},
-        {key: 'secagg', label: '安全聚合', render: (row) => (row.defense.includes('安全聚合') ? '模拟' : '未标注')},
-      ],
-      capability: [
-        {key: 'model', label: '模型', render: (row) => row.model},
-        {key: 'dataset', label: '数据集', render: (row) => row.dataset},
-        {key: 'usage', label: '主用途', render: (row) => row.usage},
-        {key: 'supportStatus', label: '支持状态', render: (row) => formatCellValue(row.supportStatus)},
-        {key: 'evidence', label: '已有证据', render: (row) => row.evidenceLabels},
-        {key: 'good', label: '适合展示的能力', render: (row) => formatCellValue(row.supportEvidence ?? (row.scenario.includes('KU') ? '多模态主展示' : row.scenario.includes('V2.5') || row.hasV3 ? '攻防强验证' : row.usage))},
-        {key: 'limit', label: '不适合泛化的点', render: (row) => (row.scenario.includes('V2.5') ? '170 -> 3 不代表所有模型' : '按场景证据解释')},
-      ],
-    };
-
-    const columns = comparisonMode === 'none' ? [] : columnsByMode[comparisonMode];
-    const modelSupport =
-      report.v3?.modelSupport ??
-      report.modelCapabilityMatrix ??
-      comparisonBundles.map((item) => item.report.v3?.modelSupport ?? item.report.modelCapabilityMatrix).find(Boolean) ??
-      null;
-    const smokeCards = buildModelSmokeCards(modelSupport, modelSupport?.smokeVerifiedModels, 'smoke_verified');
-    const partialCards = buildModelSmokeCards(modelSupport, modelSupport?.partialSmokeVerifiedModels, 'partial_smoke_verified');
-    const validateCards = buildModelSmokeCards(modelSupport, modelSupport?.validateOnlyModels, 'validate_only');
-    const adapterCards = buildModelSmokeCards(modelSupport, modelSupport?.adapterRequiredModels, 'adapter_required');
-    const failedCards = buildModelSmokeCards(modelSupport, modelSupport?.failedSmokeModels, 'failed_smoke');
-    const fedAvgAmazonEvidence = getModelSmokeEvidence(modelSupport, 'FedAvg::AMAZON_BEAUTY_POC');
-    const mmfedrapKuEvidence = getModelSmokeEvidence(modelSupport, 'MMFedRAP::KU');
-    const renderModelSmokeGroup = (title: string, description: string, cards: ReturnType<typeof buildModelSmokeCards>, emptyText = '未导出') => (
-      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-        <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-          <div>
-            <h3 className="text-lg font-bold text-white">{title}</h3>
-            <p className="mt-1 text-sm leading-6 text-slate-400">{description}</p>
-          </div>
-          <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-bold text-slate-300">{cards.length || emptyText}</span>
-        </div>
-        {cards.length ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {cards.map((card) => (
-              <div key={`${title}-${card.key}`} className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-base font-bold text-white">{card.model}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-400">{card.dataset}</p>
-                  </div>
-                  <span className={cn('rounded-full border px-2.5 py-1 text-[11px] font-bold', modelSmokeToneClass(card.status))}>{modelSmokeStatusLabel(card.status)}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  {[
-                    {label: 'TopK', value: card.topk},
-                    {label: 'metrics', value: card.metrics},
-                    {label: '结果', value: card.result},
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2">
-                      <p className="text-slate-500">{item.label}</p>
-                      <p className="mt-1 font-bold text-slate-200">{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500">{card.note}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.025] p-4 text-sm text-slate-500">{emptyText}</div>
-        )}
-      </section>
-    );
-    const renderCapabilityComparison = () => (
-      <div className="space-y-5">
-        <section className="grid gap-3 md:grid-cols-4">
-          {[
-            {label: '已验证', value: smokeCards.length, status: 'smoke_verified'},
-            {label: '部分支持', value: partialCards.length, status: 'partial_smoke_verified'},
-            {label: '配置校验', value: validateCards.length, status: 'validate_only'},
-            {label: '待适配', value: adapterCards.length, status: 'adapter_required'},
-          ].map((item) => (
-            <div key={item.label} className="rounded-3xl border border-white/10 bg-white/[0.045] p-5">
-              <p className="text-xs font-bold text-slate-500">{item.label}</p>
-              <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-400">{modelSmokeStatusLabel(item.status)}</p>
-            </div>
-          ))}
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
-          <div className="space-y-4">
-            {renderModelSmokeGroup(
-              '攻防强验证底座',
-              'Amazon 定向投毒、MIA、更新泄露和 V3 主链路集中在 FedAvg + Amazon Beauty。',
-              [
-                {
-                  key: 'FedAvg::AMAZON_BEAUTY_POC',
-                  model: fedAvgAmazonEvidence?.model ?? 'FedAvg',
-                  dataset: fedAvgAmazonEvidence?.dataset ?? 'AMAZON_BEAUTY_POC',
-                  status: fedAvgAmazonEvidence?.verificationLevel ?? 'validate_only',
-                  topk: verifiedLabel(fedAvgAmazonEvidence?.topkExportVerified),
-                  metrics: verifiedLabel(fedAvgAmazonEvidence?.metricsExportVerified),
-                  result: getSmokeResultLabel(fedAvgAmazonEvidence),
-                  note: '170 -> 3 只说明 FedAvg Amazon 这条链路的未屏蔽排序被推动，不代表其他模型同样成立。',
-                },
-              ],
-            )}
-            {renderModelSmokeGroup(
-              '多模态主展示模型',
-              'MMFedRAP + KU 是多模态 FedVLR 主展示模型，适合讲清图像、文本与协同信号融合。',
-              [
-                {
-                  key: 'MMFedRAP::KU',
-                  model: mmfedrapKuEvidence?.model ?? 'MMFedRAP',
-                  dataset: mmfedrapKuEvidence?.dataset ?? 'KU',
-                  status: mmfedrapKuEvidence?.verificationLevel ?? 'smoke_verified',
-                  topk: verifiedLabel(mmfedrapKuEvidence?.topkExportVerified),
-                  metrics: verifiedLabel(mmfedrapKuEvidence?.metricsExportVerified),
-                  result: getSmokeResultLabel(mmfedrapKuEvidence),
-                  note: 'KU smoke 验证说明链路可跑通；安全效果仍按具体 artifact 解释。',
-                },
-              ],
-            )}
-          </div>
-          <aside className="rounded-3xl border border-cyan-200/20 bg-cyan-300/10 p-5">
-            <p className="text-xs font-bold tracking-[0.18em] text-cyan-100/75">模型扩充口径</p>
-            <h3 className="mt-3 text-xl font-bold text-white">目标是证明平台具备多模型接入能力，不是证明所有模型效果最好。</h3>
-            <div className="mt-5 space-y-3 text-sm leading-6 text-slate-300">
-              <p>{'FedAvg + Amazon 的 target rank 170 -> 3 不能泛化到其他模型。'}</p>
-              <p>FCF / MMFCF 属于部分支持：基础链路已通过 smoke，但安全效果尚未形成完整验证。</p>
-              <p>MGCN / MMGCN 相关模型需要适配器，不写成已支持。</p>
-              <p>1 epoch smoke 只验证链路和导出，不代表最终性能。</p>
-            </div>
-          </aside>
-        </section>
-
-        {renderModelSmokeGroup(
-          '已通过 smoke 验证',
-          '这些模型完成小规模链路验证，包含 TopK 或 metrics 导出检查。',
-          smokeCards,
-        )}
-        {renderModelSmokeGroup(
-          '部分支持',
-          '基础链路已通过 smoke，但安全效果尚未形成完整验证。',
-          partialCards,
-        )}
-        {renderModelSmokeGroup(
-          '仅配置校验',
-          '当前只完成配置校验或可读配置检查，不能写成真实 smoke 结果。',
-          validateCards,
-        )}
-        {renderModelSmokeGroup(
-          '待适配',
-          '模型、依赖或 Trainer 需要后续适配后才能进入完整安全验证链路。',
-          adapterCards,
-        )}
-        {failedCards.length ? renderModelSmokeGroup('smoke 未通过', '这些模型已有失败记录，需要单独排查。', failedCards) : null}
-      </div>
-    );
-
-    return (
-      <div className="space-y-5">
-        <section className="sandbox-panel rounded-[28px] p-5">
-          <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-            <div>
-              <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">横向对比</p>
-              <h2 className="mt-2 text-2xl font-bold text-white">先选对比问题，再看指标矩阵</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-400">跨场景对比只展示指标和证据，不展示推荐商品列表。</p>
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            {comparisonModes.map((mode) => (
-              <button
-                key={mode.id}
-                type="button"
-                onClick={() => setComparisonMode(mode.id)}
-                className={cn(
-                  'rounded-2xl border p-4 text-left transition',
-                  comparisonMode === mode.id ? 'border-cyan-200/45 bg-cyan-300/10 text-cyan-50' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:border-cyan-200/25',
-                )}
-              >
-                <p className="font-bold">{mode.title}</p>
-                <p className="mt-2 text-xs leading-5 text-slate-500">{mode.description}</p>
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3">
-            <p className="text-xs font-bold text-slate-500">当前在比什么</p>
-            <p className="mt-1 text-sm font-semibold text-slate-100">
-              {comparisonMode === 'none' ? '先选择对比问题，再展开对应指标。' : comparisonModes.find((mode) => mode.id === comparisonMode)?.description}
-            </p>
-          </div>
-        </section>
-
-        {comparisonMode === 'none' ? (
-          <section className="sandbox-panel rounded-[28px] p-6">
-            <p className="text-lg font-bold text-white">请选择一个对比问题</p>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
-              工作台只在同一方向多场景、攻击方向 vs 聚合防御、或模型/数据集能力这几类问题下展开矩阵，避免把不相关场景混在一起比较。
-            </p>
-          </section>
-        ) : comparisonMode === 'capability' ? (
-          renderCapabilityComparison()
-        ) : (
-          <>
-            <section className="sandbox-panel overflow-hidden rounded-[28px] p-0">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-white/10">
-                  <thead className="bg-white/[0.045]">
-                    <tr>
-                      {columns.map((column) => (
-                        <th key={column.key} className="px-4 py-3 text-left text-xs font-bold text-slate-400">
-                          {column.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {comparisonRows.map((row) => (
-                      <tr key={row.id} className="hover:bg-white/[0.035]">
-                        {columns.map((column) => {
-                          const rendered = column.render(row);
-                          return (
-                            <td key={column.key} className={cn('max-w-[280px] px-4 py-4 text-sm', rendered === '未导出' ? 'text-slate-500' : 'text-slate-200')}>
-                              {rendered}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="border-t border-white/10 px-4 py-3 text-xs text-slate-500">
-                缺失指标统一显示为“未导出”，表示当前结果文件没有该字段，不使用演示数据补齐。
-              </div>
-            </section>
-
-            <section className="grid gap-4 md:grid-cols-3">
-              {comparisonRows.slice(0, 3).map((row) => (
-                <div key={`${row.id}-bar`} className="rounded-3xl border border-white/10 bg-white/[0.045] p-5">
-                  <p className="text-sm font-bold text-white">{row.scenario}</p>
-                  {[
-                    {label: '目标排序提升', value: row.rankGain ? Math.min(1, row.rankGain / 169) : 0, text: formatSignedRankGain(row.rankGain), tone: 'bg-rose-300'},
-                    {label: 'MIA AUC', value: row.miaAuc ?? 0, text: formatCellValue(formatMetricValue(row.miaAuc)), tone: 'bg-violet-300'},
-                    {label: '防御恢复率', value: row.recovery ?? 0, text: formatCellValue(formatPercentValue(row.recovery)), tone: 'bg-emerald-300'},
-                  ].map((item) => (
-                    <div key={item.label} className="mt-4">
-                      <div className="mb-1 flex justify-between text-xs text-slate-400">
-                        <span>{item.label}</span>
-                        <span>{item.text}</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-800">
-                        <div className={cn('h-2 rounded-full', item.tone)} style={{width: `${Math.max(0.04, Math.min(1, item.value)) * 100}%`}} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </section>
-          </>
-        )}
-      </div>
-    );
-  };
-
   useEffect(() => {
     setArchivePage(1);
   }, [
@@ -4747,6 +4491,111 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     jobSourceFilter,
     jobStatusFilter,
   ]);
+
+  const selectedCompareJobs = session.comparisonSelectionIds
+    .map((jobId) => compareJobCache[jobId])
+    .filter((job): job is WorkbenchJobListItem => Boolean(job));
+
+  const clearCompareSelection = () => {
+    session.comparisonSelectionIds.forEach((jobId) => onAddComparisonSelection(jobId));
+  };
+
+  const removeCompareSelection = (jobId: string) => {
+    if (session.comparisonSelectionIds.includes(jobId)) onAddComparisonSelection(jobId);
+  };
+
+  const openCompareTab = () => {
+    setActiveTab('comparison');
+    onOpenComparison();
+  };
+
+  const compatibility = compareCompatibility(compareExperiments);
+  const compareHasPartialEvidence = compareExperiments.some((experiment) => {
+    if (experiment.missingEvidence.length) return true;
+    if (experiment.direction === 'recommendation_manipulation') {
+      return experiment.recommendation.baselineRank === null
+        || experiment.recommendation.attackRank === null
+        || experiment.recommendation.stages.baseline.recall50 === null;
+    }
+    if (experiment.direction === 'membership_inference') return experiment.membership.auc === null || experiment.membership.accuracy === null;
+    if (experiment.direction === 'update_leakage') return experiment.leakage.hit10 === null || !experiment.leakage.candidates.length;
+    return experiment.defense.stages.baseline.recall50 === null || experiment.defense.retainedClients === null;
+  });
+
+  const compareConclusions = useMemo(() => {
+    if (compareExperiments.length < 2 || !compatibility.metricCompatible) return [];
+    const first = compareExperiments[0];
+    const conclusions = [
+      `当前比较 ${compareExperiments.length} 个${workbenchDirectionLabel(first.direction)}实验，数据集均为 ${datasetLabel(first.dataset)}。`,
+      `模型范围：${Array.from(new Set(compareExperiments.map((item) => item.model))).join(' / ')}；以下结论只描述已导出数值。`,
+    ];
+    const extrema = (label: string, values: Array<{name: string; value: number | null}>, smallerIsBetter = false) => {
+      const available = values.filter((item): item is {name: string; value: number} => item.value !== null);
+      if (available.length < 2) return;
+      const sorted = [...available].sort((left, right) => smallerIsBetter ? left.value - right.value : right.value - left.value);
+      conclusions.push(`${label} 的已导出值范围为 ${sorted[sorted.length - 1].value.toFixed(4)} 至 ${sorted[0].value.toFixed(4)}，最高项为 ${sorted[0].name}。`);
+    };
+    if (first.direction === 'recommendation_manipulation') {
+      extrema('attack vs baseline Jaccard', compareExperiments.map((item) => ({name: item.model, value: item.recommendation.attackJaccard})));
+      if (!compatibility.recommendationListsCompatible) conclusions.push('目标商品不同，因此只保留指标比较，不展示商品列表。');
+    } else if (first.direction === 'membership_inference') {
+      extrema('MIA AUC', compareExperiments.map((item) => ({name: item.model, value: item.membership.auc})));
+    } else if (first.direction === 'update_leakage') {
+      extrema('Hit@50', compareExperiments.map((item) => ({name: item.model, value: item.leakage.hit50})));
+    } else {
+      extrema('防御阶段 Recall@50', compareExperiments.map((item) => ({name: item.model, value: item.defense.stages.defense.recall50})));
+    }
+    return conclusions.slice(0, 4);
+  }, [compareExperiments, compatibility.metricCompatible, compatibility.recommendationListsCompatible]);
+
+  const renderWorkbenchComparison = () => {
+    const selectedCount = session.comparisonSelectionIds.length;
+    if (!selectedCount) {
+      return (
+        <section className="sandbox-panel rounded-[28px] p-8 text-center">
+          <GitCompare className="mx-auto h-10 w-10 text-cyan-200" />
+          <h2 className="mt-4 text-2xl font-black text-white">尚未选择对比实验</h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-400">请到历史实验中选择 2–4 个同方向、同数据集且存在真实 result 的 job。</p>
+          <button type="button" onClick={() => setActiveTab('history')} className="mt-5 rounded-2xl bg-cyan-200 px-4 py-2 text-sm font-black text-slate-950">前往历史实验</button>
+        </section>
+      );
+    }
+    if (compareLoading) return <section className="sandbox-panel rounded-[28px] p-8 text-center text-sm font-bold text-cyan-100">正在并行读取 {selectedCount} 个 job result...</section>;
+    if (compareError) return <section className="rounded-[28px] border border-rose-200/25 bg-rose-300/10 p-6 text-sm font-semibold text-rose-100">{compareError}</section>;
+    if (!compareExperiments.length) return <section className="sandbox-panel rounded-[28px] p-8 text-center text-sm font-bold text-cyan-100">正在整理所选 job 的对比字段...</section>;
+    if (compareExperiments.length === 1) {
+      return (
+        <div className="space-y-5">
+          <CompareExperimentHeader experiments={compareExperiments} compatibility={compatibility} onRemove={removeCompareSelection} />
+          <section className="sandbox-panel rounded-[28px] p-8 text-center"><h2 className="text-xl font-black text-white">至少选择 2 个实验</h2><p className="mt-2 text-sm text-slate-400">当前只有 1 项，返回历史实验继续加入同方向、同数据集 job。</p><button type="button" onClick={() => setActiveTab('history')} className="mt-5 rounded-2xl border border-cyan-200/30 px-4 py-2 text-sm font-bold text-cyan-100">返回历史实验</button></section>
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <button type="button" onClick={() => setActiveTab('history')} className="rounded-2xl border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 hover:border-cyan-200/30 hover:text-cyan-100">返回历史实验</button>
+          <span className="text-xs font-bold text-slate-500">已选择 {compareExperiments.length}/4</span>
+        </div>
+        <CompareExperimentHeader experiments={compareExperiments} compatibility={compatibility} onRemove={removeCompareSelection} />
+        {!compatibility.metricCompatible ? (
+          <section className="rounded-[28px] border border-rose-200/25 bg-rose-300/10 p-6 text-sm font-semibold text-rose-100">方向或数据集不兼容，请返回历史实验移除冲突项。</section>
+        ) : (
+          <>
+            {compareHasPartialEvidence ? <section className="rounded-[28px] border border-amber-200/20 bg-amber-300/10 px-5 py-4 text-sm text-amber-100">部分实验未导出完整方向证据，矩阵中的缺失字段将显示“未导出”，不会补 0。</section> : null}
+            <section className="sandbox-panel rounded-[28px] p-5"><p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">对比结论</p><div className="mt-4 grid gap-3 md:grid-cols-2">{compareConclusions.map((conclusion) => <p key={conclusion} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-slate-300">{conclusion}</p>)}</div></section>
+            {compareExperiments[0].direction === 'recommendation_manipulation' ? <RecommendationManipulationCompare experiments={compareExperiments} /> : null}
+            {compareExperiments[0].direction === 'membership_inference' ? <MembershipInferenceCompare experiments={compareExperiments} /> : null}
+            {compareExperiments[0].direction === 'update_leakage' ? <UpdateLeakageCompare experiments={compareExperiments} /> : null}
+            {compareExperiments[0].direction === 'aggregation_defense' ? <AggregationDefenseCompare experiments={compareExperiments} /> : null}
+            {compareExperiments[0].direction === 'recommendation_manipulation' && compatibility.recommendationListsCompatible ? <CompareRecommendationLists experiments={compareExperiments} /> : null}
+            {compareExperiments[0].direction === 'recommendation_manipulation' && !compatibility.recommendationListsCompatible ? <section className="rounded-[28px] border border-amber-200/20 bg-amber-300/10 p-5 text-sm text-amber-100">所选推荐操纵实验的目标商品不一致，商品列表对比已隐藏；指标矩阵仍保留。</section> : null}
+            <CompareParameterDiff experiments={compareExperiments} />
+          </>
+        )}
+      </div>
+    );
+  };
 
   const renderHistory = () => (
     <div className="space-y-5">
@@ -4814,6 +4663,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             .slice(0, 4)
             .map(([key, value]) => `${workbenchMetricLabel(key)} ${workbenchMetricValue(key, value as string | number | boolean | null)}`)
             .join(' / ');
+          const selectedForCompare = session.comparisonSelectionIds.includes(job.job_id);
+          const compareDisabledReason = compareSelectionDisabledReason(job, compareResultStates[job.job_id], selectedCompareJobs);
           return (
             <article key={job.job_id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.045] transition hover:border-cyan-200/30">
               <button
@@ -4847,6 +4698,29 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <p className="mt-1 truncate text-sm font-semibold text-slate-200">{metricsPreview || '暂无指标预览'}</p>
                 </div>
               </button>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-slate-950/20 px-4 py-3">
+                <div className="min-w-0 text-xs text-slate-500">
+                  {selectedForCompare
+                    ? '已加入对比；第一项已锁定方向和数据集。'
+                    : compareDisabledReason ?? '可加入对比：方向和数据集将与第一项保持一致。'}
+                </div>
+                <button
+                  type="button"
+                  disabled={!selectedForCompare && Boolean(compareDisabledReason)}
+                  onClick={() => onAddComparisonSelection(job.job_id)}
+                  className={cn(
+                    'shrink-0 rounded-2xl border px-3 py-2 text-xs font-black transition',
+                    selectedForCompare
+                      ? 'border-cyan-200/35 bg-cyan-300/10 text-cyan-100'
+                      : compareDisabledReason
+                        ? 'cursor-not-allowed border-white/10 text-slate-600'
+                        : 'border-white/10 text-slate-300 hover:border-cyan-200/30 hover:text-cyan-100',
+                  )}
+                  title={compareDisabledReason ?? undefined}
+                >
+                  {selectedForCompare ? '移出对比' : '加入对比'}
+                </button>
+              </div>
               {job.status === 'failed' ? (
                 <details className="border-t border-rose-200/15 bg-rose-300/[0.07] px-4 py-3 text-xs text-rose-50/85">
                   <summary className="cursor-pointer font-bold text-rose-100">
@@ -4890,6 +4764,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         </section>
       ) : null}
 
+      <CompareSelectionBasket count={session.comparisonSelectionIds.length} onClear={clearCompareSelection} onOpen={openCompareTab} />
+
     </div>
   );
 
@@ -4897,7 +4773,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     if (activeTab === 'orchestration') return renderPlaybookOrchestration();
     if (activeTab === 'monitoring') return renderMonitoring();
     if (activeTab === 'analysis') return renderAnalysis();
-    if (activeTab === 'comparison') return renderComparison();
+    if (activeTab === 'comparison') return renderWorkbenchComparison();
     return renderHistory();
   };
 

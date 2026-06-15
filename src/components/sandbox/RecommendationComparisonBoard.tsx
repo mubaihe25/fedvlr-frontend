@@ -1,10 +1,9 @@
 import React from 'react';
-import {motion} from 'motion/react';
-import {ChevronDown, ChevronUp, ImageOff, Target, TrendingDown, TrendingUp} from 'lucide-react';
+import {ChevronDown, ChevronUp} from 'lucide-react';
 import {cn} from '../../lib/utils';
-import {normalizeShowcaseDataset} from '../../lib/scenarioNarratives';
 import {fetchShowcaseRecommendations} from '../../services/showcase';
 import type {ShowcaseRecommendationComparison, ShowcaseRecommendationItem} from '../../types/showcase';
+import {RecommendationProductCard, type RecommendationChangeStatus} from './RecommendationProductCard';
 
 interface RecommendationComparisonBoardProps {
   comparison?: ShowcaseRecommendationComparison | null;
@@ -20,7 +19,6 @@ interface RecommendationComparisonBoardProps {
 }
 
 type ColumnKey = 'baseline' | 'attack' | 'defense';
-type ChangeStatus = '新增' | '上升' | '下降' | '保持';
 
 const DEFAULT_VISIBLE_COUNT = 5;
 const EXPANDED_VISIBLE_COUNT = 15;
@@ -45,36 +43,6 @@ const toneClass = {
   emerald: 'border-emerald-200/30 bg-emerald-200/10 text-emerald-100',
 } as const;
 
-const changeToneClass: Record<ChangeStatus, string> = {
-  新增: 'border-violet-200/30 bg-violet-300/10 text-violet-100',
-  上升: 'border-emerald-200/30 bg-emerald-300/10 text-emerald-100',
-  下降: 'border-amber-200/30 bg-amber-300/10 text-amber-100',
-  保持: 'border-slate-200/20 bg-slate-300/10 text-slate-200',
-};
-
-const blockedImage = (value?: string | null) => !value || /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\');
-
-// 当 item 的 thumbnailUrl/localImageUrl/imageUrl 全部为空，但数据集名 + itemId 都存在时，
-// 兜底拼 /api/showcase/images/{datasetId}/{itemId}?size=thumb，由 vite 代理转发到 FedVLR-API。
-// dataset 必须先归一化为后端注册过的数据集 ID（AMAZON_BEAUTY_POC / KU 等），不接受展示名。
-// 404 时现有 onError 链会循环到 <ImageOff /> 占位，不影响列表渲染。
-const fallbackShowcaseImageUrl = (item: ShowcaseRecommendationItem, dataset?: string | null) => {
-  const datasetId = normalizeShowcaseDataset(dataset);
-  if (!datasetId || blockedImage(datasetId)) return null;
-  const id = item.itemId;
-  if (id === undefined || id === null) return null;
-  const stringId = String(id).trim();
-  if (!stringId || blockedImage(stringId)) return null;
-  return `/api/showcase/images/${encodeURIComponent(datasetId)}/${encodeURIComponent(stringId)}?size=thumb`;
-};
-
-const imageSources = (item: ShowcaseRecommendationItem, dataset?: string | null) => {
-  const direct = [item.thumbnailUrl, item.localImageUrl, item.imageUrl].filter((value): value is string => !blockedImage(value));
-  if (direct.length) return direct;
-  const fallback = fallbackShowcaseImageUrl(item, dataset);
-  return fallback ? [fallback] : [];
-};
-
 const sameItem = (left?: string | number | null, right?: string | number | null) =>
   left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 
@@ -86,7 +54,7 @@ const rankOf = (items: ShowcaseRecommendationItem[] | undefined, itemId?: string
   return typeof matched?.rank === 'number' ? matched.rank : null;
 };
 
-const getChangeStatus = (item: ShowcaseRecommendationItem, columnKey: ColumnKey, comparison?: ShowcaseRecommendationComparison | null): ChangeStatus => {
+const getChangeStatus = (item: ShowcaseRecommendationItem, columnKey: ColumnKey, comparison?: ShowcaseRecommendationComparison | null): RecommendationChangeStatus => {
   const currentRank = typeof item.rank === 'number' ? item.rank : null;
   if (columnKey === 'baseline') {
     const attackRank = rankOf(comparison?.attack, item.itemId);
@@ -105,7 +73,7 @@ const getChangeStatus = (item: ShowcaseRecommendationItem, columnKey: ColumnKey,
 };
 
 const getColumnChangeSummary = (items: ShowcaseRecommendationItem[], columnKey: ColumnKey, comparison?: ShowcaseRecommendationComparison | null) => {
-  const counts: Record<ChangeStatus, number> = {新增: 0, 上升: 0, 下降: 0, 保持: 0};
+  const counts: Record<RecommendationChangeStatus, number> = {新增: 0, 上升: 0, 下降: 0, 保持: 0};
   items.forEach((item) => {
     counts[getChangeStatus(item, columnKey, comparison)] += 1;
   });
@@ -119,52 +87,6 @@ const columnTotalCount = (comparison: ShowcaseRecommendationComparison | null | 
   const value = totalCounts[key] ?? totalCounts[apiKey];
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 };
-
-const ProductImage: React.FC<{item: ShowcaseRecommendationItem; title: string; tone: keyof typeof toneClass; dataset?: string | null}> = ({item, title, tone, dataset}) => {
-  const sources = imageSources(item, dataset);
-  const [sourceIndex, setSourceIndex] = React.useState(0);
-  const [loaded, setLoaded] = React.useState(false);
-  const source = sources[sourceIndex];
-
-  React.useEffect(() => {
-    setSourceIndex(0);
-    setLoaded(false);
-  }, [item.itemId, item.thumbnailUrl, item.localImageUrl, item.imageUrl, dataset]);
-
-  if (source) {
-    return (
-      <div className="relative h-20 w-20 overflow-hidden rounded-2xl bg-slate-800/70">
-        {!loaded ? <div className="absolute inset-0 animate-pulse bg-slate-700/70" /> : null}
-        <img
-          className={cn('h-20 w-20 object-cover transition-opacity', loaded ? 'opacity-100' : 'opacity-0')}
-          src={source}
-          alt={title}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onLoad={() => setLoaded(true)}
-          onError={() => {
-            setLoaded(false);
-            setSourceIndex((index) => index + 1);
-          }}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className={cn('flex h-20 w-20 items-center justify-center rounded-2xl border', toneClass[tone])}>
-      <ImageOff className="h-6 w-6" />
-    </div>
-  );
-};
-
-const ChangeBadge: React.FC<{status: ChangeStatus}> = ({status}) => (
-  <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold', changeToneClass[status])}>
-    {status === '上升' ? <TrendingUp className="h-3 w-3" /> : null}
-    {status === '下降' ? <TrendingDown className="h-3 w-3" /> : null}
-    {status}
-  </span>
-);
 
 export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({
   comparison,
@@ -310,40 +232,7 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
                     const title = getTitle(item);
                     const isTarget = sameItem(item.itemId, targetItemId);
                     const changeStatus = getChangeStatus(item, column.key, currentComparison);
-                    return (
-                      <motion.div
-                        key={`${column.key}-${item.itemId ?? index}-${item.rank ?? index}`}
-                        className={cn(
-                          'grid grid-cols-[80px_minmax(0,1fr)] gap-3 rounded-2xl border analysis-item p-3',
-                          isTarget ? 'border-rose-300/50 shadow-[0_0_22px_rgba(244,63,94,0.18)]' : 'border-white/10',
-                        )}
-                        initial={{opacity: 0, y: 18}}
-                        animate={{opacity: 1, y: 0}}
-                        transition={{delay: index * 0.05, type: 'spring', stiffness: 160, damping: 22}}
-                        whileHover={{scale: 1.012}}
-                      >
-                        <ProductImage item={item} title={title} tone={column.tone} dataset={dataset} />
-                        <div className="min-w-0">
-                          <div className="mb-2 flex flex-wrap items-center gap-2">
-                            <span className={cn('rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold', toneClass[column.tone])}>
-                              rank #{item.rank ?? index + 1}
-                            </span>
-                            <ChangeBadge status={changeStatus} />
-                            {isTarget ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-rose-300/40 bg-rose-400/15 px-2 py-0.5 text-[11px] font-bold text-rose-100">
-                                <Target className="h-3 w-3" />
-                                目标商品
-                              </span>
-                            ) : null}
-                          </div>
-                          <h4 className="line-clamp-2 text-sm font-bold leading-5 text-slate-50">{title}</h4>
-                          {item.category ? <p className="mt-1 text-[11px] text-slate-400">{item.category}</p> : null}
-                          {typeof item.score === 'number' && Number.isFinite(item.score) ? (
-                            <p className="mt-2 font-mono text-xs text-slate-300">分数 {item.score.toFixed(3)}</p>
-                          ) : null}
-                        </div>
-                      </motion.div>
-                    );
+                    return <RecommendationProductCard key={`${column.key}-${item.itemId ?? index}-${item.rank ?? index}`} item={item} title={title} tone={column.tone} dataset={dataset} changeStatus={changeStatus} isTarget={isTarget} index={index} cardKey={`${column.key}-${item.itemId ?? index}-${item.rank ?? index}`} />;
                   })
                 ) : (
                   <div className="rounded-2xl border border-white/10 analysis-empty px-4 py-6 text-sm text-slate-400">{column.empty}</div>
