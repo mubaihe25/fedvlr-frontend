@@ -19,7 +19,7 @@
 ## 重点目录
 
 - `src/pages`：页面级功能。主路径为项目导览、系统机制、攻防工作台。
-- `src/components/sandbox`：数字沙盘视觉组件，包括联邦拓扑、动态飞线、运行监控、target rank 轨迹和推荐三列对照。
+- `src/components/sandbox`：数字沙盘视觉组件，包括联邦拓扑、动态飞线、运行监控、target rank 轨迹和按真实结果切换的两列/三列推荐对照。
 - `src/components/showcase`：showcase 复用组件，包括场景选择器、指标卡、模型能力矩阵、V2.5 摘要等。
 - `src/services/showcase.ts`：showcase artifact 读取、V3 report/panel 接入、真实场景优先选择、字段正规化、recommendations limit 查询、图片 URL 过滤和 API 失败兜底。
 - `src/hooks/useShowcaseBundle.ts`：showcase bundle 状态管理；初始为 API 加载态，不要在 API 响应前先显示演示数据。
@@ -81,7 +81,7 @@
 
 证据输出：
 
-- 三列推荐对比
+- 两列/三列推荐对比；第三列只对应真实独立 defended recommendations
 - 目标商品轨迹
 - 成员推断结果
 - 交互候选还原
@@ -128,14 +128,14 @@
 - **每方向固定模块保留**：成员推断 / 更新泄露 / 聚合防御 即使没有方向专用字段也整块保留固定模块（隐私风险指标 / 审计配置 / 样本与分数证据；命中指标 / 泄露配置 / 候选还原；防御配置 / 异常客户端 / 前后性能与恢复）。某模块无真实字段时，模块内显示一次 `本次实验未导出该项分析证据。`，不再为每个指标分别显示"暂无 / 不适用"。推荐操纵方向各模块同样按该规则处理。`recommendation_manipulation` 的"本次推荐列表规模"模块在 metrics 未导出 `baseline_top50` / `attack_top50`、且 V3 `recommendationComparison` 也不含真实条目时改为单条占位 `本次实验未导出推荐列表规模统计。`，**不再**显示三个 0。
 - **顶部"本次实验摘要"**：紧凑显示真实存在字段：实验方向、数据集、模型、开始时间、完成状态、结果来源；`Loss` / `Recall@50` / `NDCG@50` / 训练轮数等训练质量指标只在当前 job result 实际导出这些字段时显示，缺失时隐藏（不写"暂无 / 不适用"占位卡片）。
 - **方向模块映射**（仅渲染当前 direction 应当出现的模块；旧 direction 切换时通过 `key={direction}` 强制重挂以彻底卸载旧数据）：
-  - `recommendation_manipulation` 推荐操纵：目标商品轨迹、攻击前后目标排序、rank gain、最终 Top50 是否命中、推荐列表规模、正常/攻击后/防御后三列、Jaccard/变化用户/目标操纵指数；**防御摘要**仅在当前 job 实际启用防御并导出防御结果时显示；**隐藏**成员推断、客户端更新泄露模块。
-  - `membership_inference` 成员推断：MIA AUC/Accuracy/Precision/Recall/F1、成员与非成员得分差、证据来源、标签来源、MIA 模型、阈值策略、样本数量/比例、判别分数分布/ROC；**隐藏**目标商品轨迹、推荐列表规模、三列推荐对比、客户端更新泄露。
-  - `update_leakage` 更新泄露：Hit@10/Hit@20/Hit@50、候选还原商品列表（仅真实图片 URL）、候选排名及相似度/距离、输入来源、泄露目标模态、相似度方法、审计客户端数量；**隐藏**目标商品轨迹、推荐列表规模、三列、成员推断。
-  - `aggregation_defense` 聚合防御：基础攻击类型、鲁棒聚合算法、恶意客户端比例、异常更新数量、选中/拒绝/保留客户端数量、防御前后 Recall@50/NDCG@50、防御恢复率、过滤结果/客户端审计明细、防御参数摘要；**隐藏**目标商品轨迹、推荐列表规模、三列、成员推断、客户端更新泄露；`base_attack=none` 时不显示恶意客户端或攻击效果相关卡片。
+  - `recommendation_manipulation` 推荐操纵：两列必须分别绑定 `baseline_recommendations` 与 `attack_recommendations`；有独立防御阶段且 `defended_recommendations` 含真实条目时再显示第三列。目标轨迹无防御时显示正常排名 → 攻击排名，有防御时显示正常排名 → 攻击排名 → 防御排名，并优先读取 `baseline_target_rank` / `attack_target_rank` / `defended_target_rank`。Jaccard 分别读取 `attack_vs_baseline_jaccard` 与 `defense_vs_baseline_jaccard`，最终摘要不得覆盖攻击阶段。`rank_scope=single_user|mean_users` 决定未屏蔽排名文案，页面必须说明最终 Top50 会在屏蔽历史交互商品后重新生成；**防御摘要**仅在当前 job 实际启用防御并导出防御结果时显示；**隐藏**成员推断、客户端更新泄露模块。
+  - `membership_inference` 成员推断：MIA AUC/Accuracy/Precision/Recall/F1、成员与非成员得分差、证据来源、标签来源、MIA 模型、阈值策略、样本数量/比例、判别分数分布/ROC；**隐藏**目标商品轨迹、推荐列表规模、推荐对比、客户端更新泄露。
+  - `update_leakage` 更新泄露：Hit@10/Hit@20/Hit@50、候选还原商品列表（仅真实图片 URL）、候选排名及相似度/距离、输入来源、泄露目标模态、相似度方法、审计客户端数量；**隐藏**目标商品轨迹、推荐列表规模、推荐对比、成员推断。
+  - `aggregation_defense` 聚合防御：基础攻击类型、鲁棒聚合算法、恶意客户端比例、异常更新数量、选中/拒绝/保留客户端数量、防御前后 Recall@50/NDCG@50、防御恢复率、过滤结果/客户端审计明细、防御参数摘要；**隐藏**目标商品轨迹、推荐列表规模、推荐对比、成员推断、客户端更新泄露；`base_attack=none` 时不显示恶意客户端或攻击效果相关卡片。
 - **缺失数据处理**：方向下的固定模块必须整块保留；模块或字段无真实数据时显示一次"本次实验未导出该项分析证据。"，**不用 mock / V3 / 其他 job 数据补造**。任务已完成但完全无任何方向证据时，仅显示一次"该实验未导出可用于单次分析的方向证据"。失败任务单独走"未完成，无法进入单次分析"分支，展示失败阶段与真实错误摘要，不渲染为分析结果。
 - **实现约束**：构建清晰的 direction 分支或 config mapping（例如 `analysisSectionsByDirection`）；不要继续依赖散落的跨条件 if/else。保留现有的真实字段归一化逻辑（如 `displayRankBefore` 等），不要对页面进行广泛重写。`EmptyModuleBlock` 等占位 UI 放在 file-local 组件里，不引入新的跨页组件。
 
-推荐三列默认请求 5 条，支持展开 15 条、展开 50 条和收起；展开动作应按需请求 recommendations endpoint，不要一次渲染全量推荐。推荐项应显示图片、标题、类目、rank、变化状态和是否目标商品。目标商品不在 Top50 时不要插入列表，只在目标轨迹中说明。
+推荐对照默认每列请求 5 条，支持展开 15 条、展开 50 条和收起；展开动作应按需请求 recommendations endpoint，不要一次渲染全量推荐。无独立 defended recommendations 时隐藏第三列，禁止渲染长期为空的“防御后推荐”。推荐项应显示图片、标题、类目、rank、变化状态和是否目标商品。目标商品不在 Top50 时不要插入列表，只在目标轨迹中说明。
 
 横向对比只展示指标矩阵和摘要图，不展示推荐商品列表。当前模式包括攻击效果、防御效果、隐私风险、模型/数据集能力。模型/数据集能力模式优先读取 V3 `model_support_panel` 的 `smoke_verified_models`、`partial_smoke_verified_models`、`validate_only_models`、`adapter_required_models`、`failed_smoke_models` 和 `model_smoke_evidence`，展示成中文分组和状态统计，不直接显示后端字段名或本地结果路径。
 
@@ -203,7 +203,7 @@
 - 左侧导航不要纯黑，保持半透明蓝黑渐变和可读的非激活文字。
 - 少放小卡片，多用流程图、拓扑图、监控曲线和对照区。
 - 颜色语义统一：蓝=正常，红=攻击，绿=防御，紫=多模态。
-- 动效保留但不要过度；联邦拓扑、动态飞线、攻击流、防御过滤、target rank 轨迹和推荐三列对照是核心视觉骨架。
+- 动效保留但不要过度；联邦拓扑、动态飞线、攻击流、防御过滤、target rank 轨迹和按真实证据切换的推荐对照是核心视觉骨架。
 - 不新增 three.js 等重依赖。SVG、CSS animation、motion 足够完成当前阶段。
 
 ## 开发约束
@@ -233,13 +233,13 @@ npm run build
 - 点击“开始实验”时立即生成 `started_at` 和 `experiment_name`，名称格式固定为 `{推荐操纵|成员推断|更新泄露|聚合防御} · YYYY-MM-DD HH:mm:ss`。历史读取优先使用 API 持久化字段；旧 job 缺失时可回退原 job 标识和 `created_at`，不得使用 `finished_at` 代替开始时间。
 - 运行监控有 `job_id` 时优先轮询 `/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=100` 和 terminal result；terminal 后读取 `/workbench/jobs/{job_id}/result`，没有 `job_id` 时继续使用 V3 runtime/curves 或摘要曲线。
 - 失败文案应优先使用 `field_errors`、`failure_stage`、`error_summary` 和 `error_detail`；运行监控和历史卡片显示 job_id、模型、数据集、方向、实际 tensor shape、模型期望 shape 和 subprocess return code，完整错误可展开且不得重复。网络不可达时显示“后端服务未连接”，不要直接显示 `Failed to fetch`。
-- 单次分析如有 job `metrics_summary`，必须优先使用其中真实的 target rank、rank gain、masked Top50 hit 和 baseline/attack Top50，不得混入 showcase 的旧排名；新任务 `source=full_train`，`partial` 必须保留部分完成边界。
+- 单次分析如有 job `metrics_summary`，必须优先使用同一 `direction_result` 中的 `baseline_metrics` / `attack_metrics` / optional `defense_metrics`、`baseline_recommendations` / `attack_recommendations` / optional `defended_recommendations`、三段目标排名、攻击/防御 Top50 命中和两组对基线 Jaccard，不得混入 showcase 的旧排名。无防御时不得生成或显示空 defense 字段/列；新任务 `source=full_train`，`partial` 必须保留部分完成边界。
 - `/workbench/options` 的 `model_dataset_execution`、`common_parameters`、`fixed_parameters` 和 `parameter_descriptors` 是高级参数、模型提示、范围默认值和执行边界说明的来源；不要在页面里维护第二套参数 schema 或执行能力矩阵。能力状态必须区分 `construct_verified`、`forward_verified`、`train_verified`、`direction_verified`，构造成功不得展示为真实训练支持。
 - “校验配置”和“开始实验”都依赖后端真实最小 forward preflight；preflight 失败只展示字段错误，不切换到运行监控，也不生成本地伪 job。
 - 高级参数提交给 workbench 时必须保留用户填写的训练轮数、本地轮数、采样比例、学习率和防御参数；前端固定提交 `execution_mode=full_train`。
 - 鲁棒聚合算法在前端是可空单选；单次实验最多选择一个，没有选中算法表示普通 FedAvg 聚合，不要恢复“无防御”按钮。聚合防御方向提交用户选择的 `base_attack=none|malicious_update`，默认 `none`。安全聚合模拟与 Krum / Median / TrimmedMean / Bulyan 继续互斥，差分隐私风格加噪是独立扰动层。
 - Showcase 加载应按 scenarios 摘要字段请求 V3 panels 和旧版 endpoints；场景未声明 V3/旧证据时不要主动探测一堆 404。缺失证据显示“未导出 / 暂无证据”，不要用 mock 补单个缺口。
-- 新 job 的稳定协议是 `workbench-result-v2`。通用训练字段读 `metrics_summary.training`，方向模板只读同一 job 的 `metrics_summary.direction_result`；旧 job 才使用兼容扁平字段。
+- 新 job 的稳定协议是 `workbench-result-v2`。通用 `metrics_summary.training` 可以指向最终阶段，方向模板只读同一 job 的 `metrics_summary.direction_result`；推荐操纵必须独立保留 baseline、attack、optional defense 的 metrics/recommendations/target rank，以及攻击和防御各自的 Top50 命中与对基线 Jaccard。最终 `target_rank_after` / Top50 / Jaccard 只作 `result_variant` 摘要，不得替代攻击阶段字段；旧 job 才使用兼容扁平字段。
 - 成员推断必须展示当前 job 的 AUC/Accuracy/Precision/Recall/F1、ROC、分数分布和匿名 pair-score 元数据；更新泄露必须展示当前 job 的候选排名/分数、匿名客户端真实交互和 Hit@10/20/50，不得读取 V3 候选补齐。
 - 聚合防御必须按 baseline / attacked / defended 三阶段展示 Loss、Recall@50、NDCG@50，并读取逐轮拒绝数和匿名客户端表格。`base_attack=none` 时隐藏攻击阶段、恶意客户端和过滤成功率。
 - 有 `job_id` 时运行监控的曲线和日志只能来自当前 job；无真实 round 时显示缺失/等待，不得生成假曲线或固定日志。`partial` 必须展示 `missing_evidence`，failed 必须展示真实 `failure_stage`。

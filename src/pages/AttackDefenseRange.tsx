@@ -248,15 +248,31 @@ const workbenchMetricLabel = (value: string) => {
   const labels: Record<string, string> = {
     execution_mode: '执行模式',
     requested_execution_mode: '请求执行模式',
-    baseline_unmasked_rank: '原始未屏蔽排序',
-    attack_unmasked_rank: '攻击后未屏蔽排序',
-    target_rank_before: '基线目标排名',
-    target_rank_after: '攻击后目标排名',
+    baseline_unmasked_rank: '正常模型未屏蔽排名',
+    attack_unmasked_rank: '攻击阶段未屏蔽排名',
+    defense_unmasked_rank: '攻击+防御阶段未屏蔽排名',
+    baseline_target_rank: '正常排名',
+    attack_target_rank: '攻击排名',
+    defended_target_rank: '防御排名',
+    result_unmasked_rank: '实验后未屏蔽排名',
+    target_rank_before: '正常排名',
+    target_rank_after: '实验后排名',
+    rank_scope: '排名统计口径',
+    audited_user_count: '审计用户数',
+    masked_target_rank: '最终屏蔽后目标排名',
     rank_gain: '排名提升',
     normalized_rank_gain: '归一化提升',
     reciprocal_rank_gain: '倒数排名增益',
     attack_topk_hit: '最终 TopK 命中',
+    attack_top50_hit: '攻击阶段 Top50 命中',
+    defended_top50_hit: '防御阶段 Top50 命中',
     masked_top50_hit: '最终 Top50 曝光',
+    top50_hit_count: 'Top50 命中用户数',
+    top50_hit_rate: 'Top50 命中率',
+    robust_aggregator: '鲁棒聚合算法',
+    result_variant: '结果类型',
+    attack_vs_baseline_jaccard: '攻击与正常 Jaccard',
+    defense_vs_baseline_jaccard: '防御与正常 Jaccard',
     recall_at_50: 'Recall@50',
     ndcg_at_50: 'NDCG@50',
     direction: '实验方向',
@@ -285,6 +301,18 @@ const workbenchMetricValue = (key: string, value: string | number | boolean | nu
     };
     return labels[String(value)] ?? toChineseLabel(String(value));
   }
+  if (key === 'result_variant') {
+    return {
+      baseline: '正常基线',
+      attack: '纯攻击',
+      attack_defense: '攻击+防御',
+    }[String(value)] ?? toChineseLabel(String(value));
+  }
+  if (key === 'rank_scope') {
+    return String(value) === 'mean_users' ? '多用户平均' : String(value) === 'single_user' ? '单用户' : toChineseLabel(String(value));
+  }
+  if (key === 'robust_aggregator') return robustAggregatorLabel(String(value));
+  if (key === 'top50_hit_rate' && typeof value === 'number') return formatPercentValue(value);
   if (key === 'client_sampling_ratio' && typeof value === 'number') return formatRatio(value);
   return formatPlainValue(value);
 };
@@ -841,22 +869,37 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const activeJobDefenses = Array.isArray(activeJobMetrics?.active_defenses)
     ? activeJobMetrics.active_defenses
     : [];
-  const jobRecommendationItems = (key: 'baseline_top50' | 'attack_top50' | 'defense_top50'): ShowcaseRecommendationItem[] => {
-    const directionKey = key === 'baseline_top50'
-      ? 'baseline_recommendations'
-      : key === 'attack_top50'
-        ? 'attack_recommendations'
-        : 'defense_recommendations';
-    const currentItems = workbenchRecommendationItems(activeJobDirectionResult?.[directionKey]);
-    if (currentItems.length) return currentItems;
-    const value = activeJobMetrics?.[key];
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-    const items = (value as Record<string, unknown>).items;
-    return workbenchRecommendationItems(items);
+  const jobRecommendationItems = (phase: 'baseline' | 'attack' | 'defended'): ShowcaseRecommendationItem[] => {
+    const directionKeys = phase === 'baseline'
+      ? ['baseline_recommendations']
+      : phase === 'attack'
+        ? ['attack_recommendations']
+        : ['defended_recommendations', 'defense_recommendations'];
+    for (const directionKey of directionKeys) {
+      const currentItems = workbenchRecommendationItems(activeJobDirectionResult?.[directionKey]);
+      if (currentItems.length) return currentItems;
+    }
+    const metricKeys = phase === 'baseline'
+      ? ['baseline_top50']
+      : phase === 'attack'
+        ? ['attack_top50']
+        : ['defended_top50', 'defense_top50'];
+    for (const metricKey of metricKeys) {
+      const value = activeJobMetrics?.[metricKey];
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const items = (value as Record<string, unknown>).items;
+      const metricItems = workbenchRecommendationItems(items);
+      if (metricItems.length) return metricItems;
+    }
+    return [];
   };
-  const jobBaselineTop50 = jobRecommendationItems('baseline_top50');
-  const jobAttackTop50 = jobRecommendationItems('attack_top50');
-  const jobDefenseTop50 = jobRecommendationItems('defense_top50');
+  const jobBaselineTop50 = jobRecommendationItems('baseline');
+  const jobAttackTop50 = jobRecommendationItems('attack');
+  const jobDefenseTop50 = jobRecommendationItems('defended');
+  const jobHasIndependentDefenseRun = activeJobDirectionResult?.has_independent_defense_run === true
+    || Boolean(asRecord(activeJobDirectionResult?.defense_metrics));
+  const jobHasIndependentDefenseRecommendations = jobDefenseTop50.length > 0
+    && (activeJobDirectionResult?.has_independent_defense_recommendations === true || jobHasIndependentDefenseRun);
   const jobRecommendationComparison: ShowcaseRecommendationComparison | null = activeJobMetrics && (jobBaselineTop50.length || jobAttackTop50.length || jobDefenseTop50.length)
     ? {
         baseline: jobBaselineTop50,
@@ -870,8 +913,18 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const rankStats = getTargetRanks(report);
   const fallbackBefore = selectedPlay.id === 'target_poisoning_play' ? 170 : null;
   const fallbackAfter = selectedPlay.id === 'target_poisoning_play' ? 3 : null;
-  const displayRankBefore = activeJobMetrics ? jobMetricNumber('target_rank_before') : rankStats.before ?? fallbackBefore;
-  const displayRankAfter = activeJobMetrics ? jobMetricNumber('target_rank_after') : rankStats.after ?? fallbackAfter;
+  const displayRankBefore = activeJobMetrics
+    ? jobMetricNumber('baseline_target_rank') ?? jobMetricNumber('target_rank_before')
+    : rankStats.before ?? fallbackBefore;
+  const displayAttackRank = activeJobMetrics
+    ? jobMetricNumber('attack_target_rank') ?? jobMetricNumber('attack_unmasked_rank') ?? jobMetricNumber('target_rank_after')
+    : rankStats.after ?? fallbackAfter;
+  const displayDefendedRank = activeJobMetrics
+    ? jobMetricNumber('defended_target_rank') ?? jobMetricNumber('defense_unmasked_rank')
+    : null;
+  const displayRankAfter = activeJobMetrics
+    ? displayDefendedRank ?? jobMetricNumber('target_rank_after') ?? displayAttackRank
+    : rankStats.after ?? fallbackAfter;
   const computedRankLift = typeof displayRankBefore === 'number' && typeof displayRankAfter === 'number'
     ? displayRankBefore - displayRankAfter
     : null;
@@ -3517,6 +3570,52 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       }
       return null;
     })();
+    const resultVariantForJob = typeof jobMetrics?.result_variant === 'string' ? jobMetrics.result_variant : null;
+    const robustAggregatorForJob = typeof jobMetrics?.robust_aggregator === 'string' ? jobMetrics.robust_aggregator : null;
+    const rankScopeForJob = typeof jobMetrics?.rank_scope === 'string' ? jobMetrics.rank_scope : null;
+    const auditedUserCount = analysisJobMetricRaw('audited_user_count');
+    const top50HitCount = analysisJobMetricRaw('top50_hit_count') ?? analysisJobMetricRaw('masked_top50_hit_count');
+    const top50HitRate = analysisJobMetricRaw('top50_hit_rate') ?? analysisJobMetricRaw('masked_top50_hit_rate');
+    const maskedTargetRank = analysisJobMetricRaw('masked_target_rank');
+    const baselineStageRank = analysisJobMetricRaw('baseline_target_rank')
+      ?? analysisJobMetricRaw('baseline_unmasked_rank')
+      ?? displayRankBefore;
+    const attackStageRank = analysisJobMetricRaw('attack_target_rank')
+      ?? analysisJobMetricRaw('attack_unmasked_rank')
+      ?? displayAttackRank;
+    const defendedStageRank = analysisJobMetricRaw('defended_target_rank')
+      ?? analysisJobMetricRaw('defense_unmasked_rank')
+      ?? displayDefendedRank;
+    const independentDefenseRunForJob = jobDirectionResult?.has_independent_defense_run === true
+      || Boolean(asRecord(jobDirectionResult?.defense_metrics))
+      || jobHasIndependentDefenseRun;
+    const showIndependentDefenseRecommendations = workbenchResult
+      ? Boolean(
+          (jobDirectionResult?.has_independent_defense_recommendations === true || jobHasIndependentDefenseRecommendations)
+          && jobDefenseTop50.length > 0,
+        )
+      : (activeRecommendationComparison?.defense?.length ?? 0) > 0;
+    const rankScopeSuffix = rankScopeForJob === 'mean_users'
+      ? '平均'
+      : rankScopeForJob === 'single_user'
+        ? '单用户'
+        : '';
+    const normalUnmaskedRankLabel = rankScopeSuffix
+      ? `正常模型${rankScopeSuffix}未屏蔽排名`
+      : '正常模型未屏蔽排名';
+    const attackUnmaskedRankLabel = rankScopeSuffix
+      ? `攻击阶段${rankScopeSuffix}未屏蔽排名`
+      : '攻击阶段未屏蔽排名';
+    const defendedUnmaskedRankLabel = rankScopeSuffix
+      ? `防御阶段${rankScopeSuffix}未屏蔽排名`
+      : '防御阶段未屏蔽排名';
+    const resultVariantText = resultVariantForJob === 'attack_defense'
+      ? '攻击+防御'
+      : resultVariantForJob === 'attack'
+        ? '纯攻击'
+        : resultVariantForJob === 'baseline'
+          ? '正常基线'
+          : null;
 
     // 5) 训练质量指标（Loss / Recall@50 / NDCG@50 / 训练轮数）：仅当实际导出才显示
     const trainingQualityTiles: Array<{label: string; value: string; tone?: string}> = [];
@@ -3641,6 +3740,9 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
 
     const renderTargetTrajectory = () => {
       const hasAnyTargetMetric =
+        hasJobMetric('baseline_target_rank') ||
+        hasJobMetric('attack_target_rank') ||
+        hasJobMetric('defended_target_rank') ||
         hasJobMetric('target_rank_before') ||
         hasJobMetric('target_rank_after') ||
         hasJobMetric('normalized_lift') ||
@@ -3652,6 +3754,12 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         hasJobMetric('recommendation_jaccard') ||
         hasJobMetric('changed_user_count') ||
         hasJobMetric('changed_item_count') ||
+        hasJobMetric('top50_hit_count') ||
+        hasJobMetric('top50_hit_rate') ||
+        hasJobMetric('audited_user_count') ||
+        hasJobMetric('masked_target_rank') ||
+        hasJobMetric('result_variant') ||
+        hasJobMetric('robust_aggregator') ||
         hasJobMetric('rank_gain');
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
@@ -3666,14 +3774,31 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 <div className="min-w-0">
                   <h4 className="line-clamp-3 text-lg font-black leading-6 text-white">{targetTitle}</h4>
                   <p className="mt-2 text-sm text-slate-400">{targetProduct?.category ?? EMPTY_VALUE}</p>
-                  <div className="mt-4 flex items-center gap-3">
-                    <span className="rounded-2xl border border-slate-200/20 bg-slate-300/10 px-4 py-2 font-mono text-2xl font-black text-slate-100">
-                      {hasJobMetric('target_rank_before') ? formatRank(displayRankBefore) : EMPTY_VALUE}
-                    </span>
+                  <div className="mt-4 flex flex-wrap items-end gap-3">
+                    <div>
+                      <p className="mb-1 text-[11px] font-bold text-slate-500">正常排名</p>
+                      <span className="block rounded-2xl border border-slate-200/20 bg-slate-300/10 px-4 py-2 font-mono text-2xl font-black text-slate-100">
+                        {formatRank(baselineStageRank)}
+                      </span>
+                    </div>
                     <ChevronRight className="h-6 w-6 text-rose-100" />
-                    <span className="rounded-2xl border border-rose-200/35 bg-rose-300/12 px-4 py-2 font-mono text-2xl font-black text-rose-100">
-                      {hasJobMetric('target_rank_after') ? formatRank(displayRankAfter) : EMPTY_VALUE}
-                    </span>
+                    <div>
+                      <p className="mb-1 text-[11px] font-bold text-rose-200/75">攻击排名</p>
+                      <span className="block rounded-2xl border border-rose-200/35 bg-rose-300/12 px-4 py-2 font-mono text-2xl font-black text-rose-100">
+                        {formatRank(attackStageRank)}
+                      </span>
+                    </div>
+                    {independentDefenseRunForJob ? (
+                      <>
+                        <ChevronRight className="h-6 w-6 text-emerald-100" />
+                        <div>
+                          <p className="mb-1 text-[11px] font-bold text-emerald-200/75">防御排名</p>
+                          <span className="block rounded-2xl border border-emerald-200/35 bg-emerald-300/12 px-4 py-2 font-mono text-2xl font-black text-emerald-100">
+                            {formatRank(defendedStageRank)}
+                          </span>
+                        </div>
+                      </>
+                    ) : null}
                   </div>
                   <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
                     {activeJobMetrics
@@ -3690,8 +3815,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 </div>
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                {hasJobMetric('target_rank_before') ? <MetricTile label="原始未屏蔽排序" value={formatRank(displayRankBefore)} /> : null}
-                {hasJobMetric('target_rank_after') ? <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" /> : null}
+                {baselineStageRank !== null ? <MetricTile label={normalUnmaskedRankLabel} value={formatRank(baselineStageRank)} /> : null}
+                {attackStageRank !== null ? (
+                  <MetricTile label={attackUnmaskedRankLabel} value={formatRank(attackStageRank)} tone="text-amber-100" />
+                ) : null}
+                {independentDefenseRunForJob && defendedStageRank !== null ? (
+                  <MetricTile label={defendedUnmaskedRankLabel} value={formatRank(defendedStageRank)} tone="text-emerald-100" />
+                ) : null}
+                {maskedTargetRank !== null ? (
+                  <MetricTile label={`最终${rankScopeSuffix ? `${rankScopeSuffix}` : ''}屏蔽后排名`} value={formatRank(maskedTargetRank)} tone="text-emerald-100" />
+                ) : null}
                 {hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain') ? (
                   <MetricTile label="归一化提升" value={formatPercentRank(displayNormalizedLift)} tone="text-rose-100" />
                 ) : null}
@@ -3702,7 +3835,17 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <MetricTile label="目标操纵指数" value={formatMetricValue(analysisJobMetricRaw('target_manipulation_index'))} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
                 ) : null}
                 {hasJobMetric('masked_top50_hit') || hasJobMetric('attack_topk_hit') ? (
-                  <MetricTile label="最终 Top50 曝光" value={displayFinalExposure} tone="text-emerald-100" />
+                  <MetricTile label="最终 Top50 是否命中" value={displayFinalExposure} tone="text-emerald-100" />
+                ) : null}
+                {top50HitCount !== null ? (
+                  <MetricTile
+                    label="Top50 命中用户数"
+                    value={auditedUserCount !== null ? `${top50HitCount} / ${auditedUserCount}` : formatPlainValue(top50HitCount)}
+                    tone="text-emerald-100"
+                  />
+                ) : null}
+                {top50HitRate !== null ? (
+                  <MetricTile label="Top50 命中率" value={formatPercentValue(top50HitRate)} tone="text-emerald-100" />
                 ) : null}
                 {hasJobMetric('recommendation_jaccard') ? (
                   <MetricTile label="推荐 Jaccard" value={formatMetricValue(analysisJobMetricRaw('recommendation_jaccard'))} />
@@ -3716,7 +3859,16 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 {hasJobMetric('rank_gain') ? (
                   <MetricTile label="排名提升" value={formatRankGain(analysisJobMetricRaw('rank_gain'))} tone="text-rose-100" />
                 ) : null}
+                {resultVariantText ? (
+                  <MetricTile label="当前结果类型" value={resultVariantText} tone={resultVariantForJob === 'attack_defense' ? 'text-emerald-100' : 'text-rose-100'} />
+                ) : null}
+                {resultVariantForJob === 'attack_defense' && robustAggregatorForJob ? (
+                  <MetricTile label="鲁棒聚合算法" value={robustAggregatorLabel(robustAggregatorForJob)} tone="text-emerald-100" />
+                ) : null}
               </div>
+              <p className="mt-4 rounded-2xl border border-cyan-200/20 bg-cyan-300/10 px-3 py-2 text-sm leading-6 text-cyan-50/85">
+                最终 Top50 会在屏蔽历史交互商品后重新生成，因此未屏蔽排名大于 50 时仍可能最终命中。
+              </p>
             </>
           ) : (
             <EmptyModuleBlock />
@@ -3748,20 +3900,27 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           </section>
         );
       }
+      const attackColumnIsCombined = resultVariantForJob === 'attack_defense' && !independentDefenseRunForJob;
+      const attackRecommendationLabel = attackColumnIsCombined ? '攻击+防御后推荐' : '攻击后推荐';
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <div className="mb-4 flex items-center gap-3">
             <BarChart3 className="h-5 w-5 text-cyan-100" />
             <h3 className="text-xl font-bold text-white">本次推荐列表规模</h3>
           </div>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className={cn('grid gap-3', showIndependentDefenseRecommendations ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
             <MetricTile label="正常推荐" value={`${recommendationCounts.baseline}`} />
-            <MetricTile label="攻击后推荐" value={`${recommendationCounts.attack}`} tone="text-rose-100" />
-            <MetricTile label="防御后推荐" value={`${recommendationCounts.defense}`} tone="text-emerald-100" />
+            <MetricTile label={attackRecommendationLabel} value={`${recommendationCounts.attack}`} tone="text-rose-100" />
+            {showIndependentDefenseRecommendations ? (
+              <MetricTile label="防御后推荐" value={`${recommendationCounts.defense}`} tone="text-emerald-100" />
+            ) : null}
           </div>
           <p className="mt-4 text-sm leading-6 text-slate-400">
             推荐项变化在下方逐项展示：新增、上升、下降、保持。分数为空时不显示；图片优先使用缩略图，其次本地缓存图，再其次远程图。
           </p>
+          {independentDefenseRunForJob && !showIndependentDefenseRecommendations ? (
+            <p className="mt-3 text-sm leading-6 text-amber-100">独立攻击+防御阶段未导出推荐列表，因此不展示空的第三列。</p>
+          ) : null}
         </section>
       );
     };
@@ -3790,13 +3949,25 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           scenarioId={jobRecommendationComparison ? null : selectedScenario.scenarioId}
           targetItemId={(activeJobMetrics?.target_item_id as string | number | null | undefined) ?? targetProduct?.itemId}
           dataset={boardDataset}
+          resultVariant={resultVariantForJob}
+          robustAggregator={robustAggregatorForJob}
+          hasIndependentDefenseRun={independentDefenseRunForJob}
+          showIndependentDefense={showIndependentDefenseRecommendations}
         />
       );
     };
 
     const renderRecommendationMetrics = () => {
       const tiles: Array<{label: string; value: string; tone?: string}> = [];
-      if (hasJobMetric('recommendation_jaccard')) tiles.push({label: '推荐 Jaccard', value: formatMetricValue(analysisJobMetricRaw('recommendation_jaccard'))});
+      if (hasJobMetric('attack_vs_baseline_jaccard')) {
+        tiles.push({label: '攻击与正常 Jaccard', value: formatMetricValue(analysisJobMetricRaw('attack_vs_baseline_jaccard'))});
+      }
+      if (hasJobMetric('defense_vs_baseline_jaccard')) {
+        tiles.push({label: '防御与正常 Jaccard', value: formatMetricValue(analysisJobMetricRaw('defense_vs_baseline_jaccard')), tone: 'text-emerald-100'});
+      }
+      if (!hasJobMetric('attack_vs_baseline_jaccard') && !hasJobMetric('defense_vs_baseline_jaccard') && hasJobMetric('recommendation_jaccard')) {
+        tiles.push({label: '推荐 Jaccard', value: formatMetricValue(analysisJobMetricRaw('recommendation_jaccard'))});
+      }
       if (hasJobMetric('changed_user_count')) tiles.push({label: '变化用户', value: formatPlainValue(analysisJobMetricRaw('changed_user_count'))});
       if (hasJobMetric('changed_item_count')) tiles.push({label: '变化商品', value: formatPlainValue(analysisJobMetricRaw('changed_item_count'))});
       if (hasJobMetric('target_manipulation_index')) tiles.push({label: '目标操纵指数', value: formatMetricValue(analysisJobMetricRaw('target_manipulation_index')), tone: 'text-rose-100'});

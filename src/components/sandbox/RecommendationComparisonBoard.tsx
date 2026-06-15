@@ -13,6 +13,10 @@ interface RecommendationComparisonBoardProps {
   // 数据集名（来自 workbench metrics.dataset）。当推荐条目没有图片 URL 时，
   // 用 /api/showcase/images/{dataset}/{itemId}?size=thumb 兜底拼缩略图，404 走 <ImageOff />。
   dataset?: string | null;
+  resultVariant?: 'baseline' | 'attack' | 'attack_defense' | string | null;
+  robustAggregator?: string | null;
+  hasIndependentDefenseRun?: boolean;
+  showIndependentDefense?: boolean;
 }
 
 type ColumnKey = 'baseline' | 'attack' | 'defense';
@@ -25,8 +29,15 @@ const MAX_VISIBLE_COUNT = 50;
 const columns: Array<{key: ColumnKey; title: string; subtitle: string; tone: 'cyan' | 'rose' | 'emerald'; empty: string}> = [
   {key: 'baseline', title: '正常推荐', subtitle: '攻击前的基准排序', tone: 'cyan', empty: '暂无正常推荐'},
   {key: 'attack', title: '攻击后推荐', subtitle: '观察目标操纵后的排序变化', tone: 'rose', empty: '暂无攻击后推荐'},
-  {key: 'defense', title: '防御后推荐 / 暂无防御', subtitle: '有防御结果时展示恢复效果', tone: 'emerald', empty: '暂无防御结果'},
+  {key: 'defense', title: '防御后推荐', subtitle: '独立攻击+防御训练的推荐结果', tone: 'emerald', empty: '暂无防御结果'},
 ];
+
+const aggregatorLabels: Record<string, string> = {
+  Krum: 'Krum',
+  Median: '坐标中位数',
+  TrimmedMean: '截尾均值',
+  Bulyan: 'Bulyan',
+};
 
 const toneClass = {
   cyan: 'border-sky-200/30 bg-sky-200/10 text-sky-100',
@@ -155,7 +166,16 @@ const ChangeBadge: React.FC<{status: ChangeStatus}> = ({status}) => (
   </span>
 );
 
-export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({comparison, scenarioId, targetItemId, dataset}) => {
+export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoardProps> = ({
+  comparison,
+  scenarioId,
+  targetItemId,
+  dataset,
+  resultVariant,
+  robustAggregator,
+  hasIndependentDefenseRun,
+  showIndependentDefense,
+}) => {
   const [activeComparison, setActiveComparison] = React.useState<ShowcaseRecommendationComparison | null | undefined>(comparison);
   const [visibleLimit, setVisibleLimit] = React.useState(DEFAULT_VISIBLE_COUNT);
   const [isLoadingLimit, setIsLoadingLimit] = React.useState(false);
@@ -192,7 +212,28 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
   };
 
   const currentComparison = activeComparison ?? comparison;
-  const canRequestMore = columns.some((column) => {
+  const hasDefenseColumn = showIndependentDefense ?? true;
+  const attackColumnIsCombined = resultVariant === 'attack_defense' && hasIndependentDefenseRun === false;
+  const aggregatorLabel = robustAggregator ? aggregatorLabels[robustAggregator] ?? robustAggregator : null;
+  const visibleColumns = columns
+    .filter((column) => column.key !== 'defense' || hasDefenseColumn)
+    .map((column) => {
+      if (column.key === 'attack' && attackColumnIsCombined) {
+        return {
+          ...column,
+          title: '攻击+防御后推荐',
+          subtitle: aggregatorLabel ? `已启用鲁棒聚合：${aggregatorLabel}` : '攻击与防御共同作用后的排序',
+        };
+      }
+      if (column.key === 'attack' && hasIndependentDefenseRun) {
+        return {...column, subtitle: '独立攻击训练结果（未启用鲁棒聚合）'};
+      }
+      if (column.key === 'defense' && aggregatorLabel) {
+        return {...column, subtitle: `独立攻击+防御训练 · ${aggregatorLabel}`};
+      }
+      return column;
+    });
+  const canRequestMore = visibleColumns.some((column) => {
     const items = currentComparison?.[column.key] ?? [];
     return columnTotalCount(currentComparison, column.key, items.length) > Math.min(visibleLimit, MAX_VISIBLE_COUNT);
   });
@@ -202,7 +243,7 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
       <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
           <p className="text-xs font-bold tracking-[0.2em] text-cyan-100/75">推荐对照</p>
-          <h3 className="mt-1 text-xl font-bold text-white">三列推荐商品变化</h3>
+          <h3 className="mt-1 text-xl font-bold text-white">{visibleColumns.length === 3 ? '三列' : '两列'}推荐商品变化</h3>
         </div>
         <p className="max-w-2xl text-xs leading-5 text-slate-400">
           每列默认 5 条，展开 15 / 50 条时按需读取。目标商品未进入最终推荐列表时不会被强行插入，只在目标轨迹里说明边界。
@@ -239,8 +280,8 @@ export const RecommendationComparisonBoard: React.FC<RecommendationComparisonBoa
         {loadError ? <span className="text-xs font-semibold text-amber-100">{loadError}</span> : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        {columns.map((column) => {
+      <div className={cn('grid grid-cols-1 gap-4', visibleColumns.length === 3 ? 'xl:grid-cols-3' : 'xl:grid-cols-2')}>
+        {visibleColumns.map((column) => {
           const allItems = currentComparison?.[column.key] ?? [];
           const items = allItems.slice(0, Math.min(visibleLimit, MAX_VISIBLE_COUNT));
           const totalCount = columnTotalCount(currentComparison, column.key, allItems.length);

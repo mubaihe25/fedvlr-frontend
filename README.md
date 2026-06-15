@@ -38,7 +38,7 @@
 - `src/pages/SystemMechanism.tsx`：系统机制页，用五层架构图说明数据层、客户端层、服务端层、安全层和展示层。
 - `src/pages/AttackDefenseRange.tsx`：攻防工作台，承载实验编排、运行监控、单次分析、横向对比和实验档案库。
 - `src/components/sandbox/FederatedTopology.tsx`：联邦拓扑、动态飞线、服务器呼吸光、客户端浮动和 hover 数据浮层。
-- `src/components/sandbox/RecommendationComparisonBoard.tsx`：三列推荐对照，默认 5 条，支持按需请求 15 / 50 条；展示 rank、变化状态、目标商品标记和图片兜底。
+- `src/components/sandbox/RecommendationComparisonBoard.tsx`：按真实结果显示两列或三列推荐对照，默认 5 条，支持按需请求 15 / 50 条；展示 rank、变化状态、目标商品标记、鲁棒聚合器和图片兜底。
 - `src/lib/securityTaxonomy.ts`：前端攻防语义模型，把模块统一分为攻击、防御、观测、证据。
 - `src/lib/experimentPlaybooks.ts`：实验剧本数据模型，统一驱动实验编排三栏、攻防路径图、当前参数、推荐场景和执行区文案。
 - `src/lib/scenarioNarratives.ts`：场景叙事工具，用真实场景、V3 panels 和 report 推断中文场景名、攻防类型、用途、证据标签和 target rank 口径。
@@ -68,7 +68,7 @@
 
 证据：
 
-- 三列推荐对比
+- 两列/三列推荐对比（仅在真实存在独立 defended recommendations 时显示第三列）
 - 目标商品轨迹
 - 成员推断结果
 - 交互候选还原
@@ -108,11 +108,11 @@
 - **每方向固定模块保留**：成员推断 / 更新泄露 / 聚合防御 即使没有方向专用字段也整块保留固定模块（隐私风险指标 / 审计配置 / 样本与分数证据；命中指标 / 泄露配置 / 候选还原；防御配置 / 异常客户端 / 前后性能与恢复）。某模块无真实字段时，模块内显示一次 `本次实验未导出该项分析证据。`，不再为每个指标分别显示"暂无 / 不适用"。`recommendation_manipulation` 的"本次推荐列表规模"模块在后端 metrics 未导出 `baseline_top50` / `attack_top50`、且 V3 `recommendationComparison` 也不含真实条目时改为单条占位 `本次实验未导出推荐列表规模统计。`，不再显示三个 0。
 - 顶部紧凑"本次实验摘要"只显示真实存在字段：实验方向、数据集、模型、开始时间、完成状态、结果来源；`Loss` / `Recall@50` / `NDCG@50` / 训练轮数等训练质量指标只在当前 job result 实际导出这些字段时显示，缺失时隐藏（不写"暂无 / 不适用"占位卡片）。
 - 各 direction 只渲染该方向应展示的模块；旧 direction 切换时通过 `key={direction}` 强制重挂以彻底卸载旧数据。
-  - `recommendation_manipulation` 推荐操纵：目标商品轨迹、攻击前后目标排序、rank gain、最终 Top50 是否命中、推荐列表规模、正常/攻击后/防御后三列、Jaccard/变化用户/目标操纵指数；防御摘要仅在当前 job 实际启用并导出防御结果时显示；隐藏成员推断、客户端更新泄露模块。
-  - `membership_inference` 成员推断：MIA AUC/Accuracy/Precision/Recall/F1、成员与非成员得分差、证据来源、标签来源、MIA 模型、阈值策略、样本数量/比例、判别分数分布/ROC；隐藏目标商品轨迹、推荐列表规模、三列推荐对比、客户端更新泄露。
-  - `update_leakage` 更新泄露：Hit@10/Hit@20/Hit@50、候选还原商品列表（仅真实图片 URL）、候选排名及相似度/距离、输入来源、泄露目标模态、相似度方法、审计客户端数量；隐藏目标商品轨迹、推荐列表规模、三列、成员推断。
-  - `aggregation_defense` 聚合防御：基础攻击类型、鲁棒聚合算法、恶意客户端比例、异常更新数量、选中/拒绝/保留客户端数量、防御前后 Recall@50/NDCG@50、防御恢复率、过滤结果/客户端审计明细、防御参数摘要；隐藏目标商品轨迹、推荐列表规模、三列、成员推断、客户端更新泄露；`base_attack=none` 时不显示恶意客户端或攻击效果相关卡片。
-- 新 job 读取 `workbench-result-v2`：通用训练指标来自 `training`，方向证据来自 `direction_result`。成员推断绘制当前 job ROC 与分数分布；更新泄露展示真实候选排名/分数和匿名客户端证据；聚合防御展示 baseline/attacked/defended 三阶段指标、三组逐轮曲线和拒绝客户端曲线/表格。
+  - `recommendation_manipulation` 推荐操纵：无防御时绑定 `baseline_recommendations` / `attack_recommendations` 两列，目标轨迹显示正常排名 → 攻击排名；有独立鲁棒防御结果时再绑定 `defended_recommendations` 第三列，轨迹显示正常排名 → 攻击排名 → 防御排名。页面分别读取 `attack_vs_baseline_jaccard` 与 `defense_vs_baseline_jaccard`，不使用最终摘要覆盖攻击阶段。未屏蔽排名明确区分单用户/多用户平均口径，并说明最终 Top50 会在屏蔽历史交互商品后重新生成。
+  - `membership_inference` 成员推断：MIA AUC/Accuracy/Precision/Recall/F1、成员与非成员得分差、证据来源、标签来源、MIA 模型、阈值策略、样本数量/比例、判别分数分布/ROC；隐藏目标商品轨迹、推荐列表规模、推荐对比、客户端更新泄露。
+  - `update_leakage` 更新泄露：Hit@10/Hit@20/Hit@50、候选还原商品列表（仅真实图片 URL）、候选排名及相似度/距离、输入来源、泄露目标模态、相似度方法、审计客户端数量；隐藏目标商品轨迹、推荐列表规模、推荐对比、成员推断。
+  - `aggregation_defense` 聚合防御：基础攻击类型、鲁棒聚合算法、恶意客户端比例、异常更新数量、选中/拒绝/保留客户端数量、防御前后 Recall@50/NDCG@50、防御恢复率、过滤结果/客户端审计明细、防御参数摘要；隐藏目标商品轨迹、推荐列表规模、推荐对比、成员推断、客户端更新泄露；`base_attack=none` 时不显示恶意客户端或攻击效果相关卡片。
+- 新 job 读取 `workbench-result-v2`：通用最终阶段指标来自 `training`，方向证据来自 `direction_result`。推荐操纵优先读取 `baseline_metrics` / `attack_metrics` / optional `defense_metrics`、三份阶段推荐、三段目标排名、两段 Top50 命中和两组对基线 Jaccard；无防御时 defense 字段保持缺失且页面只显示两列。成员推断绘制当前 job ROC 与分数分布；更新泄露展示真实候选排名/分数和匿名客户端证据；聚合防御展示 baseline/attacked/defended 三阶段指标、三组逐轮曲线和拒绝客户端曲线/表格。
 - 缺失模块整块保留并以单条占位提示（见"每方向固定模块保留"）；任务已完成但完全无任何方向证据时，仅显示一次"该实验未导出可用于单次分析的方向证据"。
 - 失败任务单独走"未完成，无法进入单次分析"分支，展示失败阶段与真实错误摘要，不渲染为分析结果。
 
