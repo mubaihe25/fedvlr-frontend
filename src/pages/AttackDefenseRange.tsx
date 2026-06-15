@@ -703,14 +703,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
   const [candidatePoolSize, setCandidatePoolSize] = useState(500);
   const [clientCountForLeakage, setClientCountForLeakage] = useState(5);
   const [batchSize, setBatchSize] = useState(128);
-  const [numWorkers, setNumWorkers] = useState(0);
-  const [pinMemory, setPinMemory] = useState(false);
-  const [persistentWorkers, setPersistentWorkers] = useState(false);
-  const [prefetchFactor, setPrefetchFactor] = useState(2);
-  const [ampEnabled, setAmpEnabled] = useState(false);
-  const [cacheItemFeaturesOnDevice, setCacheItemFeaturesOnDevice] = useState(true);
-  const [nonBlockingTransfer, setNonBlockingTransfer] = useState(true);
-  const [reuseClientModelWorkspace, setReuseClientModelWorkspace] = useState(true);
+  // 运行时性能参数（num_workers / prefetch_factor / pin_memory /
+  // persistent_workers / amp_enabled / cache_item_features_on_device /
+  // non_blocking_transfer / reuse_client_model_workspace）已收口为后端固定默认值，
+  // 不再保留前端 useState / 表单控件 / payload 提交。
   const [seed, setSeed] = useState(2026);
   const [riskModality, setRiskModality] = useState<RiskModality>('item embedding');
   const [similarityMethod, setSimilarityMethod] = useState<SimilarityMethod>('cosine');
@@ -1013,16 +1009,11 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         const descriptors = options.parameter_descriptors ?? {};
         const numberDefault = (key: string, fallback: number) => typeof descriptors[key]?.default === 'number' ? descriptors[key].default as number : fallback;
         const stringDefault = <T extends string>(key: string, fallback: T) => typeof descriptors[key]?.default === 'string' ? descriptors[key].default as T : fallback;
-        const booleanDefault = (key: string, fallback: boolean) => typeof descriptors[key]?.default === 'boolean' ? descriptors[key].default as boolean : fallback;
         setBatchSize(numberDefault('batch_size', 128));
-        setNumWorkers(numberDefault('num_workers', 0));
-        setPinMemory(booleanDefault('pin_memory', false));
-        setPersistentWorkers(booleanDefault('persistent_workers', false));
-        setPrefetchFactor(numberDefault('prefetch_factor', 2));
-        setAmpEnabled(booleanDefault('amp_enabled', false));
-        setCacheItemFeaturesOnDevice(booleanDefault('cache_item_features_on_device', true));
-        setNonBlockingTransfer(booleanDefault('non_blocking_transfer', true));
-        setReuseClientModelWorkspace(booleanDefault('reuse_client_model_workspace', true));
+        // 运行时性能参数（num_workers / prefetch_factor / pin_memory /
+        // persistent_workers / amp_enabled / cache_item_features_on_device /
+        // non_blocking_transfer / reuse_client_model_workspace）已下沉到后端，
+        // 不再从 /workbench/options 反向同步到前端 state。
         setSeed(numberDefault('seed', 2026));
         setInjectionRatio(numberDefault('injection_ratio', 0.2));
         setMaxInjectionsPerClient(numberDefault('max_injections_per_client', 10));
@@ -1439,14 +1430,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       target_delta: dpTargetDelta,
       dp_seed: dpSeed,
       batch_size: batchSize,
-      num_workers: numWorkers,
-      pin_memory: pinMemory,
-      persistent_workers: numWorkers > 0 && persistentWorkers,
-      prefetch_factor: prefetchFactor,
-      amp_enabled: ampEnabled,
-      cache_item_features_on_device: cacheItemFeaturesOnDevice,
-      non_blocking_transfer: nonBlockingTransfer,
-      reuse_client_model_workspace: reuseClientModelWorkspace,
+      // 运行时性能参数（num_workers / prefetch_factor / pin_memory /
+      // persistent_workers / amp_enabled / cache_item_features_on_device /
+      // non_blocking_transfer / reuse_client_model_workspace）已收口为后端固定默认值，
+      // 前端不再提交，API/FedVLR 也会忽略/覆盖。
       gradient_clip_norm: defensePreprocessClipNorm,
       outlier_strategy: outlierStrategy,
       trim_ratio: trimRatio,
@@ -2077,27 +2064,19 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           markParamChanged(getParameterDescriptor('gradient_clip').label);
           updateConfig({advanced: {...config.advanced, gradientClip: Number(event.target.value)}});
         }} />)}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {fieldShell(getParameterDescriptor('num_workers').label, <select className={inputClass} value={numWorkers} onChange={(event) => setNumWorkers(Number(event.target.value))}>
-            {descriptorOptions<number>('num_workers', [0]).map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>, getParameterDescriptor('num_workers').help_text)}
-          {fieldShell(getParameterDescriptor('prefetch_factor').label, <input className={inputClass} type="number" min={descriptorNumber('prefetch_factor', 'min', 1)} max={descriptorNumber('prefetch_factor', 'max', 8)} step={1} value={prefetchFactor} onChange={(event) => setPrefetchFactor(Number(event.target.value))} />, getParameterDescriptor('prefetch_factor').help_text)}
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {[
-            {key: 'pin_memory', value: pinMemory, setValue: setPinMemory},
-            {key: 'persistent_workers', value: persistentWorkers, setValue: setPersistentWorkers, disabled: numWorkers === 0},
-            {key: 'amp_enabled', value: ampEnabled, setValue: setAmpEnabled},
-            {key: 'cache_item_features_on_device', value: cacheItemFeaturesOnDevice, setValue: setCacheItemFeaturesOnDevice},
-            {key: 'non_blocking_transfer', value: nonBlockingTransfer, setValue: setNonBlockingTransfer},
-            {key: 'reuse_client_model_workspace', value: reuseClientModelWorkspace, setValue: setReuseClientModelWorkspace},
-          ].map((item) => (
-            <label key={item.key} className={cn('flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-2.5 text-xs font-semibold text-slate-300', item.disabled && 'cursor-not-allowed opacity-45')}>
-              <span>{getParameterDescriptor(item.key).label}</span>
-              <input type="checkbox" className="accent-cyan-300" checked={item.value} disabled={item.disabled} onChange={(event) => item.setValue(event.target.checked)} />
-            </label>
-          ))}
-        </div>
+        {/*
+          运行时性能参数（num_workers / prefetch_factor / pin_memory /
+          persistent_workers / amp_enabled / cache_item_features_on_device /
+          non_blocking_transfer / reuse_client_model_workspace）已收口为后端固定默认值：
+            num_workers=0, prefetch_factor=null, pin_memory=false,
+            persistent_workers=false, amp_enabled=false,
+            cache_item_features_on_device=true, non_blocking_transfer=true,
+            reuse_client_model_workspace=true.
+          普通攻防 UI 不再暴露；在运行监控区域只保留一行只读提示。
+        */}
+        <p className="rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-2.5 text-xs font-semibold text-slate-400">
+          性能优化：特征驻留 GPU / 非阻塞传输 / 串行客户端工作区复用（运行时参数已由后端固定，不再作为实验变量）
+        </p>
       </>
     );
     const selectTargetOption = (id: string) => {

@@ -120,14 +120,10 @@ export interface WorkbenchPayload {
   target_delta?: number;
   dp_seed?: number;
   batch_size?: number;
-  num_workers?: number;
-  pin_memory?: boolean;
-  persistent_workers?: boolean;
-  prefetch_factor?: number;
-  amp_enabled?: boolean;
-  cache_item_features_on_device?: boolean;
-  non_blocking_transfer?: boolean;
-  reuse_client_model_workspace?: boolean;
+  // 运行时性能参数（num_workers / prefetch_factor / pin_memory /
+  // persistent_workers / amp_enabled / cache_item_features_on_device /
+  // non_blocking_transfer / reuse_client_model_workspace）已下沉到后端固定默认值，
+  // 不再作为前端可编辑/可提交字段。
   base_attack?: string;
   anomaly_client_ratio?: number;
   perturbation_type?: string;
