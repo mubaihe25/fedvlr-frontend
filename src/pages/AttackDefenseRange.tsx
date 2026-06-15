@@ -58,7 +58,7 @@ import {
 } from '../lib/securityTaxonomy';
 import {EXPERIMENT_PLAYBOOKS, getExperimentPlaybook} from '../lib/experimentPlaybooks';
 import type {ExperimentPlaybook, PlaybookRouteTone} from '../lib/experimentPlaybooks';
-import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPlainValue, getRecommendationCounts, toChineseLabel} from '../lib/showcaseFormat';
+import {EMPTY_VALUE, formatMetricValue, formatPercentValue, formatPercentRank, formatPlainValue, formatRankGain, formatSignedRankGain, getRecommendationCounts, toChineseLabel} from '../lib/showcaseFormat';
 import {cn} from '../lib/utils';
 import {loadShowcaseBundle} from '../services/showcase';
 import {createWorkbenchJob, fetchWorkbenchJob, fetchWorkbenchJobs, fetchWorkbenchLogs, fetchWorkbenchOptions, fetchWorkbenchResult, validateWorkbenchConfig} from '../services/workbench';
@@ -3699,7 +3699,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <p className="mt-4 rounded-2xl border border-rose-200/25 bg-rose-300/10 px-3 py-2 text-sm font-bold text-rose-50">
                     {activeJobMetrics
                       ? (displayRankLift ?? 0) > 0
-                        ? `本轮真实训练中目标排名提升 ${formatPlainValue(displayRankLift)} 位，${displayFinalExposure}。`
+                        ? `本轮真实训练中目标排名提升 ${formatRankGain(displayRankLift)} 位，${displayFinalExposure}。`
                         : `本轮真实训练未观察到目标排名提升，${displayFinalExposure}。`
                       : '内部排序已推进，但最终曝光未命中。'}
                   </p>
@@ -3714,10 +3714,10 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 {hasJobMetric('target_rank_before') ? <MetricTile label="原始未屏蔽排序" value={formatRank(displayRankBefore)} /> : null}
                 {hasJobMetric('target_rank_after') ? <MetricTile label="攻击后未屏蔽排序" value={formatRank(displayRankAfter)} tone="text-rose-100" /> : null}
                 {hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain') ? (
-                  <MetricTile label="归一化提升" value={formatRatio(displayNormalizedLift)} tone="text-rose-100" />
+                  <MetricTile label="归一化提升" value={formatPercentRank(displayNormalizedLift)} tone="text-rose-100" />
                 ) : null}
                 {hasJobMetric('reciprocal_rank_gain') ? (
-                  <MetricTile label="倒数排名增益" value={formatSmallNumber(displayReciprocalGain)} tone="text-amber-100" />
+                  <MetricTile label="倒数排名增益" value={formatRankGain(displayReciprocalGain)} tone="text-amber-100" />
                 ) : null}
                 {hasJobMetric('target_manipulation_index') ? (
                   <MetricTile label="目标操纵指数" value={formatMetricValue(analysisJobMetricRaw('target_manipulation_index'))} note="展示指标，不作为标准学术指标。" tone="text-rose-100" />
@@ -3735,7 +3735,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                   <MetricTile label="变化商品" value={formatPlainValue(analysisJobMetricRaw('changed_item_count'))} />
                 ) : null}
                 {hasJobMetric('rank_gain') ? (
-                  <MetricTile label="排名提升" value={analysisJobMetric('rank_gain')} tone="text-rose-100" />
+                  <MetricTile label="排名提升" value={formatRankGain(analysisJobMetricRaw('rank_gain'))} tone="text-rose-100" />
                 ) : null}
               </div>
             </>
@@ -3821,8 +3821,8 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
       if (hasJobMetric('changed_user_count')) tiles.push({label: '变化用户', value: formatPlainValue(analysisJobMetricRaw('changed_user_count'))});
       if (hasJobMetric('changed_item_count')) tiles.push({label: '变化商品', value: formatPlainValue(analysisJobMetricRaw('changed_item_count'))});
       if (hasJobMetric('target_manipulation_index')) tiles.push({label: '目标操纵指数', value: formatMetricValue(analysisJobMetricRaw('target_manipulation_index')), tone: 'text-rose-100'});
-      if (hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain')) tiles.push({label: '归一化提升', value: formatRatio(displayNormalizedLift), tone: 'text-rose-100'});
-      if (hasJobMetric('reciprocal_rank_gain')) tiles.push({label: '倒数排名增益', value: formatSmallNumber(displayReciprocalGain), tone: 'text-amber-100'});
+      if (hasJobMetric('normalized_lift') || hasJobMetric('normalized_rank_gain')) tiles.push({label: '归一化提升', value: formatPercentRank(displayNormalizedLift), tone: 'text-rose-100'});
+      if (hasJobMetric('reciprocal_rank_gain')) tiles.push({label: '倒数排名增益', value:formatRankGain(displayReciprocalGain), tone: 'text-amber-100'});
       return (
         <section className="sandbox-panel rounded-[28px] p-5">
           <h3 className="text-xl font-bold text-white">已导出推荐指标</h3>
@@ -4297,7 +4297,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
         {key: 'scenario', label: '场景', render: (row) => row.scenario},
         {key: 'attack', label: '攻击类型', render: (row) => row.attack},
         {key: 'targetManipulationIndex', label: '目标操纵指数', render: (row) => formatCellValue(formatMetricValue(row.targetManipulationIndex))},
-        {key: 'rankGain', label: '目标排序提升', render: (row) => formatCellValue(formatSigned(row.rankGain, 0))},
+        {key: 'rankGain', label: '目标排序提升', render: (row) => formatCellValue(formatSignedRankGain(row.rankGain))},
         {key: 'top50', label: 'Top50 命中', render: (row) => formatCellValue(row.top50)},
         {key: 'change', label: '推荐 Jaccard', render: (row) => formatCellValue(formatMetricValue(row.recommendationJaccard))},
         {key: 'changedUserCount', label: '变化用户', render: (row) => formatCellValue(formatExportedValue(row.changedUserCount))},
@@ -4563,7 +4563,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
                 <div key={`${row.id}-bar`} className="rounded-3xl border border-white/10 bg-white/[0.045] p-5">
                   <p className="text-sm font-bold text-white">{row.scenario}</p>
                   {[
-                    {label: '目标排序提升', value: row.rankGain ? Math.min(1, row.rankGain / 169) : 0, text: formatSigned(row.rankGain, 0), tone: 'bg-rose-300'},
+                    {label: '目标排序提升', value: row.rankGain ? Math.min(1, row.rankGain / 169) : 0, text: formatSignedRankGain(row.rankGain), tone: 'bg-rose-300'},
                     {label: 'MIA AUC', value: row.miaAuc ?? 0, text: formatCellValue(formatMetricValue(row.miaAuc)), tone: 'bg-violet-300'},
                     {label: '防御恢复率', value: row.recovery ?? 0, text: formatCellValue(formatPercentValue(row.recovery)), tone: 'bg-emerald-300'},
                   ].map((item) => (

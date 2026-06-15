@@ -87,6 +87,32 @@ export const toChineseLabel = (value?: string | number | null) => {
 export const formatMetricValue = (value?: number | null) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : EMPTY_VALUE;
 
+/**
+ * 统一格式化"排名提升 / rank gain"类指标：
+ * - 强制 2 位小数（510.06 / 53.02 / 167.00）
+ * - 缺失值 / null / undefined / 非有限数：返回 EMPTY_VALUE
+ * - 不影响原始排名（before / after）、hit@k、AUC 等其他指标
+ */
+export const formatRankGain = (value?: number | null) =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : EMPTY_VALUE;
+
+/**
+ * 同 formatRankGain，但在正数前加 + 号：用于"目标排序提升"等
+ * 期望表达方向（提升 / 下降）的指标。0 显示为 `+0.00`，缺失值
+ * 仍走 EMPTY_VALUE。
+ */
+export const formatSignedRankGain = (value?: number | null) =>
+  typeof value === 'number' && Number.isFinite(value) ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}` : EMPTY_VALUE;
+
+/**
+ * 归一化提升 (normalized_rank_gain) 等比例类排名增益：
+ * - 0-1 比例 × 100 后保留 2 位小数 + %（如 0.988 -> "98.80%"）
+ * - 缺失值走 EMPTY_VALUE
+ * - 复用 (value * 100) 的换算约定，不修改原始 ratio
+ */
+export const formatPercentRank = (value?: number | null) =>
+  typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : EMPTY_VALUE;
+
 export const formatPercentValue = (value?: number | null) =>
   typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : EMPTY_VALUE;
 
