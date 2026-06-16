@@ -145,6 +145,8 @@
 
 历史实验只展示 `/workbench/jobs?limit=12&page=...` 真实 job 档案库，不再展示或混入 `/showcase/scenarios` artifact 档案。一行一个 job，展示 `experiment_name`、方向、数据集/模型、source、status、秒级 `started_at` 和关键指标预览；支持方向、数据集、模型、开始日期、source、status 筛选和分页。点击 job 后切换到单次分析，并优先读取该 job result；“加入对比”只更新前端持久选择，不创建后端记录。历史卡片不要显示随机 job_id、长标识串或 result/artifact 路径。
 
+算法仓库导入的正式矩阵任务仍是普通 workbench job，使用 `source=official_matrix`，前端统一显示“正式实验矩阵”并允许筛选。该 source 只表示持久历史来源，不得加入执行模式或“开始实验” payload。
+
 ## Showcase API 协议
 
 不要破坏以下前端兼容读取逻辑：
@@ -237,7 +239,7 @@ npm run build
 - 点击“开始实验”时立即生成 `started_at` 和 `experiment_name`，名称格式固定为 `{推荐操纵|成员推断|更新泄露|聚合防御} · YYYY-MM-DD HH:mm:ss`。历史读取优先使用 API 持久化字段；旧 job 缺失时可回退原 job 标识和 `created_at`，不得使用 `finished_at` 代替开始时间。
 - 运行监控有 `job_id` 时优先轮询 `/workbench/jobs/{job_id}`、`/workbench/jobs/{job_id}/logs?tail=100` 和 terminal result；terminal 后读取 `/workbench/jobs/{job_id}/result`，没有 `job_id` 时继续使用 V3 runtime/curves 或摘要曲线。
 - 失败文案应优先使用 `field_errors`、`failure_stage`、`error_summary` 和 `error_detail`；运行监控和历史卡片显示 job_id、模型、数据集、方向、实际 tensor shape、模型期望 shape 和 subprocess return code，完整错误可展开且不得重复。网络不可达时显示“后端服务未连接”，不要直接显示 `Failed to fetch`。
-- 单次分析如有 job `metrics_summary`，必须优先使用同一 `direction_result` 中的 `baseline_metrics` / `attack_metrics` / optional `defense_metrics`、`baseline_recommendations` / `attack_recommendations` / optional `defended_recommendations`、三段目标排名、攻击/防御 Top50 命中和两组对基线 Jaccard，不得混入 showcase 的旧排名。无防御时不得生成或显示空 defense 字段/列；新任务 `source=full_train`，`partial` 必须保留部分完成边界。
+- 单次分析如有 job `metrics_summary`，必须优先使用同一 `direction_result` 中的 `baseline_metrics` / `attack_metrics` / optional `defense_metrics`、`baseline_recommendations` / `attack_recommendations` / optional `defended_recommendations`、三段目标排名、攻击/防御 Top50 命中和两组对基线 Jaccard，不得混入 showcase 的旧排名。无防御时不得生成或显示空 defense 字段/列；新任务 `source=full_train`，正式矩阵导入档案 `source=official_matrix`，`partial` 必须保留部分完成边界。
 - `/workbench/options` 的 `model_dataset_execution`、`common_parameters`、`fixed_parameters` 和 `parameter_descriptors` 是高级参数、模型提示、范围默认值和执行边界说明的来源；不要在页面里维护第二套参数 schema 或执行能力矩阵。能力状态必须区分 `construct_verified`、`forward_verified`、`train_verified`、`direction_verified`，构造成功不得展示为真实训练支持。
 - “校验配置”和“开始实验”都依赖后端真实最小 forward preflight；preflight 失败只展示字段错误，不切换到运行监控，也不生成本地伪 job。
 - 高级参数提交给 workbench 时必须保留用户填写的训练轮数、本地轮数、采样比例、学习率和防御参数；前端固定提交 `execution_mode=full_train`。

@@ -293,6 +293,7 @@ const workbenchFailureDetail = (job?: WorkbenchFailureInfo | null) => (
 );
 const workbenchSourceLabel = (value?: string | null) => {
   if (value === 'full_train') return '真实全量训练';
+  if (value === 'official_matrix') return '正式实验矩阵';
   if (value === 'existing_artifact' || value === 'real_smoke' || value === 'probe_smoke') return '历史任务';
   return value ? toChineseLabel(value) : EMPTY_VALUE;
 };
@@ -3597,10 +3598,6 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
     } else if (config.model) {
       analysisSummaryEntries.push({label: '模型', value: config.model});
     }
-    const summaryStartedAt = workbenchJob?.started_at ?? workbenchJob?.created_at;
-    if (summaryStartedAt) {
-      analysisSummaryEntries.push({label: '开始时间', value: formatDateTimeToSeconds(summaryStartedAt) ?? EMPTY_VALUE});
-    }
     if (workbenchJob?.status) {
       analysisSummaryEntries.push({label: '完成状态', value: workbenchStatusLabel(workbenchJob.status)});
     }
@@ -3812,7 +3809,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
           ) : null}
         </div>
         {analysisSummaryEntries.length ? (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
             {analysisSummaryEntries.map((entry) => (
               <MetricTile key={entry.label} label={entry.label} value={entry.value} />
             ))}
@@ -4640,6 +4637,7 @@ export const AttackDefenseRange: React.FC<AttackDefenseRangeProps> = ({
             <select value={jobSourceFilter} onChange={(event) => setJobSourceFilter(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 outline-none transition focus:border-cyan-200/45">
               <option value="">全部 source</option>
               <option value="full_train">真实全量训练</option>
+              <option value="official_matrix">正式实验矩阵</option>
             </select>
           </label>
           <label className="space-y-1.5">
