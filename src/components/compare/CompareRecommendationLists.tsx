@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import {resolveTargetItemZhName} from '../../lib/targetItemZhNames';
+import {resolveCompareItemTitle, withNormalizedCompareItemImages} from '../../lib/compareItemPresentation';
 import {cn} from '../../lib/utils';
 import type {CompareExperiment, CompareStage} from '../../lib/workbenchCompare';
 import type {ShowcaseRecommendationItem} from '../../types/showcase';
@@ -73,9 +73,10 @@ export const CompareRecommendationLists: React.FC<CompareRecommendationListsProp
               <div className="space-y-2">
                 {items.length ? items.map((item, index) => {
                   const isTarget = String(item.itemId) === String(experiment.recommendation.targetItemId);
-                  const zhName = resolveTargetItemZhName(item.itemId);
+                  const title = resolveCompareItemTitle(item);
+                  const safeItem = withNormalizedCompareItemImages(item);
                   return (
-                    <RecommendationProductCard key={`${experiment.jobId}-${stage}-${item.itemId}-${index}`} item={item} title={zhName} tone={stage === 'baseline' ? 'cyan' : stage === 'attack' ? 'rose' : 'emerald'} dataset={experiment.dataset} changeStatus={changeLabel(experiment, stage, item)} isTarget={isTarget} index={index} cardKey={`${experiment.jobId}-${stage}-${item.itemId}-${index}`} />
+                    <RecommendationProductCard key={`${experiment.jobId}-${stage}-${item.itemId}-${index}`} item={safeItem} title={title} tone={stage === 'baseline' ? 'cyan' : stage === 'attack' ? 'rose' : 'emerald'} dataset={experiment.dataset} changeStatus={changeLabel(experiment, stage, item)} isTarget={isTarget} index={index} cardKey={`${experiment.jobId}-${stage}-${item.itemId}-${index}`} />
                   );
                 }) : <p className="rounded-2xl border border-white/10 px-4 py-8 text-center text-sm text-slate-500">该阶段未导出推荐商品列表。</p>}
               </div>
