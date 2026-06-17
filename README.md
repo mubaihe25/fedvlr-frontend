@@ -200,7 +200,7 @@ Vite dev mode 会按 `vite.config.ts` 将本地 API 请求代理到 `/api`。
 ## 常用命令
 
 ```powershell
-npm install
+npm ci
 npm run dev
 npm run lint
 npm run build
